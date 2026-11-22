@@ -82,8 +82,7 @@ def _private_dir(path: Path) -> Path:
 def _report(batch: Batch) -> list[str]:
     out = []
     if batch.problems:
-        out += ["❌ Fix these rows in the sheet and send it again (nothing was made):"]
-        out += [f"• {p}" for p in batch.problems]
+        out += [f"❌ {len(batch.problems)} problem(s) in the rows:"] + [f"• {p}" for p in batch.problems]
     if batch.skipped:
         out += ["Skipped:"] + [f"• {s}" for s in batch.skipped]
     if batch.warnings:
@@ -91,18 +90,34 @@ def _report(batch: Batch) -> list[str]:
     return out
 
 
-def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, now: float | None = None) -> str:
-    rows, missing = sheet.read(sheet_path)
-    if missing:
-        return "The sheet is missing these columns: " + ", ".join(missing) + ". Nothing was made."
-    batch = build(rows, period, settings)
-    if batch.problems or not batch.slips:
-        return "\n".join(_report(batch) or ["No rows with pay in the sheet."])
-    if len(batch.slips) > settings.max_per_run:
-        return f"{len(batch.slips)} slips is over hr.max_per_run ({settings.max_per_run}). Nothing was made."
+def check(sheet_path: Path, period: Period, settings: Settings, paths: Paths) -> tuple[Batch | None, list[str]]:
+    """Everything that could stop a run, found before anything is made: the template, missing
+    columns, and every problem in every row, all in one list so the sheet is fixed in one pass."""
+    out: list[str] = []
     template = paths.templates / settings.payslip_template
     if not template.is_file():
-        return f"No payslip template at {template}. Copy your Word template there first."
+        out.append(f"❌ No payslip template at {template}. Copy your Word template there.")
+    try:
+        rows, missing = sheet.read(sheet_path)
+    except (OSError, ValueError) as exc:
+        return None, [*out, f"❌ Can't read the sheet: {exc}"]
+    if missing:
+        out.append("❌ Add these columns: " + ", ".join(sheet.LABELS[m] for m in missing))
+    batch = build(rows, period, settings, frozenset(missing))
+    out += _report(batch)
+    if not batch.problems and not missing and not batch.slips:
+        out.append("❌ No rows with pay in the sheet.")
+    if len(batch.slips) > settings.max_per_run:
+        out.append(f"❌ {len(batch.slips)} slips is over hr.max_per_run ({settings.max_per_run}).")
+    blocked = any(line.startswith("❌") for line in out)
+    return (None if blocked else batch), out
+
+
+def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, now: float | None = None) -> str:
+    batch, report = check(sheet_path, period, settings, paths)
+    if batch is None:
+        return "\n".join(["Nothing was made. Fix all of this, then send the sheet again:", *report])
+    template = paths.templates / settings.payslip_template
     out = _private_dir(paths.run_dir(period))
     docs = []
     for slip in batch.slips:
@@ -118,5 +133,5 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
             "notes": list(_report(batch))}
     paths.pending.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(paths.pending, 0o600)
-    return "\n".join([f"✅ {len(items)} payslips for {period.month} are ready. Nothing is sent yet.", *_report(batch),
+    return "\n".join([f"✅ {len(items)} payslips for {period.month} are ready. Nothing is sent yet.", *report,
                       "", "Next: /hr show (list with net pay) · /hr test (2 samples to you) · /hr yes · /hr no"])

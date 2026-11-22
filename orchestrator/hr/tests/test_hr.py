@@ -148,8 +148,26 @@ class Run(unittest.TestCase):
     def test_a_bad_sheet_makes_nothing(self):
         self.sheet.write_text(HEADER + "Meera,0,C,17/08/2026,0,0,17000,12000,5000,,\n", encoding="utf-8")
         reply = self.hr(f"payslips {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
-        self.assertIn("nothing was made", reply)
+        self.assertIn("Nothing was made", reply)
         self.assertFalse((self.home / "hr/payslips").exists())
+        self.assertFalse((self.home / "hr/pending.json").exists())
+
+    def test_check_lists_missing_columns_and_every_row_problem_in_one_pass(self):
+        self.sheet.write_text("Employee Name,Position,DOJ,IFSC Code,Bank Account,Compensation,LOP Days\n"
+                              "Meera,0,17/08/2026,0,0,17000,\n"
+                              "Ravi,SWE,1/1/2026,TEST0000003,123,30000,abc\n"
+                              "Kabir,SWE,1/1/2026,TEST0000004,456,0,\n", encoding="utf-8")
+        reply = self.hr(f"check {self.sheet} 01/11/2026 30/11/2026")
+        self.assertIn("Add these columns: Email, Basic, HRA", reply)
+        self.assertIn("Meera): designation is missing", reply)
+        self.assertIn("Ravi): LOP Days 'abc' is not a number", reply)
+        self.assertIn("Meera): bank details are blank or 0", reply)
+        self.assertIn("Kabir): compensation is 0", reply)
+        self.assertNotIn("email is missing", reply, "a missing column is named once, not on every row")
+        self.assertFalse((self.home / "hr/payslips").exists())
+
+    def test_check_passes_a_good_sheet_and_still_makes_nothing(self):
+        self.assertIn("The sheet is ready: 2 payslips", self.hr(f"check {self.sheet} 01/11/2026 30/11/2026"))
         self.assertFalse((self.home / "hr/pending.json").exists())
 
 

@@ -1,7 +1,7 @@
 """Your monthly salary sheet (.xlsx or .csv) → rows of text keyed by field name.
 
-Columns are matched by header, any order and case. Extra columns (IFSC, bank account, employment
-type) are ignored and never copied anywhere.
+Columns are matched by header, any order and case. Bank columns are only checked for blanks (they
+are not on the slip) and never copied anywhere; other extra columns are ignored.
 """
 
 from __future__ import annotations
@@ -21,7 +21,10 @@ COLUMNS = {
     "lop days": "lop", "lop": "lop",
     "reimbursement": "reimbursement", "reimbursements": "reimbursement",
     "other deductions": "other_deductions", "deductions": "other_deductions",
+    "ifsc code": "ifsc", "ifsc": "ifsc", "bank account": "bank", "account number": "bank",
 }
+LABELS = {"name": "Employee Name", "designation": "Position", "doj": "DOJ", "email": "Email",
+          "compensation": "Compensation", "basic": "Basic", "hra": "HRA"}
 REQUIRED = ("name", "designation", "doj", "email", "compensation", "basic", "hra")
 
 

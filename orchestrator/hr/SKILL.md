@@ -16,7 +16,11 @@ python3 "${HERMES_HOME:-$HOME/.hermes}/scripts/hr_payslips.py" "<sheet path>" <f
 
 Example: `... hr_payslips.py /path/nov.xlsx 01/11/2026 30/11/2026 02/12/2026`
 
-It checks every row, makes one PDF per employee and prints counts and problems only. Show its
+It first checks the whole sheet (template, missing columns, every row) and, if anything is
+wrong, makes nothing and lists every problem at once; otherwise it makes one PDF per employee.
+It prints counts and problems only. To only check a sheet, run
+`python3 -m orchestrator.hr check "<sheet path>" <from> <to>` from the repository, or ask the user to
+type `/hr check <path> <from> <to>`. Show its
 output to the user as printed. It cannot email anyone: the user reviews with `/hr show`, gets
 samples with `/hr test` and sends with `/hr yes`.
 

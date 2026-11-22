@@ -9,7 +9,11 @@ everything. **No AI model sees pay or bank details.**
    1–30 Nov, paid 2 Dec". The agent passes only the file path to
    `$HERMES_HOME/scripts/hr_payslips.py` (skill `orchestrator:hr-payslips`).
    On the host you can also run `python -m orchestrator.hr payslips <sheet> 01/11/2026 30/11/2026 02/12/2026`.
-2. The script checks every row. Any problem stops the run and lists every bad row.
+2. Before making anything, the script checks the template, the columns and every row. It lists
+   **every** problem in one reply: missing columns, missing or `0` values, bad dates and numbers,
+   Basic + HRA ≠ Compensation, LOP over the working days, and duplicate emails. Nothing is made
+   until all of them are fixed. It also warns about blank bank details and mid-period joiners.
+   `/hr check <sheet> <from> <to>` runs only this check.
 3. It makes one PDF per person in `$HERMES_HOME/hr/payslips/<YYYY-MM>/`.
 4. It replies with counts only.
 5. `/hr show`: name, email and net pay for each person, plus the total.

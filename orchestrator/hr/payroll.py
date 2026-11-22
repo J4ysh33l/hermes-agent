@@ -99,10 +99,16 @@ def _date(text: str) -> date:
     raise ValueError(text)
 
 
-def _row(raw: dict[str, str], period: Period, days: int) -> tuple[Slip | None, list[str]]:
+MONEY = {"compensation": "Compensation", "basic": "Basic", "hra": "HRA", "lop": "LOP Days",
+         "other_deductions": "Other Deductions", "reimbursement": "Reimbursement"}
+
+
+def _row(raw: dict[str, str], period: Period, days: int, absent: frozenset[str]) -> tuple[Slip | None, list[str]]:
+    """Every problem in the row at once. Checks of a column the sheet doesn't have are skipped
+    (that column is reported once, not on every row); such a row never becomes a slip."""
     who = f"Row {raw['row']} ({raw.get('name') or 'no name'})"
     problems = [f"{who}: {field} is missing" for field in ("name", "designation", "email")
-                if raw.get(field, "").strip() in ("", "0")]
+                if field not in absent and raw.get(field, "").strip() in ("", "0")]
     if raw.get("email") and not EMAIL.match(raw["email"].strip()):
         problems.append(f"{who}: '{raw['email']}' is not an email address")
     try:
@@ -110,26 +116,32 @@ def _row(raw: dict[str, str], period: Period, days: int) -> tuple[Slip | None, l
     except ValueError:
         problems.append(f"{who}: DOJ '{raw.get('doj', '')}' is not a date (use dd/mm/yyyy)")
         doj = period.start
-    try:
-        comp, basic, hra = (_money(raw.get(k, "")) for k in ("compensation", "basic", "hra"))
-        lop = _money(raw.get("lop", ""))
-        other, reimb = _money(raw.get("other_deductions", "")), _money(raw.get("reimbursement", ""))
-    except InvalidOperation:
-        return None, [*problems, f"{who}: a money or LOP cell is not a number"]
-    if basic + hra != comp:
+    money: dict[str, Decimal] = {}
+    for key, label in MONEY.items():
+        try:
+            money[key] = _money(raw.get(key, ""))
+        except InvalidOperation:
+            problems.append(f"{who}: {label} '{raw.get(key)}' is not a number")
+    if len(money) < len(MONEY):
+        return None, problems
+    comp, basic, hra, lop = money["compensation"], money["basic"], money["hra"], money["lop"]
+    if not {"basic", "hra"} & absent and basic + hra != comp:
         problems.append(f"{who}: Basic + HRA ({basic + hra}) is not Compensation ({comp})")
     if not 0 <= lop <= days:
         problems.append(f"{who}: LOP days {lop} is outside 0–{days} working days")
     if doj > period.end:
         problems.append(f"{who}: joins {doj:%d/%m/%Y}, after this pay period")
-    if problems:
+    if problems or absent:
         return None, problems
     lop_amount = (comp / days * lop).quantize(RUPEE, ROUND_HALF_UP)
     return Slip(int(raw["row"]), " ".join(raw["name"].split()), raw["email"].strip().lower(),
-                " ".join(raw["designation"].split()), doj, basic, hra, comp, lop, lop_amount, other, reimb, days), []
+                " ".join(raw["designation"].split()), doj, basic, hra, comp, lop, lop_amount,
+                money["other_deductions"], money["reimbursement"], days), []
 
 
-def build(rows: list[dict[str, str]], period: Period, settings: Settings) -> Batch:
+def build(rows: list[dict[str, str]], period: Period, settings: Settings,
+          absent: frozenset[str] = frozenset()) -> Batch:
+    """``absent``: required columns the sheet lacks; the rows are still checked for everything else."""
     days = working_days(period, settings)
     slips: list[Slip] = []
     problems: list[str] = []
@@ -139,7 +151,10 @@ def build(rows: list[dict[str, str]], period: Period, settings: Settings) -> Bat
         if raw.get("compensation", "").replace(",", "").strip() in ("", "0"):
             skipped.append(f"Row {raw['row']} ({raw.get('name') or 'no name'}): compensation is 0, no slip")
             continue
-        slip, found = _row(raw, period, days)
+        if any(raw.get(k, "x").strip() in ("", "0") for k in ("ifsc", "bank")):
+            warnings.append(f"Row {raw['row']} ({raw.get('name')}): bank details are blank or 0 (not on the slip; "
+                            "check before paying)")
+        slip, found = _row(raw, period, days, absent)
         problems += found
         if slip is None:
             continue
