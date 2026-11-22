@@ -74,7 +74,7 @@ def _item(msg: dict, label: str, email: str) -> Item:
                       or headers.get("precedence", "").lower() in ("bulk", "list"))
     account = f"?authuser={urllib.parse.quote(email)}" if email else ""
     return Item(uid=f"gmail:{msg['id']}", source="gmail", title=headers.get("subject", "(no subject)")[:200],
-                sender=headers.get("from", ""), where="Gmail" if label == MAIN else f"Gmail ({label})",
+                sender=headers.get("from", ""), where=email or ("Gmail" if label == MAIN else f"Gmail ({label})"),
                 snippet=(msg.get("snippet") or "")[:400], ts=int(msg.get("internalDate", 0)) / 1000,
                 newsletter=newsletter, url=f"https://mail.google.com/mail/u/{account}#all/{msg['id']}")
 

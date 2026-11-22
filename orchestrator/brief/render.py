@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import re
-import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .items import Item, Markets, Quote, SourceResult
 
-ICONS = {"slack": "💬", "gmail": "✉️", "outlook": "✉️", "news": "📰"}
+ICONS = {"slack": "💬", "gmail": "✉️", "outlook": "📧", "news": "📰"}
+WORK_SOURCES = ("gmail", "outlook", "slack")
 SOURCE_LABELS = {"slack": "Slack", "gmail": "Gmail", "outlook": "Outlook", "news": "News", "markets": "Markets"}
 PRIVATE_SHOWN = 8
+TELEGRAM_BUDGET = 4000  # one message is 4096 characters of visible text
+MARKUP = re.compile(r"\*\*|(?<!\w)_|_(?!\w)")
 
 
 def source_label(name: str) -> str:
@@ -21,7 +23,6 @@ def source_label(name: str) -> str:
     return f"{label} ({account})" if account else label
 MARKDOWN_SPECIALS = re.compile(r"[*_`\[\]]")
 MORE_LIMIT = 80
-LONG_URL = 200
 
 
 def plain(text: str) -> str:
@@ -57,7 +58,7 @@ def markets_block(m: Markets, tz: ZoneInfo) -> list[str]:
     groups: dict[str, list[Quote]] = {}
     for q in m.quotes:
         groups.setdefault(q.group or "Other", []).append(q)
-    lines = ["**Markets** (last close)"]
+    lines = ["**📈 Markets** (last close)"]
     for group, quotes in groups.items():
         day = quotes[0].day or datetime.fromtimestamp(quotes[0].as_of, tz).strftime("%a")
         cells = " · ".join(
@@ -88,53 +89,108 @@ def _short_date(published: str) -> str:
         return published
 
 
-def short_url(item_url: str, title: str) -> str:
-    """Google News article links run to 600+ characters; a headline search is ~150 and opens
-    the same story. Telegram counts link length against its 4096-character message limit."""
-    if len(item_url) <= LONG_URL or "news.google.com" not in item_url:
-        return item_url
-    return "https://news.google.com/search?" + urllib.parse.urlencode({"q": title[:90], "hl": "en-IN"})
+def _who(item: Item) -> str:
+    """'Asha Rao <asha@x.com>' → 'Asha Rao'; a bare address stays as it is."""
+    return plain(item.sender.split("<")[0].strip().strip('"') or item.sender.strip("<> "))
 
 
-def _item_line(n: int, item: Item, line: str) -> str:
-    where = item.where if item.source != "news" else f"{item.topic} · {item.where}"
-    who = f" — {plain(item.sender.split('<')[0])}" if item.sender and item.source != "news" else ""
-    body = plain(line or item.title)
-    link = f" [open]({short_url(item.url, item.title)})" if item.url else ""
-    return f"{n}. {ICONS.get(item.source, '•')} {plain(where)}{who}: {body}{link}"
+def _work_line(item: Item, line: str) -> str:
+    """Slack and mail: who and what. A one-to-one DM is named once, by its sender, and
+    the sender is not repeated when the model's line already opens with their name."""
+    place = item.where.removesuffix(" (thread)")
+    prefix = f"{plain(place)} — " if item.source == "slack" and place != item.sender else ""
+    who, body = _who(item), plain(line or item.title)
+    names = [n.strip() for n in who.split(",") if n.strip()]
+    if line and any(body.startswith(n) for n in names):
+        return f"• {prefix}{body}"
+    return f"• {prefix}{who}: {body}"
+
+
+def _news_line(n: int, item: Item, line: str) -> str:
+    return f"{n}. {plain(item.topic)} · {plain(item.where)}: {plain(line or item.title)}"
+
+
+def _group_key(item: Item) -> str:
+    """Subsection inside a source: the Gmail account, the Slack group; Outlook has one."""
+    return {"gmail": item.where, "slack": item.topic}.get(item.source, "")
+
+
+def _work_section(source: str, picked: list[Item], lines: dict[str, str], private: list[Item],
+                  rest: list[Item], order: tuple[str, ...]) -> list[str]:
+    groups: dict[str, tuple[list[Item], list[Item], list[Item]]] = {}
+    for bucket, items in enumerate((picked, private, rest)):
+        for item in items:
+            if item.source == source:
+                groups.setdefault(_group_key(item), ([], [], []))[bucket].append(item)
+    if not groups:
+        return []
+    out = ["", f"**{ICONS[source]} {SOURCE_LABELS[source]}**"]
+    for key in sorted(groups, key=lambda k: order.index(k) if k in order else len(order)):
+        chosen, money, others = groups[key]
+        if key:
+            out.append(f"_{plain(key)}_")
+        out += [_work_line(item, lines.get(item.uid, "")) for item in chosen]
+        if money:
+            out.append(f"💳 Money & HR · {len(money)} (not sent to AI)")
+            out += [f"• {plain(item.title)}" for item in money[:PRIVATE_SHOWN]]
+            if len(money) > PRIVATE_SHOWN:
+                out.append(f"…and {len(money) - PRIVATE_SHOWN} more")
+        if others:
+            out.append(f"+{len(others)} more" if chosen or money else f"{len(others)} new, nothing that needs you")
+    return out
+
+
+def _news_section(picked: list[Item], lines: dict[str, str], rest: list[Item]) -> list[str]:
+    news = [i for i in picked if i.source == "news"]
+    more = sum(1 for i in rest if i.source == "news")
+    if not news and not more:
+        return []
+    out = ["", f"**{ICONS['news']} News · Top {len(news)}**" if news else f"**{ICONS['news']} News**"]
+    out += [_news_line(n, item, lines.get(item.uid, "")) for n, item in enumerate(news, start=1)]
+    if more:
+        out.append(f"+{more} more headlines")
+    return out
 
 
 def brief_text(
-    *, day: datetime, ranked: list[Item], lines: dict[str, str], total_new: int, markets: Markets | None,
+    *, day: datetime, ranked: list[Item], lines: dict[str, str], rest: list[Item], markets: Markets | None,
     results: list[SourceResult], model: str, tz: ZoneInfo, private: list[Item] | None = None,
+    slack_order: tuple[str, ...] = (),
 ) -> str:
-    out = [f"**Morning brief · {day.strftime('%a %d %b')}**", ""]
+    """Sections in a fixed order: Markets, Gmail (by account), Outlook, Slack (by group), News.
+    No links: they cost space; the saved edition keeps every URL for when one is asked for. The brief
+    is one Telegram message: past TELEGRAM_BUDGET the lowest-ranked work items, then headlines,
+    move into the '+N more' counts."""
+    picked, overflow = list(ranked), list(rest)
+    while True:
+        text = _compose(day, picked, lines, overflow, markets, results, model, tz, private or [], slack_order)
+        if visible_length(text) <= TELEGRAM_BUDGET or not picked:
+            return text
+        cut = next((i for i in reversed(picked) if i.source != "news"), picked[-1])
+        picked.remove(cut)
+        overflow.append(cut)
+
+
+def visible_length(text: str) -> int:
+    """What Telegram counts against its limit: bold/italic markers are entities, not text."""
+    return len(MARKUP.sub("", text))
+
+
+def _compose(day: datetime, picked: list[Item], lines: dict[str, str], rest: list[Item], markets: Markets | None,
+             results: list[SourceResult], model: str, tz: ZoneInfo, private: list[Item],
+             slack_order: tuple[str, ...]) -> str:
+    out = [f"**Morning brief · {day.strftime('%a %d %b')}**"]
     if markets and (markets.quotes or markets.india_gold):
-        out += markets_block(markets, tz) + [""]
-    if ranked:
-        out.append(f"**Top {len(ranked)}**")
-        out += [_item_line(n, item, lines.get(item.uid, "")) for n, item in enumerate(ranked, start=1)]
-    else:
-        out.append("Nothing new since the last brief.")
-    out += _private_block(private or [])
-    rest = total_new - len(ranked)
-    if rest > 0:
-        out += ["", f"{rest} more new items. Full list: /brief more"]
-    out += _problems(results, markets, model, bool(ranked))
+        out += [""] + markets_block(markets, tz)
+    body: list[str] = []
+    for source in WORK_SOURCES:
+        body += _work_section(source, picked, lines, private, rest, slack_order)
+    body += _news_section(picked, lines, rest)
+    out += body or ["", "Nothing new since the last brief."]
+    if rest:
+        out += ["", f"{len(rest)} more new items. Full list: /brief more"]
+    out += _problems(results, markets, model, bool(picked))
     return "\n".join(out).strip()
-
-
-def _private_block(items: list[Item]) -> list[str]:
-    """Money and HR mail, listed by the script: subject only, never sent to the model."""
-    if not items:
-        return []
-    out = ["", f"**💳 Money & HR · {len(items)}** (not sent to AI)"]
-    for item in items[:PRIVATE_SHOWN]:
-        link = f" [open]({short_url(item.url, item.title)})" if item.url else ""
-        out.append(f"• {plain(item.title)}{link}")
-    if len(items) > PRIVATE_SHOWN:
-        out.append(f"…and {len(items) - PRIVATE_SHOWN} more")
-    return out
 
 
 def _problems(results: list[SourceResult], markets: Markets | None, model: str, had_items: bool) -> list[str]:
@@ -168,8 +224,7 @@ def more_text(edition: dict) -> str:
             if shown >= MORE_LIMIT:
                 out.append(f"… and {len(top) + len(rest) - shown} more in the saved edition file.")
                 return "\n".join(out)
-            link = f" [open]({short_url(item['url'], item.get('title', ''))})" if item.get("url") else ""
             where = f"{plain(item.get('where', ''))}: " if item.get("where") else ""
-            out.append(f"• {where}{plain(item.get('title', ''))}{link}")
+            out.append(f"• {where}{plain(item.get('title', ''))}")
             shown += 1
     return "\n".join(out)

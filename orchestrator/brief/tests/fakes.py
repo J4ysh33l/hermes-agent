@@ -32,9 +32,11 @@ def chart(price: float, prev: float, tz_offset: int = -18000, as_of: float = NOW
                                   "indicators": {"quote": [{"close": [prev - 1, prev, price]}]}}], "error": None}}
 
 
-def gemini_answer(ids: list[str]) -> dict:
-    top = [{"id": i, "line": f"Summary of {i}"} for i in ids]
-    return {"candidates": [{"content": {"parts": [{"text": json.dumps({"top": top})}]}}],
+def gemini_answer(ids: list[str], news: list[str] = ()) -> dict:
+    def entries(keys):
+        return [{"id": i, "line": f"Summary of {i}"} for i in keys]
+    answer = {"work": entries(ids), "news": entries(news)}
+    return {"candidates": [{"content": {"parts": [{"text": json.dumps(answer)}]}}],
             "usageMetadata": {"promptTokenCount": 1500, "candidatesTokenCount": 120, "totalTokenCount": 1620}}
 
 

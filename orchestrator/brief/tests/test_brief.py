@@ -175,7 +175,7 @@ class EndToEnd(BriefCase):
         self.assertIn("Gold India*: ₹1,23,893/10g ▼0.89% (20 Nov)", result.text)
         self.assertIn("*India rate: IBJA 24K (999), excl. GST.", result.text)
         self.assertIn("Summary of i1", result.text)
-        self.assertLess(len(result.text), 4096, "fits one Telegram message")
+        self.assertLess(render.visible_length(result.text), 4096, "fits one Telegram message")
 
     def test_newsletters_finance_mail_codes_and_old_news_never_reach_the_model(self):
         http = services()
@@ -275,6 +275,36 @@ class EndToEnd(BriefCase):
         self.assertIn("Summary of i1", result.text)
 
 
+class Layout(BriefCase):
+    def brief_with_everything_picked(self) -> str:
+        http = services(lambda call: gemini_answer([f"i{n}" for n in range(1, 10)]))
+        replies = slack_reply(["Can you approve the vendor quote today?"])
+        dm = slack_reply(["Lunch?"], channel="D1")["messages"]["matches"]
+        dm[0]["user"] = "U2"
+        replies["messages"]["matches"] += dm
+        http.on("GET", "https://slack.com/api/search.messages", replies)
+        return self.run_brief(http).text
+
+    def test_sections_come_in_a_fixed_order_with_dms_apart_from_channels(self):
+        text = self.brief_with_everything_picked()
+        heads = ["**📈 Markets**", "**✉️ Gmail**", "**📧 Outlook**", "**💬 Slack**", "**📰 News · Top 2**"]
+        self.assertEqual([text.index(h) for h in heads], sorted(text.index(h) for h in heads))
+        slack = text[text.index("**💬 Slack**"):text.index("**📰 News")]
+        self.assertLess(slack.index("_Direct messages_"), slack.index("• Ravi: "), "a DM is named once")
+        self.assertLess(slack.index("_Channels_"), slack.index("• #ops — Asha: "))
+        self.assertLess(slack.index("• Ravi: "), slack.index("_Channels_"))
+        gmail = text[text.index("**✉️ Gmail**"):text.index("**📧 Outlook**")]
+        self.assertIn("Your payslip for Nov", gmail, "money mail sits under its own account")
+
+    def test_the_brief_carries_no_links_but_the_saved_edition_keeps_them(self):
+        text = self.brief_with_everything_picked()
+        self.assertNotIn("](", text)
+        self.assertNotIn("https://", text)
+        edition = Store(self.state).latest_edition()
+        self.assertIn("https://n/2", [i["url"] for i in edition["top"] + edition["rest"]])
+        self.assertNotIn("https://", cli.handle_chat_command("more", self.state, services()))
+
+
 class ChatCommands(BriefCase):
     def chat(self, words: str, http: FakeHttp | None = None) -> str:
         return cli.handle_chat_command(words, self.state, http or services())
@@ -320,11 +350,45 @@ class Units(unittest.TestCase):
 
     def test_answer_with_unknown_or_repeated_ids_is_cleaned(self):
         a = Item(uid="a", source="news", title="A", ts=1)
-        picked, _lines = rank.parse_answer('{"top": [{"id": "i9"}, {"id": "i1", "line": "x"}, {"id": "i1"}]}',
-                                          {"i1": a}, 5)
+        limits = {True: 5, False: 5}
+        picked, _lines = rank.parse_answer(
+            '{"news": [{"id": "i9"}, {"id": "i1", "line": "x"}], "work": [{"id": "i1"}]}', {"i1": a}, limits)
         self.assertEqual(picked, [a])
         with self.assertRaises(ValueError):
-            rank.parse_answer('{"top": [{"id": "nope"}]}', {"i1": a}, 5)
+            rank.parse_answer('{"news": [{"id": "nope"}]}', {"i1": a}, limits)
+
+    def render(self, picked: list[Item], lines: dict[str, str]) -> str:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Kolkata")
+        return render.brief_text(day=datetime.fromtimestamp(NOW, tz), ranked=picked, lines=lines, rest=[],
+                                 markets=None, results=[], model="m", tz=tz)
+
+    def test_sender_is_not_repeated_when_the_line_opens_with_their_name(self):
+        dm = Item(uid="s", source="slack", title="t", ts=1, sender="Kasak Zutshi", where="Kasak Zutshi",
+                  topic="Direct messages")
+        text = self.render([dm], {"s": "Kasak Zutshi asked when Dipesh gets his ID."})
+        self.assertIn("• Kasak Zutshi asked when Dipesh gets his ID.", text)
+
+    def test_a_long_brief_drops_the_lowest_ranked_work_items_to_stay_one_message(self):
+        work = [Item(uid=f"w{n}", source="gmail", title="t", ts=1, sender="A", where="a@x.com") for n in range(60)]
+        news = [Item(uid="n", source="news", title="Headline", ts=1, topic="AI", where="Wire", url="https://n/1")]
+        text = self.render(work + news, {i.uid: "x" * 150 for i in work + news})
+        self.assertLessEqual(render.visible_length(text), render.TELEGRAM_BUDGET)
+        self.assertIn("• A: " + "x" * 150, text, "the best work items stay")
+        self.assertIn("1. AI · Wire: " + "x" * 150, text, "headlines go last")
+        self.assertRegex(text, r"\+\d+ more")
+
+    def test_default_filters_drop_sign_in_and_security_notices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "brief.yaml").write_text((ROOT / "orchestrator/brief/brief.example.yaml").read_text())
+            config = settings.load(Path(tmp))
+        subjects = {"Security alert": False, "Reset your Inboundr password": False,
+                    "[GitHub] A new public key was added to me/repo": False, "New sign-in to your account": False,
+                    "Board meeting moved": True, "Re-Confirmation: Vipassana course": True}
+        mails = [Item(uid=t, source="gmail", title=t, ts=1) for t in subjects]
+        kept, _private, _ = filters.keep(mails, config, lambda uid: False)
+        self.assertEqual({i.title for i in kept}, {t for t, keep in subjects.items() if keep})
 
     def test_budget_is_shared_across_sources(self):
         items = [Item(uid=f"n{i}", source="news", title="x" * 400, ts=1) for i in range(50)]
@@ -371,7 +435,7 @@ class SlackUser(BriefCase):
         prompt = self.gemini_prompts(http)[0]
         self.assertNotIn("Not my channel", prompt, "public channels you have not joined stay out")
         self.assertIn("Core · #ops", prompt)
-        self.assertIn("People · DM: Ravi", prompt)
+        self.assertIn("Direct messages · Ravi", prompt)
         self.assertIn("Core (2)", prompt)
         self.assertEqual(prompt.count("| slack |"), 2, "one item per conversation, not per message")
 
@@ -411,8 +475,10 @@ class GmailAccounts(BriefCase):
         self.assertIn("🔑 Gmail (old) needs a new login", result.text)
         self.assertIn("auth google --account old", result.text)
         prompt = self.gemini_prompts(http)[0]
-        self.assertIn("Gmail (work)", prompt)
+        self.assertIn("w@x.com", prompt)
         self.assertIn("Board meeting moved", prompt)
+        gmail = result.text[result.text.index("**✉️ Gmail**"):result.text.index("**📧 Outlook**")]
+        self.assertEqual(gmail.count("_w@x.com_"), 1, "each account's mail sits under one heading")
 
 
 class SlackBot(BriefCase):

@@ -67,7 +67,8 @@ class Prefs:
 class Settings:
     timezone: str = "Asia/Kolkata"
     lookback_hours: float = 26
-    top_items: int = 8
+    top_items: int = 8  # news headlines
+    work_items: int = 15  # Slack and mail items summarised, across all their sections
     sources: frozenset[str] = frozenset(SOURCE_NAMES)
     topics: tuple[Topic, ...] = ()
     markets: tuple[Symbol, ...] = ()
@@ -78,8 +79,8 @@ class Settings:
     slack_max: int = 200
     slack_skip_channels: frozenset[str] = frozenset()
     slack_groups: tuple[tuple[str, frozenset[str]], ...] = ()  # (group, channel names), first match wins
-    slack_dm_group: str = "People"
-    slack_other_group: str = "Other channels"
+    slack_dm_group: str = "Direct messages"
+    slack_other_group: str = "Channels"
     slack_group_weights: tuple[tuple[str, float], ...] = ()
     mail_max: int = 50
     keep_newsletters_from: tuple[str, ...] = ()
@@ -139,6 +140,7 @@ def parse(raw: dict[str, Any], prefs: Prefs) -> Settings:
         timezone=str(raw.get("timezone", "Asia/Kolkata")),
         lookback_hours=float(raw.get("lookback_hours", 26)),
         top_items=int(raw.get("top_items", 8)),
+        work_items=int(raw.get("work_items", 15)),
         sources=frozenset(n for n in SOURCE_NAMES if enabled.get(n, True)),
         topics=tuple(_topic(t) for t in raw.get("topics") or ()),
         markets=tuple(Symbol(str(m["symbol"]), str(m.get("label", m["symbol"])), str(m.get("unit", "")),
@@ -152,8 +154,8 @@ def parse(raw: dict[str, Any], prefs: Prefs) -> Settings:
         slack_skip_channels=frozenset(_tuple(slack.get("skip_channels"))),
         slack_groups=tuple((str(g), frozenset(n.lstrip("#") for n in _tuple(names)))
                            for g, names in (slack.get("groups") or {}).items()),
-        slack_dm_group=str(slack.get("dm_group", "People")),
-        slack_other_group=str(slack.get("other_group", "Other channels")),
+        slack_dm_group=str(slack.get("dm_group", "Direct messages")),
+        slack_other_group=str(slack.get("other_group", "Channels")),
         slack_group_weights=tuple((str(g), float(w)) for g, w in (slack.get("weights") or {}).items()),
         mail_max=int(mail.get("max_messages", 50)),
         keep_newsletters_from=tuple(s.lower() for s in _tuple(mail.get("keep_newsletters_from"))),

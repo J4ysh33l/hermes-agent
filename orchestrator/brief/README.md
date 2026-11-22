@@ -1,7 +1,9 @@
 # Morning brief
 
-One Telegram message at 8:15 IST: yesterday's markets and gold, then the top items from Slack,
-Gmail, Outlook and news, ranked by **one** Gemini call. `/brief more` lists everything else.
+One Telegram message at 8:15 IST, in fixed sections: 📈 Markets, ✉️ Gmail (grouped by account),
+📧 Outlook, 💬 Slack (direct messages, then channels) and 📰 News (the top 8 headlines). **One**
+Gemini call picks and summarises both the headlines and up to 15 work items. No links, to save
+space: every URL is kept in the saved edition for when you ask. `/brief more` lists everything else.
 
 ## How a run works
 
@@ -9,11 +11,13 @@ Gmail, Outlook and news, ranked by **one** Gemini call. `/brief more` lists ever
 08:15 IST  Hermes cron (no-agent mode) runs $HERMES_HOME/scripts/morning_brief.py
   1. collect   Slack (your conversations), Gmail ×N, Outlook, news (each since its last good run) scripts
                Yahoo Finance: indices, India VIX, US 10Y, USD/INR, gold; IBJA India gold scripts
-  2. filter    drop seen, newsletters, one-time codes, muted; money/HR mail listed, not sent;  scripts
+  2. filter    drop seen, newsletters, one-time codes, sign-in/security notices, muted;  scripts
+               money/HR mail listed, not sent;
                cap news per topic; fit everything into ~11k tokens
   3. rank      ONE call: Gemini 3.1 Flash-Lite → 3.5 Flash-Lite → Gemma 4               model
                (no call at all when nothing new; unranked list if every model fails)
-  4. render    markets block + top items + what failed                                  scripts
+  4. render    Markets, Gmail, Outlook, Slack, News sections + what failed;             scripts
+               lowest-ranked work items fold into "+N more" past one Telegram message
   5. save      editions/YYYY-MM-DD.{json,txt}; seen ids; per-source watermarks          scripts
   stdout → Hermes delivers it to Telegram
 ```
@@ -25,8 +29,8 @@ next time, so nothing is lost.
 **Privacy:** item titles and snippets from Slack (including hospital channels) and mail go to the
 Gemini free tier, which may use them to improve Google's products. Money and HR mail (receipts,
 payments, payslips… by subject word or sender, `mail.private_*` in `brief.yaml`) is never sent:
-the script lists its subject under "💳 Money & HR". One-time codes and sign-in links
-(`mail.noise_subject_patterns`) are dropped entirely.
+the script lists its subject under "💳 Money & HR" in that account's section. One-time codes, sign-in links and
+sign-in/security notices (`mail.noise_subject_patterns`) are dropped entirely.
 
 ## Telegram commands (`/brief …`, never a model call)
 

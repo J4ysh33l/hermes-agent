@@ -102,7 +102,7 @@ def _display(member: dict) -> str:
 
 def _label(conv: dict, people: People) -> str:
     if conv.get("is_im"):
-        return f"DM: {people.name(conv.get('user', ''))}"
+        return people.name(conv.get("user", ""))
     if conv.get("is_mpim"):  # name looks like mpdm-asha--ravi--you-1
         handles = conv.get("name", "").removeprefix("mpdm-").rsplit("-", 1)[0].split("--")
         return "Group DM: " + ", ".join(h for h in handles if h)
@@ -174,14 +174,15 @@ def _items(messages: list[Message], convs: dict[str, dict], people: People, sett
     for (cid, thread), msgs in buckets.items():
         conv = convs[cid]
         label = _label(conv, people)
-        where = f"{_group(conv, label, settings)} · {label}" + (" (thread)" if thread else "")
+        where = label + (" (thread)" if thread else "")
         senders = list(dict.fromkeys(people.name(m.user) for m in msgs if m.user))
         lines = " / ".join(f"{people.name(m.user)}: {' '.join(m.text.split())}" for m in msgs[-6:])
         latest = msgs[-1]
         count = f"{len(msgs)} new: " if len(msgs) > 1 else ""
         items.append(Item(uid=f"slack:{cid}:{thread}:{latest.ts}", source="slack",
                           title=(count + " ".join(latest.text.split()))[:140], snippet=lines[:600],
-                          sender=", ".join(senders)[:80], where=where, ts=float(latest.ts), url=latest.link))
+                          sender=", ".join(senders)[:80], where=where, topic=_group(conv, label, settings),
+                          ts=float(latest.ts), url=latest.link))
     return sorted(items, key=lambda i: i.ts, reverse=True)
 
 

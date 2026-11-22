@@ -100,9 +100,9 @@ How we make sense of the IDs:
        Core: [core-team, product, leadership]
        Hospital: [icu-ops, opd-alerts]
        Home: [family, house-admin]
-     dm_group: People              # all 1:1 and group DMs land here
-     other_group: Other channels   # any channel you didn't list
-     weights: {Core: 2, Hospital: 1.5, People: 2, Home: 1, Other channels: 0.5}
+     dm_group: Direct messages     # all 1:1 and group DMs land here
+     other_group: Channels         # any channel you didn't list
+     weights: {Core: 2, Hospital: 1.5, Direct messages: 2, Home: 1, Channels: 0.5}
    ```
 
 5. **Renames:** a channel you put in a group that gets renamed simply moves to

@@ -95,6 +95,10 @@ def collect(http: Http, settings: Settings, secrets: Secrets, store: Store, now:
     return results
 
 
+def _slack_order(settings: Settings) -> tuple[str, ...]:
+    return (settings.slack_dm_group, *(g for g, _ in settings.slack_groups), settings.slack_other_group)
+
+
 def run(http: Http, settings: Settings, secrets: Secrets, store: Store, now: float, *, dry_run: bool = False) -> RunResult:
     tz = ZoneInfo(settings.timezone)
     results = collect(http, settings, secrets, store, now)
@@ -114,8 +118,8 @@ def run(http: Http, settings: Settings, secrets: Secrets, store: Store, now: flo
     rest = [i for i in candidates if i.uid not in chosen]
     day = datetime.fromtimestamp(now, tz)
     text = render.brief_text(day=day, ranked=list(ranked.items), lines=ranked.lines,
-                             total_new=len(ranked.items) + len(rest), markets=market, results=results,
-                             model=ranked.model, tz=tz, private=private)
+                             rest=rest, markets=market, results=results, model=ranked.model, tz=tz,
+                             private=private, slack_order=_slack_order(settings))
     if not dry_run:
         meta = {"model": ranked.model, "model_errors": list(ranked.errors), "over_budget": len(over),
                 "failed": {r.name: r.error for r in results if r.error}}
