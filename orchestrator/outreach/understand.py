@@ -5,8 +5,8 @@
 - ``write_messages``: ``/slack draft`` → one message per person you named.
 - ``pick_requests``: messages from others that ask you to meet → reason, length, urgency.
 
-The chain comes from ``Settings.models_for(people)``: Gemma first for one or a few people, the
-Gemini chain for big batches. A rate limit, server error or unreadable answer moves to the next
+The chain comes from ``Settings.models_for(people)``: Flash-Lite then Gemma for one or a few
+people, the longer Gemini chain for big batches. A rate limit, server error or unreadable answer moves to the next
 model.
 """
 

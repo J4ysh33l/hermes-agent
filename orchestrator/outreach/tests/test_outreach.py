@@ -179,7 +179,7 @@ class SlackSend(Base):
         reply = self.slack("draft @priya @rahul: ask for Q3 numbers by Friday")
         self.assertIn("Nothing is sent yet", reply)
         self.assertEqual(self.posts(), [])
-        self.assertEqual(self.model_calls(), ["gemma-4-31b-it"], "two people: Gemma first")
+        self.assertEqual(self.model_calls(), ["gemini-3.1-flash-lite"], "two people: Flash-Lite first")
         self.slack("yes 2")
         self.assertEqual(self.posts(), [{"channel": "D-U2", "text": "Hi Rahul, could you share the Q3 numbers by Friday?"}])
         self.assertIn("Nothing is waiting", self.slack("yes"))
@@ -193,11 +193,15 @@ class SlackSend(Base):
     def test_json_models_can_only_answer_with_the_people_ids_and_gemma_gets_no_schema(self):
         self.model({"messages": [{"to": f"p{n}", "text": "Q3 numbers by Friday?"} for n in range(1, 5)]})
         self.slack("draft @priya @rahul @amit @neha: ask for Q3 numbers by Friday")
+        self.http.on("POST", GEMINI + "gemini-3.1-flash-lite", http_error(503, "overloaded"))
         self.slack("draft @priya: ask for Q3 numbers by Friday")
-        configs = [c.json_body["generationConfig"] for c in self.http.calls if c.url.startswith(GEMINI)]
-        allowed = configs[0]["responseSchema"]["properties"]["messages"]["items"]["properties"]["to"]["enum"]
+        configs = [(c.url.removeprefix(GEMINI).split(":")[0], c.json_body["generationConfig"])
+                   for c in self.http.calls if c.url.startswith(GEMINI)]
+        allowed = configs[0][1]["responseSchema"]["properties"]["messages"]["items"]["properties"]["to"]["enum"]
         self.assertEqual(allowed, ["p1", "p2", "p3", "p4"], "four people: Gemini, ids enforced")
-        self.assertNotIn("responseSchema", configs[1], "one person: Gemma first, no schema support")
+        self.assertEqual([m for m, _ in configs[1:]], ["gemini-3.1-flash-lite", "gemma-4-31b-it"],
+                         "one person: Flash-Lite first, Gemma when it fails")
+        self.assertNotIn("responseSchema", configs[2][1], "Gemma has no schema support")
 
     def test_drafts_are_written_in_the_style_file_and_keep_the_facts_rule(self):
         (self.state / "outreach").mkdir(exist_ok=True)

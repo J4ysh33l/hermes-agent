@@ -32,7 +32,8 @@ people, 15:00–19:00, 15 min each → 15:00, 15:20, … 18:00–18:15.
 
 ## Which model
 
-- Fewer than `big_from_people` (4) people: `models_small`, Gemma 4 first.
+- Fewer than `big_from_people` (4) people: `models_small`, Flash-Lite first, then Gemma 4 (often
+  overloaded on the free tier, so it is the backup).
 - 4 or more people, or finding meeting requests: `models_big`, Gemini Flash-Lite first.
 - A request for 30 people uses about 1–3k tokens, inside Gemma's 16K tokens per minute. Every call
   is logged in `usage/calls.jsonl` (workflow `outreach`).
