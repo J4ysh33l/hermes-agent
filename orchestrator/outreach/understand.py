@@ -60,7 +60,7 @@ WRITE = """Write one Slack direct message per person below, sent by a busy found
 People:
 {people}
 What to tell them: <<<{text}>>>
-Return JSON only: {{"messages": [{{"to": "<person id>", "text": "..."}}]}}"""
+Return JSON only: {{"messages": [{{"to": "p1", "text": "..."}}]}}, where "to" is the id before "=" (p1, p2, ...)."""
 
 PICK = """Each row is a Slack message or email sent to a busy founder in the last few days. Pick the rows
 where the sender asks to meet, call or talk with the founder, and has not been given a time yet.
@@ -107,14 +107,14 @@ def _json(text: str) -> dict[str, Any]:
 
 
 def _ask(http: Http, key: str, prompt: str, models: tuple[ModelChoice, ...], step: str,
-         max_out: int) -> dict[str, Any]:
+         max_out: int, schema: dict[str, Any] | None = None) -> dict[str, Any]:
     if not key:
         raise OutreachError("GEMINI_API_KEY is not set in $HERMES_HOME/.env")
     errors = []
     for model in models:
         try:
             return _json(llm.gemini(http, key, model.id, prompt, workflow="outreach", step=step,
-                                    json_mode=model.json_mode, max_output_tokens=max_out))
+                                    json_mode=model.json_mode, max_output_tokens=max_out, schema=schema))
         except (HttpError, ValueError) as exc:
             errors.append(f"{model.id}: {str(exc)[:120]}")
     raise OutreachError("No model could read that. " + "; ".join(errors))
@@ -168,14 +168,26 @@ def read_request(http: Http, key: str, text: str, settings: Settings, now: datet
                    group=bool(raw.get("group")), send_at=_when(raw.get("send_at")), messages=messages)
 
 
+def _messages_schema(ids: list[str]) -> dict[str, Any]:
+    """JSON-mode models can only answer with these ids in "to" (Gemma has no schema; names are matched)."""
+    item = {"type": "OBJECT", "properties": {"to": {"type": "STRING", "enum": ids}, "text": {"type": "STRING"}},
+            "required": ["to", "text"]}
+    return {"type": "OBJECT", "properties": {"messages": {"type": "ARRAY", "items": item}}, "required": ["messages"]}
+
+
 def write_messages(http: Http, key: str, people: list[Person], text: str, settings: Settings) -> dict[str, str]:
     """slack_id → message. Everyone named must get one, or the whole draft fails."""
     ids = {f"p{n}": p for n, p in enumerate(people, start=1)}
     rows = "\n".join(f"{k} = {p.name} (first name {p.first})" for k, p in ids.items())
+    # Models sometimes answer with the full name instead of the id; both name one person here.
+    keys = {k.casefold(): p for k, p in ids.items()} | {p.name.casefold(): p for p in people}
     raw = _ask(http, key, WRITE.format(style=style(settings), people=rows, text=text.strip()[:3000]),
-               settings.models_for(len(people)), "write", 300 + 150 * len(people))
-    out = {ids[k].slack_id: str(m.get("text") or "").strip()[:1500]
-           for m in raw.get("messages") or [] if isinstance(m, dict) and (k := str(m.get("to"))) in ids}
+               settings.models_for(len(people)), "write", 300 + 150 * len(people), _messages_schema(list(ids)))
+    out = {}
+    for m in raw.get("messages") or []:
+        person = keys.get(str(m.get("to") or "").strip().casefold()) if isinstance(m, dict) else None
+        if person:
+            out[person.slack_id] = str(m.get("text") or "").strip()[:1500]
     missing = [p.name for p in people if not out.get(p.slack_id)]
     if missing:
         raise OutreachError("The model skipped " + ", ".join(missing) + ". Try again.")
