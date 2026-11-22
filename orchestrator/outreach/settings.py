@@ -51,8 +51,9 @@ class Settings:
     detect_words: tuple[str, ...] = ("call", "meet", "meeting", "sync", "discuss", "catch up", "chat",
                                      "available", "free", "time", "slot", "1:1", "connect", "talk")
     big_from_people: int = 4  # this many people or more → the big-batch model chain
-    models_small: tuple[ModelChoice, ...] = (ModelChoice("gemma-4-31b-it", False),
-                                             ModelChoice("gemini-3.1-flash-lite"))
+    # Flash-Lite first: Gemma 4 on the free tier often answers 503 (overloaded), costing a call and a wait.
+    models_small: tuple[ModelChoice, ...] = (ModelChoice("gemini-3.1-flash-lite"),
+                                             ModelChoice("gemma-4-31b-it", False))
     models_big: tuple[ModelChoice, ...] = (ModelChoice("gemini-3.1-flash-lite"),
                                            ModelChoice("gemini-3.5-flash-lite"),
                                            ModelChoice("gemma-4-31b-it", False))

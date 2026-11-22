@@ -138,9 +138,9 @@ outreach:
   teams: true                 # every invite is a Teams meeting
   detect_days: 3              # "/meet 15:00-17:00": how far back to look for meeting requests
   big_from_people: 4          # this many people or more → models_big; fewer → models_small
-  models_small:               # one person or a few: Gemma first
-    - {id: gemma-4-31b-it, json_mode: false}
+  models_small:               # one person or a few: Flash-Lite first (Gemma is often overloaded)
     - {id: gemini-3.1-flash-lite, json_mode: true}
+    - {id: gemma-4-31b-it, json_mode: false}
   models_big:                 # big batches (10 people, detection): Gemini first
     - {id: gemini-3.1-flash-lite, json_mode: true}
     - {id: gemini-3.5-flash-lite, json_mode: true}
