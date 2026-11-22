@@ -339,3 +339,6 @@ infografico/
 /pm/.lock.json.lock
 
 apps/desktop/.dist-build*
+
+# Local Claude context checkpoints (private)
+.claude/checkpoints/

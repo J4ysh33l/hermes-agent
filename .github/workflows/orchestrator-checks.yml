@@ -1,0 +1,27 @@
+# Fork-only: tests and secret scan for the orchestrator/ workflows (see orchestrator/README.md).
+name: orchestrator checks
+
+on:
+  pull_request:
+    paths: ["orchestrator/**", ".github/workflows/orchestrator-checks.yml"]
+  push:
+    branches: [main]
+    paths: ["orchestrator/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install media test tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && python -m pip install -q "pillow>=10,<13"
+      - name: Tests and secret scan
+        run: orchestrator/run_checks.sh --base "origin/${{ github.base_ref || 'main' }}"

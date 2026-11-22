@@ -1,0 +1,14 @@
+{
+  "size": [1080, 1080],
+  "background": {"gradient": ["#0f1b2d", "#274060"], "angle": 90},
+  "output": "promo_{id}.png",
+  "layers": [
+    {"type": "rect", "box": [0, 0, 1080, 14], "fill": "#ffcc00"},
+    {"type": "text", "text": "{kicker}", "box": [70, 70, 940, 50], "font": "DejaVu Sans Bold", "size": 34, "color": "#ffcc00", "upper": true},
+    {"type": "text", "text": "{headline}", "box": [70, 150, 940, 520], "font": "DejaVu Sans Bold", "size": 110, "min_size": 44,
+     "max_lines": 5, "color": "#ffffff", "valign": "middle", "line_spacing": 1.08, "stroke": 2, "stroke_color": "#0f1b2d"},
+    {"type": "rect", "box": [70, 720, 940, 150], "fill": "#ffffff", "opacity": 0.12, "radius": 24},
+    {"type": "text", "text": "{price}", "box": [100, 735, 880, 120], "font": "DejaVu Sans Bold", "size": 90, "color": "#ffffff", "align": "center", "valign": "middle"},
+    {"type": "image", "path": "{logo}", "box": [70, 910, 220, 120], "fit": "contain", "optional": true}
+  ]
+}
