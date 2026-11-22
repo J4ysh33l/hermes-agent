@@ -228,5 +228,82 @@ class Run(unittest.TestCase):
         self.assertFalse((self.home / "hr/pending.json").exists())
 
 
+INTERVIEWS = """Date: 19/11/2026
+Panel: rishabh@co.com, nidhi@co.com
+Rohan Das, Data Analyst, 11:45, 12:15, rohan@example.com
+Asha Verma, Director, Operations, 11:00, 11:30, Asha@example.com"""
+
+
+class Interviews(unittest.TestCase):
+    """NOW is Wed 18 Nov 2026, 16:36 IST; the interviews are the next day."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        home = Path(self.tmp.name)
+        self.state = home / "brief"
+        (self.state / "tokens").mkdir(parents=True)
+        (home / ".env").write_text("MS_CLIENT_ID=ms\nMS_TENANT_ID=t\n", encoding="utf-8")
+        (self.state / "tokens/microsoft.json").write_text('{"refresh_token": "r0"}', encoding="utf-8")
+        self.events: list[dict] = []
+        self.busy: list[dict] = []
+        self.http = FakeHttp()
+        self.http.on("POST", "https://login.microsoftonline.com/t/oauth2/v2.0/token",
+                     {"access_token": "a", "refresh_token": "r1"})
+        self.http.on("GET", GRAPH + "/me/calendarView", lambda _c: {"value": self.busy})
+        self.http.on("POST", GRAPH + "/me/events", self._event)
+        self.home = home
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _event(self, call):
+        self.events.append(call.json_body)
+        teams = call.json_body.get("isOnlineMeeting")
+        return {"id": f"E{len(self.events)}", "onlineMeeting": {"joinUrl": "https://teams.example/j/1"} if teams else None}
+
+    def hr(self, words: str) -> str:
+        return chat.handle(words, self.state, self.http, NOW)
+
+    def test_one_link_and_each_candidate_gets_only_their_own_slot(self):
+        preview = self.hr("interview\n" + INTERVIEWS)
+        self.assertIn("1. 11:00–11:30 Asha Verma, Director, Operations, asha@example.com", preview,
+                      "sorted by time; a position may contain commas")
+        self.assertIn("Nothing is sent yet", preview)
+        self.assertEqual(self.events, [])
+        self.assertIn("Invited 2 of 2", self.hr("interview yes"))
+        panel, *candidates = self.events
+        self.assertTrue(panel["isOnlineMeeting"])
+        self.assertEqual([a["emailAddress"]["address"] for a in panel["attendees"]], ["rishabh@co.com", "nidhi@co.com"])
+        self.assertIn("11:45–12:15 Rohan Das", panel["body"]["content"])
+        self.assertEqual(panel["start"]["dateTime"], "2026-11-19T05:30:00", "the block starts at the first slot (UTC)")
+        self.assertEqual(panel["end"]["dateTime"], "2026-11-19T06:45:00")
+        for event, email, start in zip(candidates, ["asha@example.com", "rohan@example.com"], ["05:30", "06:15"]):
+            self.assertEqual([a["emailAddress"]["address"] for a in event["attendees"]], [email], "no one else's email")
+            self.assertNotIn("isOnlineMeeting", event, "a candidate's event makes no second link")
+            self.assertIn("https://teams.example/j/1", event["body"]["content"])
+            self.assertEqual(event["start"]["dateTime"], f"2026-11-19T{start}:00")
+        self.assertNotIn("Rohan", candidates[0]["body"]["content"])
+        self.assertIn("No interviews are waiting", self.hr("interview yes"), "a second yes invites nobody")
+
+    def test_overlaps_past_times_and_bad_rows_are_all_listed_and_nothing_is_saved(self):
+        reply = self.hr("interview Date: 19/11/2026; Asha, SWE, 11:00, 11:30, asha@example.com;"
+                        " Ravi, SWE, 11:15, 11:45, ravi@example.com; Meera, SWE, 25:00, 11:00, meera;"
+                        " Kabir, SWE, 11:00")
+        self.assertIn("Asha (11:00–11:30) overlaps Ravi (11:15–11:45)", reply)
+        self.assertIn("Meera): start '25:00' is not a time", reply)
+        self.assertIn("Meera): 'meera' is not an email address", reply)
+        self.assertIn("Line 5: needs Name, Position, Start, End, Email", reply)
+        self.assertIn("Nothing was saved", self.hr("interview Date: 18/11/2026; Asha, SWE, 09:00, 09:30, a@example.com"))
+        self.assertIn("Add a line 'Date: dd/mm/yyyy'", self.hr("interview Asha, SWE, 11:00, 11:30, a@example.com"))
+        self.assertIn("No interviews are waiting", self.hr("interview show"))
+
+    def test_your_busy_time_is_a_warning_and_no_cancels(self):
+        self.busy = [{"start": {"dateTime": "2026-11-19T05:45:00.0000000"}, "end": {"dateTime": "2026-11-19T06:00:00.0000000"},
+                      "showAs": "busy"}]
+        self.assertIn("⚠️ Asha Verma 11:00–11:30: you have something else then", self.hr("interview\n" + INTERVIEWS))
+        self.assertIn("Nobody was invited", self.hr("interview no"))
+        self.assertEqual(self.events, [])
+
+
 if __name__ == "__main__":
     unittest.main()

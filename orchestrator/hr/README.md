@@ -56,6 +56,35 @@ total_deductions reimbursement net_pay`.
 - The same filler (`docfill`) will drive offer and termination letters.
 - Making PDFs needs LibreOffice (`soffice`) on the host.
 
+## Interviews
+
+`/hr interview` books a block of interviews on **one Teams link**, with each candidate invited only
+to their own slot. No AI model is used. Send it as one message, one line each:
+
+```
+/hr interview
+Date: 25/11/2026
+Panel: rishabh@medochealth.in, nidhi@medochealth.in
+Asha Verma, Backend Engineer, 11:00, 11:30, asha@gmail.com
+Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
+```
+
+- **Each line:** Name, Position, Start, End, Email. The position may contain commas
+  ("Director, Operations"). Times: `11:00`, `3:30pm`. `Panel:` is optional.
+- **The check:** every problem is listed at once (bad times or emails, missing fields, overlapping
+  slots, past times, the same email twice), and nothing is saved until it's clean. Slots can't
+  overlap because everyone shares the link. If your own calendar is busy during a slot, it warns.
+- **`/hr interview yes`:**
+  1. A Teams event on your calendar spans the whole block; the panel is invited and gets the full
+     schedule. This makes the one link.
+  2. Each candidate gets their own Outlook invite for their slot only, with that link, from your
+     mailbox. They never see each other's names or emails.
+- **The lobby:** candidates are outside your company, so Teams holds them in the lobby until
+  someone on the panel admits them. An early joiner can't walk into the previous interview.
+- `/hr interview show` · `/hr interview no`. A plan expires after `hr.preview_minutes`.
+- **Wording:** `hr.interview` in `brief.yaml` (company, subjects, HTML bodies); the defaults are in
+  `settings.py`. Uses the Outlook login's Calendars.ReadWrite, already granted.
+
 ## Setup
 
 - **Outlook:** the Entra app needs delegated **Mail.Send** with admin consent. Then sign in once
@@ -65,10 +94,11 @@ total_deductions reimbursement net_pay`.
 
 ## Tested
 
-- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 13 tests):
+- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 18 tests):
   - working-day LOP
   - every bad row listed, and nothing made
   - `/hr payslip skip` makes only the good rows; a changed sheet or a missing column makes nothing
+  - interviews: one Teams link, each candidate only on their own slot, overlaps and past times refused
   - placeholders split across runs
   - PDFs made, and the agent's reply carries no figures
   - `test` emails only you, `yes` emails each person their own PDF

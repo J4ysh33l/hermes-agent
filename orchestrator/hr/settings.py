@@ -20,6 +20,23 @@ DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sun
 
 
 @dataclass(frozen=True)
+class InterviewTexts:
+    """Your wording for ``/hr interview``. Placeholders: {first} {name} {position} {day} {start} {end}
+    {length} {join} {sender} {company}; the panel's also {positions} {schedule}. Bodies are HTML."""
+    company: str = "Medoc Health"
+    candidate_subject: str = "Interview for {position} at {company} | {day}, {start} IST"
+    candidate_body: str = (
+        "Hi {first},<br><br>Thank you for applying for the <b>{position}</b> role at {company}. "
+        "Your interview is on <b>{day}, {start}–{end} IST</b> ({length} min), on Microsoft Teams.<br><br>"
+        "<a href=\"{join}\">Join the interview</a> at your time. You'll wait in the lobby until the panel "
+        "lets you in.<br><br>Please keep your camera on and have your resume handy. If this time doesn't "
+        "work, reply to this email and we'll find another slot.<br><br>Best regards,<br>{sender}")
+    panel_subject: str = "Interviews: {positions} | {day}"
+    panel_body: str = ("Interview schedule for {day}. One Teams link for every slot; candidates wait in "
+                       "the lobby until you admit them.<br><br>{schedule}<br><br>{sender}")
+
+
+@dataclass(frozen=True)
 class Settings:
     weekly_off: frozenset[int] = frozenset({6})  # 0 = Monday … 6 = Sunday; LOP divides by the other days
     holidays: frozenset[date] = frozenset()
@@ -30,6 +47,8 @@ class Settings:
     mail_subject: str = "Payslip for {month}"
     mail_body: str = ("Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>"
                       "Regards,<br>{sender}")
+    interview: InterviewTexts = InterviewTexts()
+    max_interviews: int = 30  # candidates in one /hr interview batch
 
 
 def parse(raw: dict[str, Any]) -> Settings:
@@ -45,6 +64,9 @@ def parse(raw: dict[str, Any]) -> Settings:
         sender_name=str(hr.get("sender_name", base.sender_name)),
         mail_subject=str(hr.get("mail_subject", base.mail_subject)),
         mail_body=str(hr.get("mail_body", base.mail_body)),
+        interview=InterviewTexts(**{k: str(v) for k, v in (hr.get("interview") or {}).items()
+                                    if k in InterviewTexts.__dataclass_fields__}),
+        max_interviews=int(hr.get("max_interviews", base.max_interviews)),
     )
 
 

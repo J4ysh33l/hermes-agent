@@ -24,7 +24,7 @@ from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
 from orchestrator.outreach.plan import picks
 
-from . import payslips, settings
+from . import interview, payslips, settings
 from .payroll import Period
 from .payslips import Paths, rupees
 
@@ -42,8 +42,20 @@ problem is listed, and /hr payslip skip makes everyone else's slips, leaving tho
 /hr payslip skip — make the good rows' slips, leave the listed employees out
 /menu — all your commands"""
 
+INTERVIEW_HELP = """**/hr interview** — one Teams link for a block of interviews; each candidate is invited to their slot
+/hr interview, then one line each (or ; between lines):
+Date: 25/11/2026
+Panel: rishabh@medochealth.in, nidhi@medochealth.in   (optional: the interviewers)
+Asha Verma, Backend Engineer, 11:00, 11:30, asha@gmail.com
+Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
+→ a preview; nothing is sent. Slots can't overlap (one link). No AI model is used.
+/hr interview yes — create the Teams link, invite each candidate to their own slot and the panel to all
+/hr interview show · /hr interview no
+/menu — all your commands"""
+
 HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only after you approve
 /hr payslip — monthly payslips from the salary sheet (/hr payslip help for every step)
+/hr interview — one Teams link, each candidate invited to their own slot (/hr interview help)
 /menu — all your commands"""
 
 TZ = ZoneInfo("Asia/Kolkata")
@@ -204,18 +216,74 @@ def agent_make(args: list[str], state_dir: Path | None = None) -> str:
     return run_payslips(Context(state_dir or default_state_dir()), *args)
 
 
+def _interview_path(ctx: Context) -> Path:
+    return ctx.paths.home / "interview.json"
+
+
+def _interview_saved(ctx: Context) -> dict | None:
+    path = _interview_path(ctx)
+    if not path.is_file():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
+        path.unlink()
+        return None
+    return saved
+
+
+def _interview_make(ctx: Context, text: str) -> str:
+    parsed = interview.parse(text, datetime.fromtimestamp(ctx.now, TZ), ctx.settings.max_interviews)
+    if parsed.problems:
+        return "\n".join(["Nothing was saved. Fix all of this and send it again:",
+                          *(f"• {p}" for p in parsed.problems), "", "/hr interview help for the format"])
+    warnings = interview.busy_warnings(ctx.http, ctx.secrets, parsed)
+    saved = interview.plan(parsed, warnings, ctx.now)
+    payslips.save_private(_interview_path(ctx), saved)
+    return interview.preview(saved, ctx.settings.preview_minutes)
+
+
+def _interview_show(ctx: Context, _arg: str) -> str:
+    saved = _interview_saved(ctx)
+    return interview.preview(saved, ctx.settings.preview_minutes) if saved else "No interviews are waiting."
+
+
+def _interview_yes(ctx: Context, _arg: str) -> str:
+    saved = _interview_saved(ctx)
+    if saved is None:
+        return f"No interviews are waiting (a plan expires after {ctx.settings.preview_minutes} min)."
+    _interview_path(ctx).unlink()  # before sending: a second yes can never invite twice
+    return interview.send(ctx.http, ctx.secrets, saved, ctx.settings,
+                          lambda to, ok, note: ctx.log(to, "interview", ok, note))
+
+
+def _interview_no(ctx: Context, _arg: str) -> str:
+    path = _interview_path(ctx)
+    if path.is_file():
+        path.unlink()
+        return "Cancelled. Nobody was invited."
+    return "Nothing was waiting."
+
+
 PAYSLIP = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "skip": _skip}
-TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP)}  # next: "letter" (offer, termination)
+INTERVIEW = {"show": _interview_show, "yes": _interview_yes, "no": _interview_no, "cancel": _interview_no}
+TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
+          "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP)}  # next: "letter" (offer, termination)
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
+
+
+def _split(text: str) -> tuple[str, str]:
+    """First word and the rest; a new line counts as a space (interview rows come one per line)."""
+    parts = (text or "").strip().split(maxsplit=1)
+    return (parts[0], parts[1]) if len(parts) == 2 else ((parts[0], "") if parts else ("", ""))
 
 
 def handle(raw: str, state_dir: Path | None = None, http: Http | None = None, now: float | None = None) -> str:
     """``payslip show`` → that step; ``payslip <sheet> <dates>`` → make; anything else → help."""
-    topic, _, rest = (raw or "").strip().partition(" ")
+    topic, rest = _split(raw)
     if topic.lower() not in TOPICS:
         return HR_HELP
     steps, make, help_text = TOPICS[topic.lower()]
-    word, _, arg = rest.strip().partition(" ")
+    word, arg = _split(rest)
     if not word or word.lower() in HELP_WORDS:
         return help_text
     step = steps.get(word.lower())

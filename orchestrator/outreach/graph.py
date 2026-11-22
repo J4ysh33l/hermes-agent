@@ -75,7 +75,8 @@ def find_people(http: Http, token: str, word: str) -> list[dict[str, str]]:
 
 
 def create_event(http: Http, token: str, *, subject: str, body_html: str, start: datetime, end: datetime,
-                 attendees: list[dict[str, str]], teams: bool, transaction_id: str = "") -> tuple[str, str]:
+                 attendees: list[dict[str, str]], teams: bool, transaction_id: str = "",
+                 location: str = "") -> tuple[str, str]:
     """Returns (event id, Teams join link or ''). Outlook emails the invite immediately."""
     body = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
             "start": {"dateTime": _iso(start), "timeZone": "UTC"},
@@ -85,6 +86,8 @@ def create_event(http: Http, token: str, *, subject: str, body_html: str, start:
             "allowNewTimeProposals": True, "responseRequested": True}
     if transaction_id:
         body["transactionId"] = transaction_id
+    if location:
+        body["location"] = {"displayName": location}
     if teams:
         body |= {"isOnlineMeeting": True, "onlineMeetingProvider": "teamsForBusiness"}
     data = _call(http, token, "POST", "/me/events", json_body=body)
