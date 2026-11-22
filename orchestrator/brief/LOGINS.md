@@ -240,7 +240,15 @@ Do steps 1–9 once, signed in as **the account you want to own the project** (s
        **Publish app** stays greyed out with "complete your configuration on the Branding
        page".
      - **Do not upload a logo.** A logo forces Google verification.
-     - Home page, privacy policy and authorised domains can stay empty.
+     - Click **Save** at the bottom of Branding, then reload **Audience**.
+     - If **Publish app** is still grey, hover over it. Google's tooltip may ask for an
+       **Application home page** and an **Application privacy policy link** before an External
+       app can go to production. These must be real public pages on a domain you add under
+       **Authorised domains**.
+     - Several developers report that placeholder links don't work.
+     - Options for the pages:
+       - two plain pages on a domain you control
+       - GitHub Pages on your account
    - **Finish:** tick the box agreeing to the Google API Services User Data Policy, then
      **Continue → Create**.
 5. Go to **Google Auth platform → Data Access**.
@@ -392,6 +400,9 @@ Reading the result:
 - **`AADSTS53003`**: a Conditional Access policy is blocking it.
 - **`AADSTS7000218`**: "Allow public client flows" is off (3.1 step 4).
 - **`AADSTS700016`** or **`AADSTS90002`**: one of the two IDs is wrong.
+
+**Medoc's tenant (checked 2026-11-22): security defaults are Enabled, so device code is
+blocked.** Use the paste-back (authorization code + PKCE) login below.
 
 **What to do about it.** Don't turn security defaults off: that removes MFA protection for
 your whole company. Choose one:
