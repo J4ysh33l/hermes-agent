@@ -23,6 +23,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `scripts/` | Stage 1 control scripts (pause switch, status, ticket queue, Telegram control bot, usage tier, dashboard, change gate, big-file trim, output cap) and `media/`. See `scripts/README.md`. |
 | `scripts/hermes_config_snippet.yaml` | Tested Hermes config additions: no-LLM quick commands, context budget, aux-model pinning. |
 | `checks/secretscan.py` | Standard-library secret scanner (tokens, keys, credential file names). `secretscan: allow` on a line skips it. |
+| `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 
 Each workflow will get its own folder here and ship as a Hermes profile distribution.

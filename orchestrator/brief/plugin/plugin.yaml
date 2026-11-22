@@ -1,0 +1,4 @@
+name: brief
+version: 0.1.0
+description: "/brief commands for the morning brief: more, topics, watch, follow, mute. No model calls."
+author: orchestrator (fork-only)
