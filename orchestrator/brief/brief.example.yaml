@@ -145,6 +145,7 @@ outreach:
     - {id: gemini-3.1-flash-lite, json_mode: true}
     - {id: gemini-3.5-flash-lite, json_mode: true}
     - {id: gemma-4-31b-it, json_mode: false}
+  # How drafts sound: $HERMES_HOME/brief/outreach/style.md (free text, see outreach/README.md).
   # Your wording. Placeholders: {first} {name} {topic} {length} {day} {start} {end} {join}.
   # {join} becomes " Join on Teams: <link>" in the Slack note and the channel post.
   # Bodies are HTML (use <br> for a new line). Leave a key out to keep the default.
