@@ -23,11 +23,14 @@ def _text(data: dict[str, Any]) -> str:
 
 
 def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str, json_mode: bool = False,
-           max_output_tokens: int = 1200, temperature: float = 0.2) -> str:
-    """One generateContent call. Raises whatever ``http`` raises; the usage line is written first."""
+           max_output_tokens: int = 1200, temperature: float = 0.2, schema: dict[str, Any] | None = None) -> str:
+    """One generateContent call. Raises whatever ``http`` raises; the usage line is written first.
+    ``schema`` (JSON mode only) makes the API enforce the answer's shape, e.g. an ``enum`` of allowed ids."""
     config: dict[str, Any] = {"temperature": temperature, "maxOutputTokens": max_output_tokens}
     if json_mode:
         config["responseMimeType"] = "application/json"
+        if schema:
+            config["responseSchema"] = schema
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": config}
     started = time.monotonic()
     try:
