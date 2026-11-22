@@ -503,7 +503,7 @@ policy change.
 Things to know:
 - **More than 50 emails:** follow `@odata.nextLink` (needs a code change: we read only the
   first page).
-- **`internetMessageHeaders` in a list call:** Microsoft documents it only on single-message
+- **`internetMessageHeaders` in a list call:** works. It was tested on Medoc's mailbox on 2026-11-22: 15 emails came back in one call, 0.6 seconds, with no error. Background: Microsoft documents it only on single-message
   GETs. If the first real run returns a `400`, remove it from `$select`. Newsletter detection
   still works through Focused/Other.
 - **Alternative:** a **delta query**, `/me/mailFolders/inbox/messages/delta`. It returns
@@ -688,7 +688,6 @@ References:
   lags behind.
 - Whether `conversations.info` gives `last_read` for channels, not just DMs.
 - Whether `authuser=<email>` Gmail links open the right account.
-- Whether Graph accepts `internetMessageHeaders` in a list call.
 - Whether your tenant shows the new tabbed Authentication screen or the old one.
 - Whether "Personal mode" is open to ordinary @gmail.com accounts without the Developer
   Preview.

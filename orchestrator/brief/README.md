@@ -82,8 +82,7 @@ read every mailbox in the tenant; not used here.)
 - **Tested live from the cloud container (2026-11-22):** Yahoo chart data for every default
   symbol, India VIX and gold; the IBJA India gold rate; all ten default news feeds; Google News RSS; Hacker News; installer, cron
   launcher and the `/brief` handler in a throwaway Hermes home.
-- **Not tested yet:** real Slack, Gmail, Outlook and Gemini (no credentials here); the exact
+- **Tested live with real logins (2026-11-22):** Slack user token (61 conversations, 62 calls, 7.5 s); Gmail paste-back login and 24 h read (8 mails, 1.8 s); Outlook paste-back login under security defaults, token rotation, and 24 h read with `internetMessageHeaders` on the list call (15 mails, 2 calls).
+- **Not tested yet:** Gemini (no key here); the exact
   Gemini/Gemma model IDs (`models` command checks them); the plugin inside a running Hermes
-  gateway; real Telegram rendering; Yahoo from the AWS IP; whether Graph returns
-  `internetMessageHeaders` on the message list (newsletter detection in Outlook also uses
-  Focused/Other, so it still works without it).
+  gateway; real Telegram rendering; Yahoo from the AWS IP.
