@@ -134,6 +134,31 @@ Keep browser automation only for LinkedIn comments and DMs, on the dummy account
 3. Instagram: is the account already Business or Creator, and linked to a Facebook page?
 4. Who approves: you alone on Telegram, or someone else too?
 
+## To do when we come back to social: images and videos
+
+Text posting is planned above; media is the next step. Parts already exist in `scripts/media/`
+(tested on samples only, not on real files).
+
+**Images**
+- [ ] Brand template for `imgrender.py`: fonts, colours, logo placement (you supply). The weekly
+      pack gets an image row per post; the script renders PNGs with no model call.
+- [ ] Sizes per platform: Instagram 1080×1350 and 1080×1080, LinkedIn 1200×627, X 1600×900.
+- [ ] Carousels: several PNGs for Instagram; one PDF document for LinkedIn.
+- [ ] Logo swap and QC on real files (`logoswap.py`, `compare.py`), with the real logo and boxes.
+- [ ] Preview images on the Telegram approval card before anything posts.
+
+**Videos**
+- [ ] Reels from raw footage: `editplan.py` (transcribe, plan, vertical crop, captions, loudness).
+      Needs the Whisper model on the host and one real video to test end to end.
+- [ ] Upload path: Instagram Reels and LinkedIn video take a public URL or an upload, so use S3
+      presigned URLs; X video needs the media upload endpoint (billed on pay-per-use).
+- [ ] Limits per platform: length, size, aspect ratio, cover frame; check before upload.
+- [ ] Voice-over (Chatterbox) and motion graphics (Remotion): your own machine, not the 4 GB host.
+
+**Open questions for media**
+- Who makes the source footage and photos, and where do they land (Telegram, a Drive folder, the host)?
+- Is AI image generation wanted, or only templates (PIL) plus your own photos?
+
 ## Sources
 
 - [Blotato: X API pricing 2026](https://www.blotato.com/blog/twitter-api-pricing)
