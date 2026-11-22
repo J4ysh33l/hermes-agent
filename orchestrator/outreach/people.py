@@ -2,7 +2,10 @@
 
 Order: an email address as given; else your Slack workspace (handle, display name, real name, first
 name, email name; exact first, then 'starts with'); else your company directory in Outlook, whose
-email then finds their Slack account. Someone found only in Outlook has no Slack id: they get the
+email then finds their Slack account. A 'starts with' match ('@jay' → Jaysheel Bhatt) is marked
+``exact=False``: commands that send at once refuse it and ask for the full name; previews accept
+it, since you see the full name before anything goes. A name that matches no one gets up to three
+"did you mean" suggestions from the workspace; none is ever picked for you. Someone found only in Outlook has no Slack id: they get the
 invite email, not a Slack note.
 
 The Slack member list is cached for 12 hours in ``outreach/slack_users.json``.
@@ -10,6 +13,7 @@ The Slack member list is cached for 12 hours in ``outreach/slack_users.json``.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import time
@@ -41,6 +45,7 @@ class Lookup:
     word: str
     person: Person | None = None
     problem: str = ""
+    exact: bool = True  # False: matched by 'starts with' only
 
 
 def _member(m: dict) -> Person:
@@ -100,15 +105,22 @@ class Directory:
         return Person(name=name or local, first=first or (name or local).split(" ")[0].split(".")[0].title(),
                       email=email)
 
-    def _slack(self, word: str, handle: bool) -> list[dict]:
+    def _suggest(self, word: str) -> str:
+        names = {k: _member(m).name for m in self.members() for k in _keys(m)}
+        close = dict.fromkeys(names[k] for k in difflib.get_close_matches(word.lower(), list(names), n=6, cutoff=0.75))
+        return f" Did you mean {', '.join(list(close)[:3])}?" if close else ""
+
+    def _slack(self, word: str, handle: bool) -> tuple[list[dict], bool]:
         low = word.lower()
         if handle:  # '@priya' means the Slack handle or display name, before any first-name match
             named = [m for m in self.members()
                      if low in (m.get("name", "").lower(), ((m.get("profile") or {}).get("display_name") or "").lower())]
             if len(named) == 1:
-                return named
+                return named, True
         exact = [m for m in self.members() if low in _keys(m)]
-        return exact or [m for m in self.members() if any(k.startswith(low) for k in _keys(m))]
+        if exact:
+            return exact, True
+        return [m for m in self.members() if any(k.startswith(low) for k in _keys(m))], False
 
     def _outlook(self, word: str) -> list[dict[str, str]]:
         if self._graph_token is None:
@@ -124,9 +136,9 @@ class Directory:
             return Lookup(raw, problem="empty name")
         if EMAIL.match(word):
             return Lookup(raw, self._by_email(word.lower()))
-        found = self._slack(word, raw.strip().startswith("@"))
+        found, exact = self._slack(word, raw.strip().startswith("@"))
         if len(found) == 1:
-            return Lookup(raw, _member(found[0]))
+            return Lookup(raw, _member(found[0]), exact=exact)
         if len(found) > 1:
             names = ", ".join(_member(m).name for m in found[:5])
             return Lookup(raw, problem=f"'{word}' matches {names}. Use their @handle or email.")
@@ -136,15 +148,19 @@ class Directory:
         if len(staff) > 1:
             names = ", ".join(s["name"] for s in staff[:5])
             return Lookup(raw, problem=f"'{word}' matches {names} in Outlook. Use their email.")
-        return Lookup(raw, problem=f"No one called '{word}' in Slack or your company directory.")
+        return Lookup(raw, problem=f"No one called '{word}' in Slack or your company directory.{self._suggest(word)}")
 
-    def find_all(self, words: list[str]) -> tuple[list[Person], list[str]]:
-        """(people found, in order and without repeats; problems)."""
+    def find_all(self, words: list[str], exact_only: bool = False) -> tuple[list[Person], list[str]]:
+        """(people found, in order and without repeats; problems). ``exact_only`` turns a
+        'starts with' match into a problem that names the person it would have been."""
         people: list[Person] = []
         problems: list[str] = []
         for word in words:
             hit = self.find(word)
-            if hit.person is None:
+            if hit.person is not None and exact_only and not hit.exact:
+                problems.append(f"'{clean(word)}' is not a full name. Did you mean {hit.person.name}? "
+                                "Write their full first name, @handle or email.")
+            elif hit.person is None:
                 problems.append(hit.problem)
             elif hit.person not in people:
                 people.append(hit.person)

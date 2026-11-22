@@ -155,6 +155,18 @@ class SlackSend(Base):
         self.assertIn("Priya Rao", reply)
         self.assertEqual(self.posts(), [])
 
+    def test_a_typo_stops_and_suggests_but_never_picks(self):
+        reply = self.slack("send @rahull: hello")
+        self.assertIn("Did you mean Rahul Mehta", reply)
+        self.assertEqual(self.posts(), [])
+
+    def test_a_partial_name_is_refused_when_sending_at_once_but_shown_in_a_preview(self):
+        reply = self.slack("send @ami: hello")
+        self.assertIn("Did you mean Amit Jain", reply)
+        self.assertEqual(self.posts(), [])
+        self.model({"messages": [{"to": "p1", "text": "Hi Amit."}]})
+        self.assertIn("Amit Jain: Hi Amit.", self.slack("draft @ami: say hi"))
+
     def test_schedule_lets_slack_deliver_it_later(self):
         self.slack("schedule tomorrow 9am @priya: Standup moved to 10")
         body = next(c.json_body for c in self.http.calls if c.url.startswith(SLACK + "chat.scheduleMessage"))

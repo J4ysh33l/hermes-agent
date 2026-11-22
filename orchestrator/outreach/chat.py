@@ -68,8 +68,9 @@ def _fixed_names(rest: str) -> list[str] | None:
     return _names(rest) if words and all("@" in w for w in words) else None
 
 
-def _find(session: Session, words: list[str]) -> list[Person]:
-    people, problems = session.directory.find_all(words)
+def _find(session: Session, words: list[str], *, at_once: bool = False) -> list[Person]:
+    """``at_once``: the command sends without a preview, so only exact names count."""
+    people, problems = session.directory.find_all(words, exact_only=at_once)
     if problems:
         raise OutreachError("Nothing sent. " + " ".join(problems))
     if not people:
@@ -132,7 +133,7 @@ def _send(session: Session, arg: str, scheduled: bool) -> str:
             raise OutreachError("Give a time: /slack schedule tomorrow 9am @priya: …")
         send_at = datetime.combine(h.day or session.local_now.date(), h.start, session.tz)
         head = h.rest
-    people = _find(session, _names(head))
+    people = _find(session, _names(head), at_once=True)
     plan = build.messages(session, people, {p.slack_id: text for p in people}, group=group, send_at=send_at)
     if not plan.lines:
         return "Nothing sent. " + " ".join(plan.notes)
@@ -184,7 +185,7 @@ def _meet_fixed(session: Session, h: Head, topic: str) -> str | None:
     names = _fixed_names(h.rest)
     if names is None:
         return None
-    people = _find(session, names)
+    people = _find(session, names, at_once=len(names) == 1 and h.end is None)
     minutes = h.length or s.default_length
     plan = build.one_on_ones(session, [(p, minutes) for p in people], window, {p.email: topic for p in people},
                              title=f"1:1s: {topic or build.DEFAULT_TOPIC}")
