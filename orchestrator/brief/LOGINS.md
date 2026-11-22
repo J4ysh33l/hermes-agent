@@ -56,6 +56,11 @@ token only runs the search path.
 - **Total:** about 35–45 calls. All of them are Tier 3 (50+ a minute) except search (Tier 2,
   20 a minute). That's roughly 10–30 seconds with **no fixed sleep**. Only wait when Slack
   answers `429` and says how long in `Retry-After`.
+- **Measured on the real workspace (2026-11-22, internal app, user token):**
+  - `users.conversations` returned **61 conversations in one call**: 34 public, 1 private,
+    25 DMs and 1 group DM.
+  - Reading the last 24 h of all of them took **62 calls in 7.5 seconds**, with no
+    throttling.
 - **The 1.3-second pause can go.** It is in our code today (`slack.py:26`).
 - **For step 5, instead of the legacy search:** Slack's Real-time Search API
   (`assistant.search.context`) has been available to internal apps since Feb 2026. But it
