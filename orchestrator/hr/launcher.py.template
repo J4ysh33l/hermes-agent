@@ -5,6 +5,6 @@ import sys
 
 sys.path.insert(0, "@REPO_ROOT@")
 
-from orchestrator.hr.cli import main  # noqa: E402
+from orchestrator.hr.chat import agent_make  # noqa: E402
 
-sys.exit(main(["payslips", *sys.argv[1:]]))
+print(agent_make(sys.argv[1:]))

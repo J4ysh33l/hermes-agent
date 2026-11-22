@@ -1,5 +1,5 @@
 """``python -m orchestrator.hr <words>``: the /hr commands on the host, e.g.
-``python -m orchestrator.hr payslips ~/nov.xlsx 01/11/2026 30/11/2026 02/12/2026``."""
+``python -m orchestrator.hr payslip ~/nov.xlsx 01/11/2026 30/11/2026 02/12/2026``."""
 
 from __future__ import annotations
 

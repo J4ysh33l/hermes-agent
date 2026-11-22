@@ -1,9 +1,8 @@
-"""``/hr`` in Telegram, and the ``payslips`` step Hermes' agent runs with the sheet you send it.
+"""``/hr`` in Telegram: HR jobs, each under its own word. Today: ``/hr payslip``.
 
-/hr show — every slip waiting: name, email, net pay (no model; figures stay out of chat models)
-/hr test — emails 2 sample slips to YOU (``test all``: every slip, still only to you)
-/hr yes · /hr yes 1-10 — emails each person their own slip, from your Outlook
-/hr no — cancels the waiting batch (the PDFs stay in $HERMES_HOME/hr/payslips/)
+/hr payslip <sheet> <from> <to> <pay date> — make the slips (what Hermes' agent runs with your sheet)
+/hr payslip check · show · test · yes · no · skip — check a sheet, review, sample to you, send, cancel,
+  or leave out the rows with problems. No model ever sees pay; ``show`` is a command, not a chat turn.
 """
 
 from __future__ import annotations
@@ -29,16 +28,22 @@ from . import payslips, settings
 from .payroll import Period
 from .payslips import Paths, rupees
 
-HR_HELP = """**/hr** — payslips from your salary sheet, emailed from your Outlook (no AI model touches pay)
+PAYSLIP_HELP = """**/hr payslip** — payslips from your salary sheet, emailed from your Outlook (no AI model touches pay)
 Send Hermes the month's sheet (.xlsx/.csv) and say the period, e.g. "payslips for 1–30 Nov, paid 2 Dec".
 Columns: Employee Name, Position, DOJ, Email, Compensation, Basic, HRA, LOP Days
-(optional: Reimbursement, Other Deductions). Any bad row stops the run and is listed.
-/hr show — slips waiting: name, email, net pay
-/hr test — 2 sample slips emailed to you · /hr test all — every slip, to you only
-/hr yes — email everyone their own slip · /hr yes 1-10 — only those
-/hr no — cancel
-/hr check <sheet path> <from> <to> — only checks the sheet and lists every problem; makes nothing
-/hr payslips <sheet path> <from> <to> <pay date> — same as sending the sheet (dates dd/mm/yyyy)
+(optional: Reimbursement, Other Deductions). Any bad row stops the run; every employee with a
+problem is listed, and /hr payslip skip makes everyone else's slips, leaving those rows out.
+/hr payslip <sheet path> <from> <to> <pay date> — make the slips (dates dd/mm/yyyy); nothing is sent
+/hr payslip check <sheet path> <from> <to> — only checks the sheet and lists every problem
+/hr payslip show — slips waiting: name, email, net pay
+/hr payslip test — 2 sample slips emailed to you · test all — every slip, to you only
+/hr payslip yes — email everyone their own slip · yes 1-10 — only those
+/hr payslip no — cancel
+/hr payslip skip — make the good rows' slips, leave the listed employees out
+/menu — all your commands"""
+
+HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only after you approve
+/hr payslip — monthly payslips from the salary sheet (/hr payslip help for every step)
 /menu — all your commands"""
 
 TZ = ZoneInfo("Asia/Kolkata")
@@ -97,7 +102,7 @@ def _show(ctx: Context, _arg: str) -> str:
     total = sum(Decimal(i["net"]) for i in plan["items"])
     lines = [f"**Payslips, {plan['month']}** — {len(plan['items'])} people, total net {rupees(total)}", ""]
     lines += [f"{n}. {i['name']} — {i['email']} — {rupees(Decimal(i['net']))}" for n, i in enumerate(plan["items"], 1)]
-    lines += [""] + plan.get("notes", []) + ["", "/hr test · /hr yes · /hr yes 1-10 · /hr no"]
+    lines += [""] + plan.get("notes", []) + ["", "/hr payslip test · yes · yes 1-10 · no"]
     return "\n".join(lines)
 
 
@@ -128,7 +133,7 @@ def _test(ctx: Context, arg: str) -> str:
     me = graph.me(ctx.http, token)
     items = plan["items"] if arg.strip().lower() == "all" else plan["items"][:TEST_SAMPLES]
     failed = [f for i in items if (f := _mail(ctx, token, plan, i, ("", me), test=True))]
-    return "\n".join([f"Sent {len(items) - len(failed)} test slip(s) to {me} only. Check them, then /hr yes.",
+    return "\n".join([f"Sent {len(items) - len(failed)} test slip(s) to {me} only. Check them, then /hr payslip yes.",
                       *failed])
 
 
@@ -138,7 +143,7 @@ def _yes(ctx: Context, arg: str) -> str:
         return f"No payslips are waiting (a batch expires after {ctx.settings.preview_minutes} min)."
     chosen = picks(arg, len(plan["items"]))
     if chosen is None:
-        return f"Pick numbers between 1 and {len(plan['items'])}, e.g. /hr yes 1-10"
+        return f"Pick numbers between 1 and {len(plan['items'])}, e.g. /hr payslip yes 1-10"
     token = _token(ctx)
     ctx.paths.pending.unlink()
     failed = [f for n in chosen
@@ -157,33 +162,65 @@ def _no(ctx: Context, _arg: str) -> str:
 def _check(ctx: Context, arg: str) -> str:
     parts = arg.split()
     if len(parts) != 3:
-        return "Usage: /hr check <sheet path> <from> <to>, dates dd/mm/yyyy"
+        return "Usage: /hr payslip check <sheet path> <from> <to>, dates dd/mm/yyyy"
     try:
         period = Period(_date(parts[1]), _date(parts[2]), _date(parts[2]))
     except ValueError as exc:
         return str(exc)
-    batch, report = payslips.check(Path(parts[0]).expanduser(), period, ctx.settings, ctx.paths)
-    head = (f"✅ The sheet is ready: {len(batch.slips)} payslips for {period.month}." if batch
-            else "The sheet is not ready yet. Fix all of this:")
-    return "\n".join([head, *report])
+    checked = payslips.check(Path(parts[0]).expanduser(), period, ctx.settings, ctx.paths)
+    if checked.ready():
+        return "\n".join([f"✅ The sheet is ready: {len(checked.batch.slips)} payslips for {period.month}.",
+                          *checked.report()])
+    tail = (["", f"{len(checked.batch.slips)} rows are fine. When you send it with the pay date, you can "
+             f"leave the {len(checked.batch.left_out)} above out with /hr payslip skip."] if checked.can_leave_out() else [])
+    return "\n".join(["The sheet is not ready yet. Fix all of this:", *checked.report(), *tail])
 
 
-def _payslips(ctx: Context, arg: str) -> str:
+def _skip(ctx: Context, _arg: str) -> str:
+    path = ctx.paths.blocked
+    if not path.is_file():
+        return "Nothing to skip. /hr payslip skip works right after a run that stopped only because of bad rows."
+    held = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - held["created"] > ctx.settings.preview_minutes * 60:
+        path.unlink()
+        return "That run is too old. Send the sheet again."
+    period = Period(date.fromisoformat(held["start"]), date.fromisoformat(held["end"]),
+                    date.fromisoformat(held["pay_date"]))
+    return payslips.prepare(Path(held["sheet"]), period, ctx.settings, ctx.paths, ctx.now,
+                            leave_out=tuple(held["left_out"]))
+
+
+def _make(ctx: Context, arg: str) -> str:
     parts = arg.split()
     if len(parts) != 4:
-        return "Usage: /hr payslips <sheet path> <from> <to> <pay date>, dates dd/mm/yyyy"
+        return PAYSLIP_HELP
     return run_payslips(ctx, *parts)
 
 
-COMMANDS = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "payslips": _payslips}
+def agent_make(args: list[str], state_dir: Path | None = None) -> str:
+    """The only entry Hermes' agent has: make slips from a sheet. It can't reach show, test, yes or skip."""
+    if len(args) != 4:
+        return "Usage: hr_payslips.py <sheet path> <from> <to> <pay date>, dates dd/mm/yyyy"
+    return run_payslips(Context(state_dir or default_state_dir()), *args)
+
+
+PAYSLIP = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "skip": _skip}
+TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP)}  # next: "letter" (offer, termination)
+HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 
 def handle(raw: str, state_dir: Path | None = None, http: Http | None = None, now: float | None = None) -> str:
-    word, _, arg = (raw or "").strip().partition(" ")
-    command = COMMANDS.get(word.lower())
-    if command is None:
+    """``payslip show`` → that step; ``payslip <sheet> <dates>`` → make; anything else → help."""
+    topic, _, rest = (raw or "").strip().partition(" ")
+    if topic.lower() not in TOPICS:
         return HR_HELP
+    steps, make, help_text = TOPICS[topic.lower()]
+    word, _, arg = rest.strip().partition(" ")
+    if not word or word.lower() in HELP_WORDS:
+        return help_text
+    step = steps.get(word.lower())
     try:
-        return command(Context(state_dir or default_state_dir(), http, now), arg)
+        ctx = Context(state_dir or default_state_dir(), http, now)
+        return step(ctx, arg) if step else make(ctx, rest)
     except OutreachError as exc:
         return str(exc)

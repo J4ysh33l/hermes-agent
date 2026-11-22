@@ -74,9 +74,10 @@ class Slip:
 @dataclass(frozen=True)
 class Batch:
     slips: tuple[Slip, ...]
-    problems: tuple[str, ...]  # any → nothing is generated
+    problems: tuple[str, ...]  # any → nothing is generated, unless you choose to leave those rows out
     skipped: tuple[str, ...]  # Compensation 0: listed, not paid
     warnings: tuple[str, ...]
+    left_out: tuple[str, ...] = ()  # "Row 6 (Avni)" for every row with a problem; never in ``slips``
 
 
 def working_days(period: Period, settings: Settings) -> int:
@@ -147,6 +148,7 @@ def build(rows: list[dict[str, str]], period: Period, settings: Settings,
     problems: list[str] = []
     skipped: list[str] = []
     warnings: list[str] = []
+    left_out: list[str] = []
     for raw in rows:
         if raw.get("compensation", "").replace(",", "").strip() in ("", "0"):
             skipped.append(f"Row {raw['row']} ({raw.get('name') or 'no name'}): compensation is 0, no slip")
@@ -156,14 +158,19 @@ def build(rows: list[dict[str, str]], period: Period, settings: Settings,
                             "check before paying)")
         slip, found = _row(raw, period, days, absent)
         problems += found
+        if found:
+            left_out.append(f"Row {raw['row']} ({raw.get('name') or 'no name'})")
         if slip is None:
             continue
         if slip.doj > period.start:
             warnings.append(f"{slip.name} joined {slip.doj:%d/%m/%Y}, inside this period: check the LOP days")
         slips.append(slip)
-    seen: dict[str, str] = {}
+    by_email: dict[str, list[Slip]] = {}
     for slip in slips:
-        if slip.email in seen:
-            problems.append(f"{slip.email} is on two rows ({seen[slip.email]} and {slip.name})")
-        seen[slip.email] = slip.name
-    return Batch(tuple(slips), tuple(problems), tuple(skipped), tuple(warnings))
+        by_email.setdefault(slip.email, []).append(slip)
+    for email, same in by_email.items():
+        if len(same) > 1:  # neither row can be trusted to be that person's address
+            problems.append(f"{email} is on {len(same)} rows (" + " and ".join(s.name for s in same) + ")")
+            left_out += [f"Row {s.row} ({s.name})" for s in same]
+    slips = [s for s in slips if len(by_email[s.email]) == 1]
+    return Batch(tuple(slips), tuple(problems), tuple(skipped), tuple(warnings), tuple(left_out))
