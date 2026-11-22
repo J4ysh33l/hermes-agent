@@ -184,6 +184,12 @@ class SlackSend(Base):
         self.assertEqual(self.posts(), [{"channel": "D-U2", "text": "Hi Rahul, could you share the Q3 numbers by Friday?"}])
         self.assertIn("Nothing is waiting", self.slack("yes"))
 
+    def test_a_draft_addressed_by_full_name_instead_of_id_is_still_matched(self):
+        self.model({"messages": [{"to": "Priya Shah", "text": "Q3 numbers Friday tak bhej dena?"}, "junk"]})
+        self.assertIn("Nothing is sent yet", self.slack("draft @priya: ask for Q3 numbers by Friday"))
+        self.slack("yes")
+        self.assertEqual(self.posts(), [{"channel": "D-U1", "text": "Q3 numbers Friday tak bhej dena?"}])
+
     def test_drafts_are_written_in_the_style_file_and_keep_the_facts_rule(self):
         (self.state / "outreach").mkdir(exist_ok=True)
         (self.state / "outreach/style.md").write_text("Hinglish with teammates. Example: {bhai} update?",

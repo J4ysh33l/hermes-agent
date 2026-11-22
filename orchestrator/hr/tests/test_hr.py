@@ -166,6 +166,15 @@ class Run(unittest.TestCase):
         self.assertNotIn("email is missing", reply, "a missing column is named once, not on every row")
         self.assertFalse((self.home / "hr/payslips").exists())
 
+    def test_common_header_names_are_accepted_and_a_0_email_is_one_problem(self):
+        self.sheet.write_text("Employee Name,Position,Email,DOJ,Compensation,Basic Pay,HRA,LOP Days\n"
+                              "Asha,SWE,asha@example.com,1/1/2026,30000,25000,5000,0\n"
+                              "Ravi,SWE,0,1/1/2026,30000,25000,5000,0\n", encoding="utf-8")
+        reply = self.hr(f"check {self.sheet} 01/11/2026 30/11/2026")
+        self.assertNotIn("Add these columns", reply)
+        self.assertIn("Ravi): email is missing", reply)
+        self.assertNotIn("is not an email address", reply)
+
     def test_check_passes_a_good_sheet_and_still_makes_nothing(self):
         self.assertIn("The sheet is ready: 2 payslips", self.hr(f"check {self.sheet} 01/11/2026 30/11/2026"))
         self.assertFalse((self.home / "hr/pending.json").exists())

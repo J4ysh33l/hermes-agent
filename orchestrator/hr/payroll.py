@@ -109,7 +109,7 @@ def _row(raw: dict[str, str], period: Period, days: int, absent: frozenset[str])
     who = f"Row {raw['row']} ({raw.get('name') or 'no name'})"
     problems = [f"{who}: {field} is missing" for field in ("name", "designation", "email")
                 if field not in absent and raw.get(field, "").strip() in ("", "0")]
-    if raw.get("email") and not EMAIL.match(raw["email"].strip()):
+    if raw.get("email", "").strip() not in ("", "0") and not EMAIL.match(raw["email"].strip()):
         problems.append(f"{who}: '{raw['email']}' is not an email address")
     try:
         doj = _date(raw.get("doj", ""))

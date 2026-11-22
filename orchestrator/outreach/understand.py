@@ -60,7 +60,7 @@ WRITE = """Write one Slack direct message per person below, sent by a busy found
 People:
 {people}
 What to tell them: <<<{text}>>>
-Return JSON only: {{"messages": [{{"to": "<person id>", "text": "..."}}]}}"""
+Return JSON only: {{"messages": [{{"to": "p1", "text": "..."}}]}}, where "to" is the id before "=" (p1, p2, ...)."""
 
 PICK = """Each row is a Slack message or email sent to a busy founder in the last few days. Pick the rows
 where the sender asks to meet, call or talk with the founder, and has not been given a time yet.
@@ -172,10 +172,15 @@ def write_messages(http: Http, key: str, people: list[Person], text: str, settin
     """slack_id → message. Everyone named must get one, or the whole draft fails."""
     ids = {f"p{n}": p for n, p in enumerate(people, start=1)}
     rows = "\n".join(f"{k} = {p.name} (first name {p.first})" for k, p in ids.items())
+    # Models sometimes answer with the full name instead of the id; both name one person here.
+    keys = {k.casefold(): p for k, p in ids.items()} | {p.name.casefold(): p for p in people}
     raw = _ask(http, key, WRITE.format(style=style(settings), people=rows, text=text.strip()[:3000]),
                settings.models_for(len(people)), "write", 300 + 150 * len(people))
-    out = {ids[k].slack_id: str(m.get("text") or "").strip()[:1500]
-           for m in raw.get("messages") or [] if isinstance(m, dict) and (k := str(m.get("to"))) in ids}
+    out = {}
+    for m in raw.get("messages") or []:
+        person = keys.get(str(m.get("to") or "").strip().casefold()) if isinstance(m, dict) else None
+        if person:
+            out[person.slack_id] = str(m.get("text") or "").strip()[:1500]
     missing = [p.name for p in people if not out.get(p.slack_id)]
     if missing:
         raise OutreachError("The model skipped " + ", ".join(missing) + ". Try again.")
