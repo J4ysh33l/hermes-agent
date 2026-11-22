@@ -184,6 +184,16 @@ How we make sense of the IDs:
 - **Admin tokens.** The Admin and Discovery APIs need an Enterprise plan, and Discovery is
   only allowed for compliance work (eDiscovery, archiving, DLP).
 - **The old bot token** for this job. It can't see DMs.
+- **The Slack CLI** (`slack login`, `slack create`, `slack run`) and the Bolt starter
+  templates. They build a Socket Mode bot that runs on your PC. That bot crashes without an
+  app-level token, and `slack run` **replaces the app's manifest** with the template's. Our
+  script calls the Web API with the `xoxp-` token and needs none of that.
+- **The only value our script needs** is the **User OAuth Token** (`xoxp-…`), shown under
+  **OAuth & Permissions** after installing. These are *not* needed:
+  - Client ID and Client Secret
+  - Signing Secret
+  - Verification Token
+  - App-level tokens
 
 **Slack's terms (Oct 2025):** they ban training models on API data and bulk export. They also
 stop *third-party providers* from building lasting archives of *other organizations'* data.
@@ -225,6 +235,12 @@ Do steps 1–9 once, signed in as **the account you want to own the project** (s
    - **Audience:** **External** (Internal is only for Google Workspace companies). Click
      **Next**.
    - **Contact information:** your email. Click **Next**.
+   - On **Branding** afterwards:
+     - **Developer contact information → Email addresses** must be filled in. If it's empty,
+       **Publish app** stays greyed out with "complete your configuration on the Branding
+       page".
+     - **Do not upload a logo.** A logo forces Google verification.
+     - Home page, privacy policy and authorised domains can stay empty.
    - **Finish:** tick the box agreeing to the Google API Services User Data Policy, then
      **Continue → Create**.
 5. Go to **Google Auth platform → Data Access**.
@@ -250,6 +266,8 @@ Do steps 1–9 once, signed in as **the account you want to own the project** (s
      a lifetime cap of 100 users. You need 3.
    - **Why this step matters:** if you leave it in *Testing*, every login dies after **7 days**.
      That is the expiry problem from last time.
+   - **Only one account does steps 1–8:** the one that owns the project. The other two Gmail
+     accounts never open the Cloud console. Each just signs in once (steps 10–16).
 9. On the host, add to `$HERMES_HOME/.env`:
    ```
    GOOGLE_CLIENT_ID=....apps.googleusercontent.com
@@ -329,14 +347,51 @@ code. Microsoft now blocks that sign-in in two ways.
 Check which one applies (2 minutes):
 1. Go to **https://entra.microsoft.com → Entra ID → Overview → Properties → Manage security
    defaults**. If it says **Enabled**, device code is blocked.
-2. Go to **Entra ID → Conditional Access → Policies**. Look for **Block device code flow**
-   with **Created by = Microsoft**, and see whether it is **On**.
-3. Go to **Entra ID → Monitoring & health → Sign-in logs**.
+2. Go to **Entra ID → Conditional Access → Policies**. This is the **Policies** item in the
+   left menu, *not* "Policy plans (Preview)". Look for **Block device code flow** with
+   **Created by = Microsoft**, and see whether it is **On**.
+   - If the list is empty, Conditional Access isn't blocking you.
+   - Conditional Access needs Entra ID P1/P2 or Business Premium, and can't be used while
+     security defaults are on. In that case step 1 is the one that matters.
+3. Sign-in logs: type **Sign-in logs** in the search box at the top of the portal. Or go to
+   **Entra ID → Monitoring & health → Sign-in logs**.
+   - Free tenants keep only 7 days of logs, so last week's attempt may be gone. The quick
+     test below is easier.
    - Add the filter **Authentication protocol = Device code**.
    - Open the failed attempt from last time. The **Conditional Access** tab names the policy
      that blocked it.
    - The error codes are `AADSTS530035` (security defaults) and `AADSTS53003` (Conditional
      Access).
+
+**Quick test from Windows PowerShell (2 minutes, no host needed).**
+- Needs the app from 3.1 steps 1–5.
+- It tries exactly the sign-in our script uses and prints either "sign-in works" or
+  Microsoft's error. It never prints the token.
+- Fill in the two IDs from the app's **Overview** page:
+
+```powershell
+$tenant = "<Directory (tenant) ID>"
+$client = "<Application (client) ID>"
+$dc = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$tenant/oauth2/v2.0/devicecode" -Body @{client_id=$client; scope="offline_access Mail.Read"}
+$dc.message
+while ($true) {
+  Start-Sleep -Seconds $dc.interval
+  try {
+    $null = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$tenant/oauth2/v2.0/token" -Body @{grant_type="urn:ietf:params:oauth:grant-type:device_code"; client_id=$client; device_code=$dc.device_code}
+    "OK: device-code sign-in works for this app"; break
+  } catch {
+    $err = $_.ErrorDetails.Message | ConvertFrom-Json
+    if ($err.error -ne "authorization_pending") { $err.error_description; break }
+  }
+}
+```
+
+Reading the result:
+- **"OK"**: device code is not blocked. Continue with 3.1 step 8.
+- **`AADSTS530035`**: security defaults are blocking it.
+- **`AADSTS53003`**: a Conditional Access policy is blocking it.
+- **`AADSTS7000218`**: "Allow public client flows" is off (3.1 step 4).
+- **`AADSTS700016`** or **`AADSTS90002`**: one of the two IDs is wrong.
 
 **What to do about it.** Don't turn security defaults off: that removes MFA protection for
 your whole company. Choose one:
