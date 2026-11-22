@@ -347,8 +347,10 @@ When a login ends, the brief already says "🔑 Gmail needs a new login".
 
 ### 3.0 First, the likely reason you got stuck last time
 
-Our login uses Microsoft's **device code** sign-in: open microsoft.com/devicelogin and type a
-code. Microsoft now blocks that sign-in in two ways.
+Our login used to use Microsoft's **device code** sign-in: open microsoft.com/devicelogin
+and type a code. Microsoft now blocks that sign-in in two ways. **Since 2026-11-22 our login
+uses the paste-back flow instead**, so none of this applies any more. The section stays here
+to explain why.
 
 - **Security defaults:** "After security defaults are enabled in your tenant, authentication
   requests that use device code flow are blocked." Every new tenant since 1 July 2026 has
@@ -411,9 +413,8 @@ blocked.** Use the paste-back (authorization code + PKCE) login below.
 
 **What to do about it.** Don't turn security defaults off: that removes MFA protection for
 your whole company. Choose one:
-- **Recommended (needs a code change):** switch our Outlook login to the same paste-back flow
-  Gmail uses. That is "authorization code with PKCE", with redirect `http://localhost:8765/`.
-  No policy blocks it.
+- **Done (2026-11-22):** our Outlook login now uses the same paste-back flow as Gmail
+  ("authorization code with PKCE", redirect `http://localhost:8765/`). No policy blocks it.
 - **Works today, only if it's a CA policy:** in that policy, under **Users → Exclude**, add
   only yourself. Or exclude just this app under **Target resources**. If it's security
   defaults, this option doesn't exist.
@@ -426,9 +427,9 @@ your whole company. Choose one:
    - **Supported account types:** **Single tenant only – <your company>**. On the older
      screen this reads "Accounts in this organizational directory only".
    - **Redirect URI:**
-     - *Device code (today's code):* leave it **empty**.
-     - *Paste-back flow (recommended change):* choose platform **Public client/native (mobile
-       & desktop)** and enter `http://localhost:8765/`.
+     - Choose platform **Public client/native (mobile & desktop)** and enter
+       `http://localhost:8765/`. If you add it later, it goes under **Authentication → Add
+       Redirect URI → Mobile and desktop applications**. It must not be under "Web".
    - Click **Register**.
 3. On the **Overview** page, copy:
    - **Application (client) ID**, which goes in `MS_CLIENT_ID`
@@ -456,10 +457,15 @@ your whole company. Choose one:
    MS_TENANT_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
    ```
 9. Sign in:
-   - **Works today:** run `python -m orchestrator.brief auth microsoft`. It prints a code.
-     On your phone, open **microsoft.com/devicelogin**, type the code, sign in with your work
-     account, complete MFA and accept. The host prints "Outlook login saved". If you get
-     `AADSTS530035` or `AADSTS53003`, go back to 3.0.
+   - Run `python -m orchestrator.brief auth microsoft`. It prints a link.
+   - Open the link in any browser and sign in with your work account. Complete MFA and
+     accept.
+   - The browser lands on a `localhost:8765/?code=…` page that fails to load. That's
+     expected.
+   - Copy the whole address and paste it into the prompt. The host prints "Outlook login
+     saved".
+   - The code in that address is useless to anyone else. It expires in minutes and only works
+     together with a secret the login command keeps in memory.
 10. Test without saving anything: `python -m orchestrator.brief run --dry-run`.
 
 **Error codes**

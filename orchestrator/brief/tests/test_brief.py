@@ -5,11 +5,14 @@ Run: python3 orchestrator/brief/tests/test_brief.py   (or orchestrator/run_check
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -19,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fakes import NOW, FakeHttp, chart, gemini_answer, http_error, query, rss
 
-from orchestrator.brief import cli, filters, pipeline, rank, render, settings
+from orchestrator.brief import auth, cli, filters, pipeline, rank, render, settings
 from orchestrator.brief.creds import Secrets
 from orchestrator.brief.items import Item
 from orchestrator.brief.sources import markets, news
@@ -329,6 +332,55 @@ class SlackBot(BriefCase):
         http.on("GET", "https://slack.com/api/conversations.list",
                 {"ok": False, "error": "missing_scope", "needed": "groups:read"})
         self.assertIn("needs groups:read", self.run_brief(http).text)
+
+
+class LoginCase(unittest.TestCase):
+    """The one-time logins: paste-back with PKCE, no device code, no secret for Microsoft."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        (self.home / ".env").write_text(ENV.format(key=KEY), encoding="utf-8")
+        self.secrets = Secrets(self.home / ".env", self.home / "tokens", environ={})
+        self.shown: list[str] = []
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def login(self, service, http: FakeHttp, landed: str) -> None:
+        service(http, self.secrets, ask=lambda _prompt: landed, say=self.shown.append)
+
+    def link(self) -> dict[str, list[str]]:
+        url = next(line for line in self.shown if line.startswith("https://"))
+        return urllib.parse.parse_qs(urllib.parse.urlsplit(url).query) | {"_base": [url.split("?")[0]]}
+
+    def test_microsoft_login_uses_pkce_and_no_device_code_or_secret(self):
+        http = FakeHttp().on("POST", "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+                             {"access_token": "a", "refresh_token": "ms-new"})
+        self.login(auth.microsoft, http, "http://localhost:8765/?code=the-code&state=x")
+        link = self.link()
+        self.assertEqual(link["_base"], ["https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize"])
+        self.assertEqual(link["code_challenge_method"], ["S256"])
+        self.assertEqual(http.count("https://login.microsoftonline.com/tenant/oauth2/v2.0/devicecode"), 0)
+        form = http.calls[-1].form
+        self.assertEqual((form["grant_type"], form["code"]), ("authorization_code", "the-code"))
+        self.assertNotIn("client_secret", form)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(form["code_verifier"].encode()).digest())
+        self.assertEqual(challenge.rstrip(b"=").decode(), link["code_challenge"][0])
+        self.assertEqual(self.secrets.token("microsoft")["refresh_token"], "ms-new")
+
+    def test_microsoft_refusal_in_the_pasted_address_is_shown_and_nothing_is_saved(self):
+        landed = "http://localhost:8765/?error=access_denied&error_description=AADSTS65004%3A+User+declined"
+        with self.assertRaises(SystemExit) as stop:
+            self.login(auth.microsoft, FakeHttp(), landed)
+        self.assertIn("AADSTS65004", str(stop.exception))
+        self.assertEqual(self.secrets.token("microsoft"), {})
+
+    def test_google_login_still_saves_its_refresh_token(self):
+        http = FakeHttp().on("POST", "https://oauth2.googleapis.com/token", {"access_token": "a", "refresh_token": "g-new"})
+        self.login(auth.google, http, "http://localhost:8765/?code=g-code&scope=x")
+        self.assertEqual(http.calls[-1].form["code"], "g-code")
+        self.assertEqual(self.secrets.token("google")["refresh_token"], "g-new")
 
 
 if __name__ == "__main__":

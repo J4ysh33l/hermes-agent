@@ -2,7 +2,8 @@
 
 Public-client app (no client secret). The refresh token rotates on every use, so it lives in
 tokens/microsoft.json, rewritten after each run. Log in once with
-``python -m orchestrator.brief auth microsoft`` (device code: open a URL, type a code).
+``python -m orchestrator.brief auth microsoft`` (paste-back: open the link, sign in, paste
+the address the browser lands on).
 """
 
 from __future__ import annotations

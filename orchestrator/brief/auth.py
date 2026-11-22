@@ -1,7 +1,12 @@
 """One-time logins, run by hand on the host (over SSH). Tokens go to $HERMES_HOME/brief/tokens/.
 
-google:    paste-back OAuth flow (works without a browser on the host).
-microsoft: device-code flow (open a URL on any device, type the code shown).
+Both use the paste-back flow (authorization code + PKCE, loopback redirect): open a link on any
+device, sign in, then paste the address the browser lands on (a localhost page that fails to
+load). Nothing listens on the host. The code in that address is useless without the PKCE
+verifier, which never leaves this process.
+
+Microsoft's device-code flow is not used: security defaults and Microsoft's managed Conditional
+Access policy block it, and Google's device flow does not allow Gmail scopes.
 """
 
 from __future__ import annotations
@@ -18,55 +23,67 @@ from .net import Http, HttpError
 from .sources import gmail, outlook
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
-REDIRECT = "http://localhost:8765/"
+REDIRECT = "http://localhost:8765/"  # Google: Desktop client. Entra: "Mobile and desktop applications".
+
+
+def _pkce() -> tuple[str, str]:
+    verifier = pysecrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def _paste_back(link: str, service: str, ask: Callable[[str], str], say: Callable[[str], None]) -> str:
+    """Show the sign-in link, read back the address the browser landed on, return the code."""
+    say(f"1. Open this link on your laptop or phone and sign in to {service}:\n")
+    say(link)
+    say("\n2. The browser then fails to load a localhost page. That is expected.")
+    pasted = ask("3. Paste the full address from the browser's address bar here: ").strip()
+    found = urllib.parse.parse_qs(urllib.parse.urlsplit(pasted).query)
+    if "error" in found:
+        detail = (found.get("error_description") or found["error"])[0]
+        raise SystemExit(f"{service} sign-in failed: {detail}")
+    return (found.get("code") or [pasted])[0]
+
+
+def _exchange(http: Http, url: str, form: dict[str, str], service: str) -> dict:
+    try:
+        data = http.request("POST", url, form=form).json()
+    except HttpError as exc:
+        raise SystemExit(f"{service} sign-in failed: {exc.detail or exc}") from None
+    if not data.get("refresh_token"):
+        raise SystemExit(f"{service} returned no refresh token; run the login again.")
+    return data
 
 
 def google(http: Http, secrets: Secrets, ask: Callable[[str], str] = input, say: Callable[[str], None] = print) -> None:
     client_id, client_secret = secrets.get("GOOGLE_CLIENT_ID"), secrets.get("GOOGLE_CLIENT_SECRET")
     if not (client_id and client_secret):
         raise SystemExit("Put GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $HERMES_HOME/.env first.")
-    verifier = pysecrets.token_urlsafe(48)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    verifier, challenge = _pkce()
     params = {"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code", "scope": gmail.SCOPE,
               "access_type": "offline", "prompt": "consent", "code_challenge": challenge,
               "code_challenge_method": "S256"}
-    say("1. Open this link on your laptop or phone and allow read-only Gmail access:\n")
-    say(GOOGLE_AUTH + "?" + urllib.parse.urlencode(params))
-    say("\n2. The browser then fails to load a localhost page. That is expected.")
-    pasted = ask("3. Paste the full address from the browser's address bar here: ").strip()
-    code = (urllib.parse.parse_qs(urllib.parse.urlsplit(pasted).query).get("code") or [pasted])[0]
+    code = _paste_back(GOOGLE_AUTH + "?" + urllib.parse.urlencode(params), "Google", ask, say)
     form = {"client_id": client_id, "client_secret": client_secret, "code": code, "code_verifier": verifier,
             "grant_type": "authorization_code", "redirect_uri": REDIRECT}
-    data = http.request("POST", gmail.TOKEN_URL, form=form).json()
-    if not data.get("refresh_token"):
-        raise SystemExit("Google returned no refresh token; run again (the link asks for consent each time).")
+    data = _exchange(http, gmail.TOKEN_URL, form, "Google")
     secrets.save_token("google", {"refresh_token": data["refresh_token"], "saved_at": time.time()})
     say("Gmail login saved.")
 
 
-def microsoft(http: Http, secrets: Secrets, say: Callable[[str], None] = print, sleep=time.sleep) -> None:
+def microsoft(http: Http, secrets: Secrets, ask: Callable[[str], str] = input,
+              say: Callable[[str], None] = print) -> None:
     client_id, tenant = secrets.get("MS_CLIENT_ID"), secrets.get("MS_TENANT_ID") or "organizations"
     if not client_id:
         raise SystemExit("Put MS_CLIENT_ID (and MS_TENANT_ID) in $HERMES_HOME/.env first.")
     base = outlook.LOGIN.format(tenant=tenant)
-    start = http.request("POST", base + "/devicecode", form={"client_id": client_id, "scope": outlook.SCOPES}).json()
-    say(start.get("message") or f"Open {start['verification_uri']} and enter {start['user_code']}")
-    interval = int(start.get("interval", 5))
-    deadline = time.time() + int(start.get("expires_in", 900))
-    form = {"client_id": client_id, "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-            "device_code": start["device_code"]}
-    while time.time() < deadline:
-        sleep(interval)
-        try:
-            data = http.request("POST", base + "/token", form=form).json()
-        except HttpError as exc:
-            if "authorization_pending" in exc.detail:
-                continue
-            if "slow_down" in exc.detail:
-                interval += 5
-                continue
-            raise SystemExit(f"Microsoft login failed: {exc}") from None
-        secrets.save_token("microsoft", {"refresh_token": data["refresh_token"], "saved_at": time.time()})
-        say("Outlook login saved.")
-        return
-    raise SystemExit("The code expired before it was used; run again.")
+    verifier, challenge = _pkce()
+    params = {"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code", "response_mode": "query",
+              "scope": outlook.SCOPES, "prompt": "select_account", "code_challenge": challenge,
+              "code_challenge_method": "S256"}
+    code = _paste_back(base + "/authorize?" + urllib.parse.urlencode(params), "Microsoft", ask, say)
+    form = {"client_id": client_id, "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
+            "redirect_uri": REDIRECT, "scope": outlook.SCOPES}
+    data = _exchange(http, base + "/token", form, "Microsoft")
+    secrets.save_token("microsoft", {"refresh_token": data["refresh_token"], "saved_at": time.time()})
+    say("Outlook login saved.")
