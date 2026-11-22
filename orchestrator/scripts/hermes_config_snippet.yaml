@@ -1,0 +1,113 @@
+# Additions for ~/.hermes/config.yaml.   Revised 2026-11-21 after a live run on Hermes at commit 242315c.
+# Replace /PATH/TO with real folders. Keep business names out of anything committed to the public fork.
+#
+# HOW IT WAS TESTED: the real Hermes agent code (Telegram-shaped turns, fresh agent per turn with history,
+# like the gateway) against a local fake model server that reports real token counts (o200k). No real
+# Telegram, no real Gemini. Token counts are o200k; Gemini counts differ somewhat.
+#
+# TESTED = ran and saw it.  NOT TESTED = in the config but never seen working.
+
+# 1. No-LLM commands on Telegram.  TESTED END TO END (second pass): a real Hermes gateway process polling a fake
+#    Telegram server; each command was sent as a Telegram message and the script's text came back as the reply
+#    with no model call. The shell gets a sanitized environment (no API keys), a 30 s timeout, redacted output.
+#    NAMES MATTER: Hermes' built-in commands win over quick_commands. /status, /resume and /queue are built-ins
+#    (a quick command with those names is never run; /status showed Hermes' own session status), so these are
+#    named botstatus, botresume and tickets. Check a new name with hermes_cli.commands.is_gateway_known_command.
+#    NOT TESTED: real Telegram (BotFather menu, rate limits). Commands take NO arguments; ones with arguments
+#    stay on scripts/telegram_control.py.
+quick_commands:
+  botstatus:
+    type: exec
+    command: "AGENT_STATE_DIR=/PATH/TO/state python3 /PATH/TO/scripts/pausectl.py status"
+  pause6h:
+    type: exec
+    command: "AGENT_STATE_DIR=/PATH/TO/state python3 /PATH/TO/scripts/pausectl.py pause --for 6h --reason Telegram"
+  botresume:
+    type: exec
+    command: "AGENT_STATE_DIR=/PATH/TO/state python3 /PATH/TO/scripts/pausectl.py resume"
+  summary:
+    type: exec
+    command: "AGENT_STATE_DIR=/PATH/TO/state python3 /PATH/TO/scripts/statusupdate.py --summary"
+  tickets:
+    type: exec
+    command: "AGENT_STATE_DIR=/PATH/TO/state python3 /PATH/TO/scripts/queuectl.py counts"
+
+# 2. Context budget.
+#    CHANGED FROM THE FIRST DRAFT: do NOT set model.context_length: 25000. TESTED: Hermes refuses to start
+#    a session with "context window of 25,000 tokens, which is below the minimum 64,000" (agent/agent_init.py,
+#    MINIMUM_CONTEXT_LENGTH). Leave model.context_length unset (or >= 64000) and cap with threshold_tokens.
+#
+#    TESTED (slim toolset [terminal], 6 tool-heavy turns, ~4k-token tool results):
+#      no budget settings:  prompt grew 2.5k -> 49.5k tokens, never compacted.
+#      these settings:      peak 15.8k, compacted when it neared 16k, never above 20k.
+#    TESTED, FAILS ON ITS OWN: when ONE tool result is large (8k-13k tokens) requests reached 27-29k, above
+#    the 25k ceiling, and Hermes reported compaction "blocked (ineffective)". Changing the window to 64000
+#    did not change this (a 51K-char result was not spilled). No tested config setting caps a single result.
+#    FIX (tested): run every command Hermes executes through scripts/capout.py (caps output, default 3000
+#    chars, saves the full text to $AGENT_STATE_DIR/spill). Same heavy workload with capout: peak 16.5k.
+# model:                       # keep your own provider/model block; do NOT add context_length: 25000
+compression:
+  threshold_tokens: 16000      # TESTED: compaction fires near this, not at the default 75% of the window
+  target_ratio: 0.20           # TESTED (default value, listed for clarity)
+  protect_last_n: 8            # TESTED (default is 20)
+  proactive_prune_tokens: 12000   # NOT TESTED: never saw it fire (needs a result >= 8000 chars AND >= 4096
+                                  # tokens reclaimable). Harmless; do not rely on it. capout is the real guard.
+  idle_compact_after_seconds: 1800   # NOT TESTED
+
+# 3. Toolsets.  TESTED (fixed cost per request = system prompt + tool schemas, o200k tokens):
+#      stock hermes-telegram, 19 tools, fresh home with no skills:   ~8.9k   (earlier run with skills: ~9.8k)
+#      platform_toolsets.telegram: [terminal]  -> 4 tools:           ~2.4k   (system 1.3k + schemas 1.0k)
+#    The 4 tools are terminal plus Hermes' three tool-search bridge tools. Earlier measurements (cron, not
+#    re-run now): [web] ~1.1-1.5k, no tools ~0.5k.
+#    Keep runs of agent work on cheap models to profiles like this one; add a second toolset only when a
+#    flow needs it.
+platform_toolsets:
+  telegram: [terminal]
+
+# 4. Per-minute limits (from the AI Studio dashboard note): Gemma 4 allows only 16K tokens/minute, so a
+#    single 16k-token request uses a whole minute. At 2.4k fixed + small results, one Gemma call is
+#    about 3-5k, i.e. 3-5 calls a minute. The 500/day Flash-Lite models allow 250K/minute, 15 requests/minute.
+#    Every tool call re-sends the whole context, so a turn of 3 tool calls costs ~3x the context.
+#
+# 5. PRIVACY.  TESTED (second pass, real gateway, two fake model servers: A = main/"Gemini", B = private).
+#    Unpinned: the session title call and every compaction summary call (5 calls in a 5-turn run) went to A,
+#    carrying the old conversation text. Pinned as below: all 5 went to B and A received none.
+#    LIMIT: pinning only moves the side calls. The MAIN model still receives all raw text in its own requests
+#    (A saw the private marker in every main request until compaction). A private profile therefore needs a
+#    private MAIN model too; pinning aux alone does not keep text off Gemini.
+#    SIXTH PASS (2026-11-21), same harness, real gateway/curator code, fake servers. Where each side task sends its text:
+#      task                 unpinned (default)      pinned auxiliary.<task>.{provider: custom, model, base_url, api_key}
+#      approval (guardian)  MAIN endpoint, command  second endpoint, main gets none
+#      vision               MAIN endpoint, image    second endpoint, main gets none
+#      curator              MAIN endpoint           second endpoint ONLY if provider AND model AND base_url are all set;
+#                                                   a base_url alone is silently ignored and the review goes to MAIN
+#      web_extract          no model call at all in this version (source: "no LLM summarization")
+#      session_search       no model call at all in this version (source: "No LLM calls")
+#    Smart approvals are ON by default (approvals.mode: smart), so every flagged command (e.g. python3 -c ...) is sent to
+#    the approval model: on Gemini free tier that is an extra request AND the command text goes to Google. For a
+#    private profile pin it, or set approvals: {mode: manual} (Hermes asks you on Telegram instead; no model call).
+#    LEAK FOUND: if a pinned endpoint is DOWN (connection error, timeout, rate limit), Hermes retries the call on the
+#    MAIN model. Tested: approval and vision with a dead pin both reached the main endpoint carrying the command / the image.
+#    FIX, tested: give each pinned task a fallback_chain. With a chain, a dead pin falls to the chain entry (tested: live
+#    private entry served both calls, main got none); with every entry dead, approval fails closed (Hermes asks you on
+#    Telegram, the command is not sent anywhere) and vision returns "Connection error" (the image is not sent to main).
+#    (From reading the code, not run: an auth error from a pinned provider does not hop to main.)
+#    Not run individually: mcp sampling, memory_query_rewrite, goal_judge, kanban_*, monitor, profile_describer, cache_warm,
+#    plugin_fork/side_question, moa_*. They share the same resolver, so expect the same default (MAIN) and the same dead-pin
+#    leak, but pin them only if a private profile uses them. The compression model needs a 64K+ window too.
+# auxiliary:
+#   compression:      {provider: custom, base_url: https://PRIVATE-ENDPOINT/v1, model: PRIVATE-MODEL, api_key: ...}
+#   title_generation: {provider: custom, base_url: https://PRIVATE-ENDPOINT/v1, model: PRIVATE-MODEL, api_key: ...}
+#   background_review: {provider: custom, base_url: https://PRIVATE-ENDPOINT/v1, model: PRIVATE-MODEL, api_key: ...}
+#   approval:         {provider: custom, base_url: ..., model: ..., api_key: ..., fallback_chain: [{provider: custom, base_url: ..., model: ..., api_key: ...}]}
+#   vision:           (same shape as approval; the model must accept images)
+#   curator:          {provider: custom, model: ..., base_url: ..., api_key: ...}     # all three of provider, model, base_url
+#   (keep the key in .env if your provider supports a named provider; do not commit it)
+#
+# 6. delegate_task and the 64K floor.  TESTED live (real delegate_task, fake servers):
+#      child inherits a 200K parent             -> runs;
+#      delegation.* pinned to a 256K endpoint   -> runs;
+#      delegation.* pinned to a 32K endpoint    -> child refused at build ("context window of 32,000 ... below
+#                                                  the minimum 64,000"), no request sent, parent unaffected;
+#      parent itself on a 32K endpoint          -> refused at build.
+#    The floor is on the model's reported WINDOW, not on tokens sent. Pin delegation to a model with 64K+.
