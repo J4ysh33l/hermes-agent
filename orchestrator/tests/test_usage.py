@@ -149,6 +149,9 @@ class HermesHooks(UsageCase):
             def register_hook(self, name, fn):
                 hooks[name] = fn
 
+            def register_skill(self, name, path, description=""):
+                pass
+
         self.plugin().register(Ctx())
         self.assertEqual(set(hooks), {"post_api_request", "api_request_error", "post_auxiliary_call"})
         self.assertIn("usage", cmds)

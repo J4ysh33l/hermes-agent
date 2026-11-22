@@ -91,11 +91,11 @@ def microsoft(http: Http, secrets: Secrets, ask: Callable[[str], str] = input,
     base = outlook.LOGIN.format(tenant=tenant)
     verifier, challenge = _pkce()
     params = {"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code", "response_mode": "query",
-              "scope": outlook.SCOPES, "prompt": "select_account", "code_challenge": challenge,
+              "scope": outlook.LOGIN_SCOPES, "prompt": "select_account", "code_challenge": challenge,
               "code_challenge_method": "S256"}
     code = _paste_back(base + "/authorize?" + urllib.parse.urlencode(params), "Microsoft", ask, say)
     form = {"client_id": client_id, "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-            "redirect_uri": REDIRECT, "scope": outlook.SCOPES}
+            "redirect_uri": REDIRECT, "scope": outlook.LOGIN_SCOPES}
     data = _exchange(http, base + "/token", form, "Microsoft")
     secrets.save_token("microsoft", {"refresh_token": data["refresh_token"], "saved_at": time.time()})
     say("Outlook login saved.")

@@ -17,6 +17,9 @@ fi
 
 sed "s|@REPO_ROOT@|$REPO_ROOT|" "$HERE/launcher.py.template" > "$HOME_DIR/scripts/morning_brief.py"
 echo "wrote   $HOME_DIR/scripts/morning_brief.py"
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/outreach/launcher.py.template" \
+    > "$HOME_DIR/scripts/outreach_draft.py"
+echo "wrote   $HOME_DIR/scripts/outreach_draft.py (Hermes' agent drafts Slack messages and meetings)"
 
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"

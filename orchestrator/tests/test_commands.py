@@ -48,6 +48,7 @@ class Commands(unittest.TestCase):
         plugin = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(plugin)
         registered = {}
+        skills = {}
 
         class Ctx:
             def register_command(self, name, handler, **kw):
@@ -56,10 +57,14 @@ class Commands(unittest.TestCase):
             def register_hook(self, name, fn):
                 pass
 
+            def register_skill(self, name, path, description=""):
+                skills[name] = Path(path)
+
         plugin.register(Ctx())
         self.assertEqual(set(registered), {"menu"} | {c.name for c in commands.table()})
         self.assertIn("/brief", registered["menu"]())
         self.assertIn("/brief more", registered["brief"]("-help"))
+        self.assertTrue(skills["outreach"].is_file(), "the agent's draft-only skill ships with the plugin")
 
 
 if __name__ == "__main__":

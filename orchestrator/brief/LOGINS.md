@@ -699,8 +699,12 @@ References:
 
 ## Part 5: Sending Slack messages and scheduling meetings
 
-**Needs a code change:** none of this is built yet. Part 5 covers the logins it needs and how
-it would work. What you chose:
+**Built** in `orchestrator/outreach/` (commands and behaviour: `orchestrator/outreach/README.md`).
+What was decided while building, which overrides details below: Outlook is the only calendar, both
+for busy times and for booking (no Google Calendar); meetings are packed back to back from the
+window start; `/slack send`, `/slack schedule` and a single named person at a free time go out at
+once, while drafts, sentences, groups of people and all-hands wait for `yes`; the daily cap is 50.
+Part 5 below is the original design. What you chose:
 - **Calendars:** check **both** Outlook and Google for busy times.
 - **Sending:** Hermes **shows the drafts first**. Nothing is sent until you approve.
 
@@ -774,9 +778,9 @@ installed, add the scopes, click **Reinstall to <workspace>**, and update `SLACK
      `calendarView`.
    - **Calendars.Read.Shared**: needed for `findMeetingTimes` and for colleagues' calendars.
 2. Click **Add permissions**, then **Grant admin consent for <company>**.
-3. Add the scopes to the login request. **Needs a code change:** `SCOPES` in
-   `sources/outlook.py` becomes `offline_access Mail.Read Calendars.ReadWrite
-   Calendars.Read.Shared`.
+3. The login already asks for them (`LOGIN_SCOPES` in `sources/outlook.py`:
+   `Calendars.ReadWrite User.ReadBasic.All`; tick **User.ReadBasic.All** too, it finds colleagues
+   by name). The brief's own refresh still asks only for Mail.Read.
 4. Sign in to Outlook again (3.1 step 9). An existing login does not pick up new
    permissions.
 
