@@ -28,7 +28,7 @@ class RunResult:
 
 
 def _slack(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:
-    return slack.fetch(http, secrets.get("SLACK_USER_TOKEN"), settings, since)
+    return slack.fetch(http, secrets.get("SLACK_BOT_TOKEN"), secrets.get("SLACK_USER_TOKEN"), settings, since)
 
 
 def _gmail(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:

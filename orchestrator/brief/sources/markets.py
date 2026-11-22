@@ -9,12 +9,38 @@ from __future__ import annotations
 import time
 import urllib.parse
 
-from ..items import Markets, Quote
+import html
+import json
+import re
+
+from ..items import IndiaGold, Markets, Quote
 from ..net import Http, HttpError
 from ..settings import Settings, Symbol
 
 CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 GRAMS_PER_TROY_OUNCE = 31.1034768
+IBJA = "https://ibjarates.com/"
+IBJA_HISTORY = re.compile(r'id="HdnGold"\s+value="([^"]*)"')
+IBJA_TODAY = re.compile(r'id="GoldRatesCompare999"[^>]*>\s*([0-9.,]+)')
+
+
+def india_gold(http: Http) -> IndiaGold:
+    """Latest IBJA 999 rate. The page carries a daily history (₹/10 g) in a hidden field; the
+    headline 1-gram figure is the fallback. IBJA publishes no rates on weekends and holidays,
+    so the date shown is the last trading day."""
+    page = http.request("GET", IBJA).text()
+    match = IBJA_HISTORY.search(page)
+    if match:
+        history = json.loads(html.unescape(match.group(1)))
+        dates, prices = history.get("labels") or [], history.get("purity999") or []
+        if dates and prices:
+            prev = prices[-2] if len(prices) >= 2 else None
+            change = (prices[-1] - prev) / prev * 100 if prev else None
+            return IndiaGold(float(prices[-1]), str(dates[-1]), change)
+    today = IBJA_TODAY.search(page)
+    if not today:
+        raise ValueError("IBJA page changed: no 999 rate found")
+    return IndiaGold(float(today.group(1).replace(",", "")) * 10, "today")
 
 
 def quote(http: Http, sym: Symbol) -> Quote:
@@ -55,4 +81,10 @@ def fetch(http: Http, settings: Settings) -> Markets:
     gold_inr = gold.price * fx.price / GRAMS_PER_TROY_OUNCE * 10 if gold and fx else None
     if gold and settings.show_gold_usd:
         quotes.append(gold)
-    return Markets(quotes=tuple(quotes), gold_inr_10g=gold_inr, errors=tuple(errors))
+    india = None
+    if settings.india_gold:
+        try:
+            india = india_gold(http)
+        except (HttpError, ValueError, KeyError) as exc:
+            errors.append(f"IBJA gold: {exc}")
+    return Markets(quotes=tuple(quotes), gold_inr_10g=gold_inr, india_gold=india, errors=tuple(errors))

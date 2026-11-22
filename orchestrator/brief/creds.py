@@ -4,7 +4,7 @@ state folder (mode 0600), written by ``python -m orchestrator.brief auth ...``.
 
 Keys read from .env:
   GEMINI_API_KEY (or GOOGLE_API_KEY)
-  SLACK_USER_TOKEN                                     xoxp-..., scope search:read
+  SLACK_BOT_TOKEN  (xoxb-, preferred) or SLACK_USER_TOKEN (xoxp-, scope search:read)
   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET               Gmail (token file: tokens/google.json)
   MS_CLIENT_ID, MS_TENANT_ID                           Outlook (token file: tokens/microsoft.json)
 """

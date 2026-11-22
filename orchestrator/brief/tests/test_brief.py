@@ -5,7 +5,6 @@ Run: python3 orchestrator/brief/tests/test_brief.py   (or orchestrator/run_check
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 import tempfile
@@ -45,6 +44,13 @@ ENV = "GEMINI_API_KEY={key}\nSLACK_USER_TOKEN=slack-test\nGOOGLE_CLIENT_ID=g-id\
       "MS_CLIENT_ID=ms-id\nMS_TENANT_ID=tenant\n"
 
 
+IBJA_PAGE = (
+    '<input type="hidden" id="HdnGold" value="{&quot;labels&quot;:[&quot;19/11/2026&quot;,&quot;20/11/2026&quot;],'
+    '&quot;purity999&quot;:[125000,123893],&quot;purity916&quot;:[1,1]}" />'
+    '<span id="GoldRatesCompare999">12389</span>'
+)
+
+
 def slack_reply(texts: list[str]) -> dict:
     matches = [{"ts": str(NOW - 600 - n), "text": t, "username": "asha", "permalink": f"https://slack/{n}",
                 "channel": {"id": "C1", "name": "ops"}} for n, t in enumerate(texts)]
@@ -82,6 +88,7 @@ def services(gemini=None) -> FakeHttp:
     for sym, (price, prev) in {"%5EGSPC": (6000, 6100), "%5ENSEI": (25000, 24750), "GC%3DF": (3000, 2970),
                                "INR%3DX": (90, 90)}.items():
         http.on("GET", f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}", chart(price, prev))
+    http.on("GET", "https://ibjarates.com/", IBJA_PAGE)
     http.on("POST", GEMINI, gemini or (lambda call: gemini_answer(["i1", "i2"])))
     return http
 
@@ -117,6 +124,8 @@ class EndToEnd(BriefCase):
         self.assertEqual(result.model, "model-a")
         self.assertIn("S&P 500 6,000 ▼1.64%", result.text)
         self.assertIn("₹86,807/10g", result.text)  # 3000 $/oz * 90 ₹/$ / 31.1035 g * 10
+        self.assertIn("Gold India*: ₹1,23,893/10g ▼0.89% (20 Nov)", result.text)
+        self.assertIn("*India rate: IBJA 24K (999), excl. GST.", result.text)
         self.assertIn("Summary of i1", result.text)
         self.assertLess(len(result.text), 4096, "fits one Telegram message")
 
@@ -264,19 +273,47 @@ class Units(unittest.TestCase):
         http = FakeHttp().on("GET", "https://query1", chart(1, 1, tz_offset=-18000, as_of=friday_close))
         self.assertEqual(markets.quote(http, settings.Symbol("^GSPC", "S&P")).day, "Fri")
 
-    def test_plugin_registers_brief_command(self):
-        spec = importlib.util.spec_from_file_location("brief_plugin", ROOT / "orchestrator/brief/plugin/__init__.py")
-        plugin = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(plugin)
+    def test_ibja_headline_rate_is_the_fallback(self):
+        http = FakeHttp().on("GET", "https://ibjarates.com/", '<span id="GoldRatesCompare999"> 12,389</span>')
+        self.assertEqual(markets.india_gold(http).price_10g, 123890)
+        broken = FakeHttp().on("GET", "https://ibjarates.com/", "<html>redesigned</html>")
+        with self.assertRaises(ValueError):
+            markets.india_gold(broken)
 
-        registered = {}
 
-        class Ctx:
-            def register_command(self, name, handler, **kw):
-                registered[name] = handler
+class SlackBot(BriefCase):
+    def bot_services(self) -> FakeHttp:
+        http = services()
+        http.on("GET", "https://slack.com/api/auth.test", {"ok": True, "url": "https://acme.slack.com/"})
+        http.on("GET", "https://slack.com/api/users.list", {"ok": True, "members": [
+            {"id": "U1", "name": "asha", "profile": {"display_name": "Asha"}}]})
+        http.on("GET", "https://slack.com/api/conversations.list", {"ok": True, "channels": [
+            {"id": "C1", "name": "ops", "is_member": True}, {"id": "C2", "name": "random", "is_member": False}]})
+        http.on("GET", "https://slack.com/api/conversations.history", {"ok": True, "messages": [
+            {"ts": f"{NOW - 300:.6f}", "user": "U1", "text": "Ship the release today?"},
+            {"ts": f"{NOW - 200:.6f}", "user": "U1", "subtype": "channel_join", "text": "joined"}]})
+        return http
 
-        plugin.register(Ctx())
-        self.assertIn("brief", registered)
+    def test_bot_token_reads_member_channels_only_and_wins_over_user_token(self):
+        with (self.home / ".env").open("a", encoding="utf-8") as env:
+            env.write("SLACK_BOT_TOKEN=bot-test\n")
+        http = self.bot_services()
+        self.run_brief(http)
+        read = [query(c)["channel"][0] for c in http.calls if "conversations.history" in c.url]
+        self.assertEqual(read, ["C1"], "only channels the bot was invited to")
+        self.assertEqual(http.count("https://slack.com/api/search.messages"), 0)
+        prompt = self.gemini_prompts(http)[0]
+        self.assertIn("Asha", prompt)
+        self.assertIn("Ship the release today?", prompt)
+        self.assertNotIn("joined", prompt)
+
+    def test_missing_bot_scope_is_reported_as_a_login_problem(self):
+        with (self.home / ".env").open("a", encoding="utf-8") as env:
+            env.write("SLACK_BOT_TOKEN=bot-test\n")
+        http = self.bot_services()
+        http.on("GET", "https://slack.com/api/conversations.list",
+                {"ok": False, "error": "missing_scope", "needed": "groups:read"})
+        self.assertIn("needs groups:read", self.run_brief(http).text)
 
 
 if __name__ == "__main__":

@@ -71,12 +71,14 @@ markets:
   - {symbol: "^VIX", label: "VIX", group: US}
   - {symbol: "^NSEI", label: "Nifty 50", group: India}
   - {symbol: "^BSESN", label: "Sensex", group: India}
+  - {symbol: "^INDIAVIX", label: "India VIX", group: India}
   - {symbol: "^TNX", label: "US 10Y", unit: "%", group: Rates and FX}
   - {symbol: "INR=X", label: "USD/INR", group: Rates and FX}
 gold:
   symbol: "GC=F"              # COMEX gold futures, USD per troy ounce
   fx_symbol: "INR=X"
-  show_usd_per_oz: true       # ₹ per 10 g is always shown (international parity, before duty and GST)
+  show_usd_per_oz: true       # also shows the world price converted to ₹/10 g (before duty and GST)
+  india_ibja: true            # "Gold India*": IBJA 24K (999) ₹/10 g from ibjarates.com, excl. GST
 
 # ---------------------------------------------------------------- mail and Slack filters
 slack:

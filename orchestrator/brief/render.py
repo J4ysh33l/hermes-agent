@@ -59,9 +59,25 @@ def markets_block(m: Markets, tz: ZoneInfo) -> list[str]:
         lines.append(f"{group} ({day}): {cells}" if group not in ("Gold", "Rates and FX") else f"{group}: {cells}")
     if m.gold_inr_10g and "Gold" not in groups:
         lines.append(f"Gold: ₹{indian_grouping(m.gold_inr_10g)}/10g")
+    if m.india_gold:
+        g = m.india_gold
+        lines.append(f"Gold India*: ₹{indian_grouping(g.price_10g)}/10g{_arrow(g.change_pct)} ({_short_date(g.date)})")
+    notes = []
+    if m.india_gold:
+        notes.append("*India rate: IBJA 24K (999), excl. GST.")
     if m.gold_inr_10g:
-        lines.append("_Gold in ₹ is the international price converted, before import duty and GST._")
+        notes.append("₹ beside $ is the world price converted, before duty and GST.")
+    if notes:
+        lines.append("_" + " ".join(notes) + "_")
     return lines
+
+
+def _short_date(published: str) -> str:
+    """IBJA writes dd/mm/yyyy; show '20 Nov'."""
+    try:
+        return datetime.strptime(published, "%d/%m/%Y").strftime("%d %b")
+    except ValueError:
+        return published
 
 
 def short_url(item_url: str, title: str) -> str:
@@ -85,7 +101,7 @@ def brief_text(
     results: list[SourceResult], model: str, tz: ZoneInfo,
 ) -> str:
     out = [f"**Morning brief · {day.strftime('%a %d %b')}**", ""]
-    if markets and markets.quotes:
+    if markets and (markets.quotes or markets.india_gold):
         out += markets_block(markets, tz) + [""]
     if ranked:
         out.append(f"**Top {len(ranked)}**")

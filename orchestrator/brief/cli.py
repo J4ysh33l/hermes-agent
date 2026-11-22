@@ -19,16 +19,18 @@ from .store import Store, default_state_dir, now
 TICKER = re.compile(r"^[A-Z0-9^][A-Z0-9.^=\-]{0,14}$")
 MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-CHAT_HELP = """/brief more: every item from today's brief
-/brief topics: topics, watchlist and mutes
-/brief watch NVDA: add a stock to the markets block (Yahoo symbol, e.g. RELIANCE.NS)
+CHAT_HELP = """**/brief** — morning brief (sent 8:15 IST). No command here uses the AI model.
+/brief more — every item from today's brief
+/brief topics — topics, watchlist and mutes
+/brief watch NVDA — add a stock to the markets block (Yahoo symbol, e.g. RELIANCE.NS)
 /brief unwatch NVDA
-/brief follow electric vehicles: add a news topic
+/brief follow electric vehicles — add a news topic
 /brief unfollow electric vehicles
-/brief mute cricket: drop items containing a word
+/brief mute cricket — drop items containing a word
 /brief unmute cricket
-/brief mutesender noreply@example.com
-/brief unmutesender noreply@example.com"""
+/brief mutesender noreply@example.com — drop a sender
+/brief unmutesender noreply@example.com
+/brief help (or -help) — this list · /menu — all your commands"""
 
 
 class Context:

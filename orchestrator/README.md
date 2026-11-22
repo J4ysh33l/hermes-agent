@@ -13,6 +13,9 @@ not upstream Hermes code and never touches Hermes' core.
   then Gemma 4. Creative, judgment-heavy and private work goes to Claude through the handoff repo.
 - **Secrets live only in `~/.hermes/.env` on the host.** Never in this repo, never in chat.
 - **One branch per build, a PR into the fork's own `main`.** Upstream is pinned and updated on purpose.
+- **Every Telegram command answers `help`, `-help`, `--help`, `-h` and `?`** with its own usage,
+  and is listed by `/menu` (Hermes keeps `/help` for its own commands). Add a command by adding a
+  row to `commands.py`; `tests/test_commands.py` checks the rule for every row. No command calls a model.
 - **Before every push:** `orchestrator/run_checks.sh` (all tests here + the secret scan). CI runs
   the same on every PR touching this folder (`.github/workflows/orchestrator-checks.yml`).
 
@@ -23,6 +26,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `scripts/` | Stage 1 control scripts (pause switch, status, ticket queue, Telegram control bot, usage tier, dashboard, change gate, big-file trim, output cap) and `media/`. See `scripts/README.md`. |
 | `scripts/hermes_config_snippet.yaml` | Tested Hermes config additions: no-LLM quick commands, context budget, aux-model pinning. |
 | `checks/secretscan.py` | Standard-library secret scanner (tokens, keys, credential file names). `secretscan: allow` on a line skips it. |
+| `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 

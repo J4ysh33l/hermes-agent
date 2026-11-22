@@ -73,6 +73,7 @@ class Settings:
     gold_symbol: str = "GC=F"
     fx_symbol: str = "INR=X"
     show_gold_usd: bool = True
+    india_gold: bool = True
     slack_max: int = 200
     slack_skip_channels: frozenset[str] = frozenset()
     mail_max: int = 50
@@ -135,6 +136,7 @@ def parse(raw: dict[str, Any], prefs: Prefs) -> Settings:
         gold_symbol=str(gold.get("symbol", "GC=F")),
         fx_symbol=str(gold.get("fx_symbol", "INR=X")),
         show_gold_usd=bool(gold.get("show_usd_per_oz", True)),
+        india_gold=bool(gold.get("india_ibja", True)),
         slack_max=int(slack.get("max_messages", 200)),
         slack_skip_channels=frozenset(_tuple(slack.get("skip_channels"))),
         mail_max=int(mail.get("max_messages", 50)),

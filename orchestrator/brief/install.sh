@@ -18,13 +18,15 @@ fi
 sed "s|@REPO_ROOT@|$REPO_ROOT|" "$HERE/launcher.py.template" > "$HOME_DIR/scripts/morning_brief.py"
 echo "wrote   $HOME_DIR/scripts/morning_brief.py"
 
-ln -sfn "$HERE/plugin" "$HOME_DIR/plugins/brief"
-echo "linked  $HOME_DIR/plugins/brief -> $HERE/plugin"
+# Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
+[ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
+ln -sfn "$REPO_ROOT/orchestrator/plugin" "$HOME_DIR/plugins/orchestrator"
+echo "linked  $HOME_DIR/plugins/orchestrator -> $REPO_ROOT/orchestrator/plugin"
 
 cat <<NEXT
 
 Next (run these yourself):
-  hermes plugins enable brief
+  hermes plugins enable orchestrator
   hermes cron create "15 8 * * *" --timezone Asia/Kolkata --no-agent \\
       --script morning_brief.py --deliver telegram --name morning-brief
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving

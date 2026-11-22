@@ -62,7 +62,17 @@ class SourceResult:
 
 
 @dataclass(frozen=True)
+class IndiaGold:
+    """IBJA (India Bullion and Jewellers Association) 24K 999 rate, ₹ per 10 g, excluding GST."""
+
+    price_10g: float
+    date: str  # as published, e.g. '20/11/2026'
+    change_pct: float | None = None
+
+
+@dataclass(frozen=True)
 class Markets:
     quotes: tuple[Quote, ...] = ()
     gold_inr_10g: float | None = None
+    india_gold: IndiaGold | None = None
     errors: tuple[str, ...] = field(default_factory=tuple)
