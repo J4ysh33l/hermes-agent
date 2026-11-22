@@ -125,9 +125,12 @@ def _row(raw: dict[str, str], period: Period, days: int, absent: frozenset[str])
             problems.append(f"{who}: {label} '{raw.get(key)}' is not a number")
     if len(money) < len(MONEY):
         return None, problems
-    comp, basic, hra, lop = money["compensation"], money["basic"], money["hra"], money["lop"]
-    if not {"basic", "hra"} & absent and basic + hra != comp:
+    comp, basic, lop = money["compensation"], money["basic"], money["lop"]
+    hra = money["hra"] if "hra" in raw else comp - basic  # a sheet without HRA: the rest of Compensation
+    if "basic" not in absent and "hra" in raw and basic + hra != comp:
         problems.append(f"{who}: Basic + HRA ({basic + hra}) is not Compensation ({comp})")
+    if "basic" not in absent and not 0 <= basic <= comp:
+        problems.append(f"{who}: Basic {basic} must be between 0 and Compensation ({comp})")
     if not 0 <= lop <= days:
         problems.append(f"{who}: LOP days {lop} is outside 0–{days} working days")
     if doj > period.end:

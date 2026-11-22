@@ -24,22 +24,23 @@ from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
 from orchestrator.outreach.plan import picks
 
-from . import interview, payslips, settings
+from . import interview, payslips, request, settings
 from .payroll import Period
 from .payslips import Paths, rupees
 
 PAYSLIP_HELP = """**/hr payslip** — payslips from your salary sheet, emailed from your Outlook (no AI model touches pay)
-Send Hermes the month's sheet (.xlsx/.csv) and say the period, e.g. "payslips for 1–30 Nov, paid 2 Dec".
-Columns: Employee Name, Position, DOJ, Email, Compensation, Basic, HRA, LOP Days
-(optional: Reimbursement, Other Deductions). Any bad row stops the run; every employee with a
-problem is listed, and /hr payslip skip makes everyone else's slips, leaving those rows out.
-/hr payslip <sheet path> <from> <to> <pay date> — make the slips (dates dd/mm/yyyy); nothing is sent
-/hr payslip check <sheet path> <from> <to> — only checks the sheet and lists every problem
+/hr payslip November 02/12/2026 — then paste the table (copied from Sheets/Excel) on the next lines
+/hr payslip <sheet file> November 02/12/2026 — or send the sheet file (.xlsx/.csv)
+Month: November · Nov 2026 · 11/2026, or two dates 01/11/2026 30/11/2026. Then the pay date.
+Columns: Employee Name, Position, Email, DOJ, Compensation, Basic (optional: HRA, LOP Days,
+Reimbursement, Other Deductions; HRA defaults to Compensation − Basic). Nothing is sent yet.
+/hr payslip check November — then the table: only checks, makes nothing
 /hr payslip show — slips waiting: name, email, net pay
 /hr payslip test — 2 sample slips emailed to you · test all — every slip, to you only
 /hr payslip yes — email everyone their own slip · yes 1-10 — only those
 /hr payslip no — cancel
-/hr payslip skip — make the good rows' slips, leave the listed employees out
+/hr payslip skip — make the good rows' slips, leave the employees with problems out
+Paste a table only after /hr payslip: as a plain chat message it would reach the AI model.
 /menu — all your commands"""
 
 INTERVIEW_HELP = """**/hr interview** — one Teams link for a block of interviews; each candidate is invited to their slot
@@ -48,7 +49,8 @@ Date: 25/11/2026
 Panel: rishabh@medochealth.in, nidhi@medochealth.in   (optional: the interviewers)
 Asha Verma, Backend Engineer, 11:00, 11:30, asha@gmail.com
 Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
-→ a preview; nothing is sent. Slots can't overlap (one link). No AI model is used.
+End is optional (Start + 30 min). Or paste a table with columns Name, Position, Email, Date, Start, End.
+→ a preview; nothing is sent. One day per batch; slots can't overlap (one link). No AI model is used.
 /hr interview yes — create the Teams link, invite each candidate to their own slot and the panel to all
 /hr interview show · /hr interview no
 /menu — all your commands"""
@@ -88,23 +90,27 @@ class Context:
             fh.write(json.dumps(row) + "\n")
 
 
-def _date(text: str) -> date:
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError(f"'{text}' is not a date (use dd/mm/yyyy)")
+def _sheet(ctx: Context, req: request.PayslipRequest) -> Path:
+    """The file you sent, or the pasted table saved privately (0600, $HERMES_HOME/hr/inbox/)."""
+    if req.sheet is not None:
+        return req.sheet
+    inbox = payslips.private_dir(ctx.paths.home / "inbox")
+    for old in inbox.glob("pasted-*.tsv"):  # salary data: only the latest paste is kept
+        old.unlink()
+    path = inbox / f"pasted-{int(ctx.now)}.tsv"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(req.table + "\n")
+    return path
 
 
-def run_payslips(ctx: Context, sheet: str, start: str, end: str, pay_date: str) -> str:
+def run_payslips(ctx: Context, text: str) -> str:
     try:
-        period = Period(_date(start), _date(end), _date(pay_date))
+        req = request.parse(text, datetime.fromtimestamp(ctx.now, TZ).date(), need_pay=True)
     except ValueError as exc:
-        return str(exc)
-    if period.end < period.start:
-        return "The period ends before it starts."
-    return payslips.prepare(Path(sheet).expanduser(), period, ctx.settings, ctx.paths, ctx.now)
+        return f"{exc}\n\n/hr payslip help for the formats"
+    period = Period(req.start, req.end, req.pay_date)
+    return payslips.prepare(_sheet(ctx, req), period, ctx.settings, ctx.paths, ctx.now)
 
 
 def _show(ctx: Context, _arg: str) -> str:
@@ -172,14 +178,12 @@ def _no(ctx: Context, _arg: str) -> str:
 
 
 def _check(ctx: Context, arg: str) -> str:
-    parts = arg.split()
-    if len(parts) != 3:
-        return "Usage: /hr payslip check <sheet path> <from> <to>, dates dd/mm/yyyy"
     try:
-        period = Period(_date(parts[1]), _date(parts[2]), _date(parts[2]))
+        req = request.parse(arg, datetime.fromtimestamp(ctx.now, TZ).date(), need_pay=False)
     except ValueError as exc:
-        return str(exc)
-    checked = payslips.check(Path(parts[0]).expanduser(), period, ctx.settings, ctx.paths)
+        return f"{exc}\n\n/hr payslip help for the formats"
+    period = Period(req.start, req.end, req.end)
+    checked = payslips.check(_sheet(ctx, req), period, ctx.settings, ctx.paths)
     if checked.ready():
         return "\n".join([f"✅ The sheet is ready: {len(checked.batch.slips)} payslips for {period.month}.",
                           *checked.report()])
@@ -203,17 +207,16 @@ def _skip(ctx: Context, _arg: str) -> str:
 
 
 def _make(ctx: Context, arg: str) -> str:
-    parts = arg.split()
-    if len(parts) != 4:
-        return PAYSLIP_HELP
-    return run_payslips(ctx, *parts)
+    return run_payslips(ctx, arg) if arg.strip() else PAYSLIP_HELP
 
 
 def agent_make(args: list[str], state_dir: Path | None = None) -> str:
-    """The only entry Hermes' agent has: make slips from a sheet. It can't reach show, test, yes or skip."""
-    if len(args) != 4:
-        return "Usage: hr_payslips.py <sheet path> <from> <to> <pay date>, dates dd/mm/yyyy"
-    return run_payslips(Context(state_dir or default_state_dir()), *args)
+    """The only entry Hermes' agent has: make slips from a sheet FILE (it never handles a pasted
+    table, so pay never passes through its model). It can't reach show, test, yes or skip."""
+    ctx = Context(state_dir or default_state_dir())
+    if not args or not request.is_sheet(args[0]):
+        return "Usage: hr_payslips.py <sheet path> <month> <pay date>, e.g. ~/nov.xlsx November 02/12/2026"
+    return run_payslips(ctx, " ".join(args))
 
 
 def _interview_path(ctx: Context) -> Path:
@@ -232,7 +235,8 @@ def _interview_saved(ctx: Context) -> dict | None:
 
 
 def _interview_make(ctx: Context, text: str) -> str:
-    parsed = interview.parse(text, datetime.fromtimestamp(ctx.now, TZ), ctx.settings.max_interviews)
+    parsed = interview.parse(text, datetime.fromtimestamp(ctx.now, TZ), ctx.settings.max_interviews,
+                             ctx.settings.interview_minutes)
     if parsed.problems:
         return "\n".join(["Nothing was saved. Fix all of this and send it again:",
                           *(f"• {p}" for p in parsed.problems), "", "/hr interview help for the format"])

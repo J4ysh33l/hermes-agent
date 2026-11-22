@@ -75,7 +75,7 @@ def file_name(slip: Slip, period: Period) -> str:
     return f"Payslip_{period.end:%b-%Y}_{safe}"
 
 
-def _private_dir(path: Path) -> Path:
+def private_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     for part in (path, *path.parents):
         if part.name == "hr":
@@ -172,7 +172,7 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
     paths.blocked.unlink(missing_ok=True)
     batch, report = checked.batch, checked.report(leave_out=agreed)
     template = paths.templates / settings.payslip_template
-    out = _private_dir(paths.run_dir(period))
+    out = private_dir(paths.run_dir(period))
     docs = []
     for slip in batch.slips:
         doc = out / (file_name(slip, period) + ".docx")
@@ -189,6 +189,6 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
 
 
 def save_private(path: Path, data: dict) -> None:
-    _private_dir(path.parent)
+    private_dir(path.parent)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(path, 0o600)
