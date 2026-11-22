@@ -39,6 +39,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
 | `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes`; no model sees pay. `hr/README.md`. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
+| `social/` | Instagram, LinkedIn and X: research and the $0 / $5 / $20 scenarios (`social/RESEARCH.md`). Not built yet. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 
 Each workflow will get its own folder here and ship as a Hermes profile distribution.
