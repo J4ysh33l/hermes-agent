@@ -101,9 +101,8 @@ class Directory:
             hit = slackapi.by_email(self._http, self._token, email)
         if hit:
             return _member(hit)
-        local = email.split("@")[0]
-        return Person(name=name or local, first=first or (name or local).split(" ")[0].split(".")[0].title(),
-                      email=email)
+        # An address with no name anywhere (an outside guest): show the address, greet "there".
+        return Person(name=name or email, first=first or (name.split(" ")[0] if name else "there"), email=email)
 
     def _suggest(self, word: str) -> str:
         names = {k: _member(m).name for m in self.members() for k in _keys(m)}

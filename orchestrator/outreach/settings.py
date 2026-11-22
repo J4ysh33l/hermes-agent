@@ -17,7 +17,7 @@ from orchestrator.brief.settings import EXAMPLE, ModelChoice
 
 @dataclass(frozen=True)
 class Templates:
-    meeting_subject: str = "{topic} | {first} / 1:1"
+    meeting_subject: str = "{topic} | 1:1"
     meeting_body: str = ("Hi {first},<br><br>Setting up {length} minutes to discuss {topic}. "
                          "The Teams link is below.<br><br>Thanks")
     meeting_note: str = ("Hi {first}, I've sent you a calendar invite for {day}, {start}–{end} IST "
