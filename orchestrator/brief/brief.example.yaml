@@ -157,3 +157,15 @@ outreach:
     allhands_post: >-
       Hi everyone, we have an all-hands on {day}, {start}–{end} IST: {topic}. A calendar invite
       has been sent to everyone in this channel.{join}
+
+# ---------------------------------------------------------------- HR (/hr payslips)
+# Payslips from your monthly salary sheet. See orchestrator/hr/README.md. Pay never goes to a model.
+hr:
+  weekly_off: [sunday]        # LOP = Compensation ÷ working days × LOP days; add saturday if it's off
+  holidays: []                # e.g. [2026-11-08, 2026-12-25]: not working days either
+  payslip_template: payslip.docx   # in $HERMES_HOME/hr/templates/, with {{fields}}
+  max_per_run: 200
+  preview_minutes: 120        # a batch waiting for /hr yes expires after this
+  sender_name: ""             # signs the email, e.g. "Jaysheel Bhatt, Medoc Health"
+  mail_subject: "Payslip for {month}"
+  mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"

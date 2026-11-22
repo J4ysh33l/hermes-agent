@@ -37,6 +37,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `llm.py`, `usage.py`, `prices.yaml` | The one logged model client; the usage log and `/usage` report; prices and free limits. |
 | `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
+| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr yes`; no model sees pay. `hr/README.md`. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 

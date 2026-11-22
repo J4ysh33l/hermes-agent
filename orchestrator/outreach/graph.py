@@ -12,6 +12,7 @@ body. ``transactionId`` makes a retried create return the same event instead of 
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone, UTC
 
 from orchestrator.brief.creds import Secrets
@@ -25,11 +26,11 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 FREE = {"free", "workingElsewhere"}
 
 
-def access(http: Http, secrets: Secrets) -> str:
-    """A fresh access token; the rotated refresh token is saved, as the brief does."""
+def access(http: Http, secrets: Secrets, scopes: str = outlook.MEETING_SCOPES) -> str:
+    """A fresh access token for ``scopes``; the rotated refresh token is saved, as the brief does."""
     try:
         fresh = outlook.refresh(http, secrets.get("MS_CLIENT_ID"), secrets.get("MS_TENANT_ID"),
-                                secrets.token("microsoft"), outlook.MEETING_SCOPES)
+                                secrets.token("microsoft"), scopes)
     except (SourceError, HttpError) as exc:
         raise OutreachError(f"Outlook: {exc}") from None
     secrets.save_token("microsoft", {"refresh_token": fresh["refresh_token"], "saved_at": fresh["saved_at"]})
@@ -92,3 +93,27 @@ def create_event(http: Http, token: str, *, subject: str, body_html: str, start:
         again = _call(http, token, "GET", f"/me/events/{data['id']}", params={"$select": "onlineMeeting"})
         join = (again.get("onlineMeeting") or {}).get("joinUrl") or ""
     return data.get("id", ""), join
+
+
+def me(http: Http, token: str) -> str:
+    """Your own email address (needs User.Read, which every sign-in carries)."""
+    data = _call(http, token, "GET", "/me", params={"$select": "mail,userPrincipalName"})
+    return data.get("mail") or data.get("userPrincipalName") or ""
+
+
+def send_mail(http: Http, token: str, *, to: tuple[str, str], subject: str, body_html: str,
+              attachments: tuple[tuple[str, bytes], ...] = ()) -> None:
+    """One email from your mailbox (kept in Sent Items). ``to``: (name, address). Attachments:
+    (file name, PDF bytes); Graph takes up to 3 MB per message this way, far above a payslip."""
+    message = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
+               "toRecipients": [{"emailAddress": {"name": to[0], "address": to[1]}}],
+               "attachments": [{"@odata.type": "#microsoft.graph.fileAttachment", "name": name,
+                                "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode()}
+                               for name, data in attachments]}
+    headers = {"Authorization": f"Bearer {token}"}
+    try:  # 202 Accepted with an empty body
+        http.request("POST", GRAPH + "/me/sendMail", headers=headers,
+                     json_body={"message": message, "saveToSentItems": True})
+    except HttpError as exc:
+        hint = " (Mail.Send not granted, or the login predates it)" if exc.status == 403 else ""
+        raise OutreachError(f"Outlook sendMail to {to[1]}: HTTP {exc.status}{hint}") from None

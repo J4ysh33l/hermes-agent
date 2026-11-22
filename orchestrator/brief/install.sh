@@ -20,6 +20,9 @@ echo "wrote   $HOME_DIR/scripts/morning_brief.py"
 sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/outreach/launcher.py.template" \
     > "$HOME_DIR/scripts/outreach_draft.py"
 echo "wrote   $HOME_DIR/scripts/outreach_draft.py (Hermes' agent drafts Slack messages and meetings)"
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/hr/launcher.py.template" > "$HOME_DIR/scripts/hr_payslips.py"
+mkdir -p "$HOME_DIR/hr/templates" && chmod 700 "$HOME_DIR/hr"
+echo "wrote   $HOME_DIR/scripts/hr_payslips.py (put your payslip.docx in $HOME_DIR/hr/templates/)"
 
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"

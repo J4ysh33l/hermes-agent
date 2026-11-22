@@ -64,6 +64,18 @@ def _outreach_help(name: str) -> str:
     return {"slack": chat.SLACK_HELP, "meet": chat.MEET_HELP}[name]
 
 
+def _hr(args: str) -> str:
+    from orchestrator.hr.chat import handle
+
+    return handle(args)
+
+
+def _hr_help() -> str:
+    from orchestrator.hr.chat import HR_HELP
+
+    return HR_HELP
+
+
 def table() -> tuple[ChatCommand, ...]:
     return (
         ChatCommand("brief", "Morning brief: full list, topics, watchlist, mutes", _brief_help(), _brief),
@@ -73,6 +85,7 @@ def table() -> tuple[ChatCommand, ...]:
                     _slack),
         ChatCommand("meet", "Book Outlook meetings + Slack notes: 1:1s, all-hands, approve", _outreach_help("meet"),
                     _meet),
+        ChatCommand("hr", "Payslips from your salary sheet: show, test, send", _hr_help(), _hr),
     )
 
 

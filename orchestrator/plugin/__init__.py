@@ -1,7 +1,7 @@
 """Hermes plugin for this fork:
 
 - registers every command in orchestrator/commands.py plus /menu;
-- registers the ``outreach`` skill, so Hermes' agent can draft Slack messages and meetings (it
+- registers the ``outreach`` and ``hr-payslips`` skills, so Hermes' agent can draft Slack messages and meetings (it
   cannot send them: only /slack yes and /meet yes, typed by you, do);
 - logs one usage line per Hermes model call: agent turns (``post_api_request``), failed turn
   requests (``api_request_error``) and side calls such as titles or compression
@@ -71,6 +71,8 @@ def register(ctx) -> None:
                              args_hint="help | <subcommand> [value]")
     ctx.register_skill("outreach", REPO_ROOT / "orchestrator/outreach/SKILL.md",
                        description="Draft Slack messages and Outlook meetings; the user approves in Telegram")
+    ctx.register_skill("hr-payslips", REPO_ROOT / "orchestrator/hr/SKILL.md",
+                       description="Make payslips from a salary sheet; the user sends them with /hr")
     ctx.register_hook("post_api_request", on_api_request)
     ctx.register_hook("api_request_error", on_api_error)
     ctx.register_hook("post_auxiliary_call", on_aux_call)
