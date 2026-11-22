@@ -25,7 +25,7 @@ next time, so nothing is lost.
 **Privacy:** item titles and snippets from Slack (including hospital channels) and mail go to the
 Gemini free tier, which may use them to improve Google's products. Money and HR mail (receipts,
 payments, payslips… by subject word or sender, `mail.private_*` in `brief.yaml`) is never sent:
-the script lists its sender and subject under "💳 Money & HR". One-time codes and sign-in links
+the script lists its subject under "💳 Money & HR". One-time codes and sign-in links
 (`mail.noise_subject_patterns`) are dropped entirely.
 
 ## Telegram commands (`/brief …`, never a model call)

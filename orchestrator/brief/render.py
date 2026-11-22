@@ -125,14 +125,13 @@ def brief_text(
 
 
 def _private_block(items: list[Item]) -> list[str]:
-    """Money and HR mail, listed by the script: sender and subject only, never sent to the model."""
+    """Money and HR mail, listed by the script: subject only, never sent to the model."""
     if not items:
         return []
     out = ["", f"**💳 Money & HR · {len(items)}** (not sent to AI)"]
     for item in items[:PRIVATE_SHOWN]:
-        who = plain(item.sender.split("<")[0].strip().strip('"') or item.sender)
         link = f" [open]({short_url(item.url, item.title)})" if item.url else ""
-        out.append(f"• {who}: {plain(item.title)}{link}")
+        out.append(f"• {plain(item.title)}{link}")
     if len(items) > PRIVATE_SHOWN:
         out.append(f"…and {len(items) - PRIVATE_SHOWN} more")
     return out

@@ -93,7 +93,7 @@ slack:
 mail:
   max_messages: 50
   keep_newsletters_from: []   # senders whose list mail you still want
-  # Money and HR mail: listed at the bottom of the brief by the script (sender + subject),
+  # Money and HR mail: listed at the bottom of the brief by the script (subject only),
   # never sent to Gemini. Whole words, any case, in the subject; senders match anywhere.
   private_senders: []         # e.g. [razorpay.com, hdfcbank, payroll@yourcompany.com]
   private_subject_words: [payslip, salary, payroll, invoice, receipt, payment, refund, transaction,
