@@ -67,5 +67,7 @@ people, 15:00–19:00, 15 min each → 15:00, 15:20, … 18:00–18:15.
   draft never sends. Breaking the packer and the approval guard turned 2 and 6 tests red.
 - **Live, 2026-11-22:**
   - `/slack send` and `/slack schedule` to yourself both worked (0.3 s).
-  - The Outlook calendar is **not granted yet**: AADSTS65001. `/meet` names the fix.
+  - Before consent, `/meet` named the fix (AADSTS65001) and the brief kept reading mail.
+  - After a new sign-in, the meeting scopes were granted: busy times and the directory lookup
+    work, and the brief's Mail.Read refresh still works.
   - Not run live yet: drafts and sentences (no Gemini key in this container), and booking.
