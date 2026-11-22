@@ -35,37 +35,38 @@ are four separate causes.
    create inside your own workspace keeps **50+ calls a minute and up to 999 messages per
    call**. Slack's FAQ says: "internal customer-built apps are not impacted and retain their
    current, higher rate limits."
-4. **The user-token path uses `search.messages`, which Slack now calls "legacy".** It also
-   has a small bug in our code. For a DM, the result has `type: "im"` and the channel "name"
-   is the other person's user ID. There is no `is_im` field. Our code checks `is_im`
-   (`slack.py:61`), so DMs would show up as `#U0ABC123` instead of "DM: Priya".
+4. **The user-token path uses `search.messages`, which Slack now calls "legacy".** I first
+   thought DMs would be mislabelled. A live check showed search results *do* carry `is_im`, so
+   that was wrong.
+   - **The real gap:** search also returns public channels you never joined. Over 48 hours that
+     was 401 messages out of 463.
+   - **The fix:** keep only conversations you are a member of.
 
-### 1.2 How 20 channels + 10 DMs come back: about 35 small calls, under a minute
+### 1.2 How the brief reads Slack (built and measured 2026-11-22)
 
-Use a user token with read scopes and these steps. **Needs a code change:** today the user
-token only runs the search path.
+I measured both designs on your workspace over 48 hours, keeping only conversations you are in:
 
-| Step | Call | How many | What you get |
+| Design | Messages found | Calls | Time |
 |---|---|---|---|
-| 1 | `users.conversations` with `types=public_channel,private_channel,mpim,im`, `limit=999` | **1** | Every conversation *you are a member of*: 20 channels, 10 DMs and any group DMs. Each has its **ID**, and channels also have their **name**. A DM has `user` = the other person's ID. |
-| 2 | `users.list` (or `users.info` for just the people you DM) | 1–2 | Turns user IDs (`U…`) into names. Cache it in a file and refresh it weekly. |
-| 3 | `conversations.history` with `channel=<id>`, `oldest=<last run's time>` | **30** (one per conversation) | Every new top-level message since the last brief. If nothing is new, the reply is tiny. |
-| 4 | `conversations.replies` with `channel`, `ts=<thread>`, `oldest=<last run>` | only for messages from step 3 where `reply_count > 0` and `latest_reply` is newer than the last run | The new replies in active threads. Usually 0–10 calls. |
-| 5 | `search.messages` with `query="is:thread after:<yesterday>"` | 1–2 | Catches **new replies to threads that started before the last run**. Step 3 cannot see those, because the thread's first message is older than `oldest`. |
+| History per conversation, plus thread replies | 59 | 73 | 10.1 s |
+| **Search, filtered to your conversations** | **61** | **5** | **1.0 s** |
 
-- **Total:** about 35–45 calls. All of them are Tier 3 (50+ a minute) except search (Tier 2,
-  20 a minute). That's roughly 10–30 seconds with **no fixed sleep**. Only wait when Slack
-  answers `429` and says how long in `Retry-After`.
-- **Measured on the real workspace (2026-11-22, internal app, user token):**
-  - `users.conversations` returned **61 conversations in one call**: 34 public, 1 private,
-    25 DMs and 1 group DM.
-  - Reading the last 24 h of all of them took **62 calls in 7.5 seconds**, with no
-    throttling.
-- **The 1.3-second pause can go.** It is in our code today (`slack.py:26`).
-- **For step 5, instead of the legacy search:** Slack's Real-time Search API
-  (`assistant.search.context`) has been available to internal apps since Feb 2026. But it
-  returns only 20 results per call and allows about 10 calls a minute. It's fine as a backup
-  for step 5, but too slow to collect everything.
+- History's only extras were 5 automatic huddle notices.
+- Search also caught 7 replies to threads started earlier, which history cannot see.
+
+So the brief now uses search. A daily run is:
+
+| Step | Call | How many |
+|---|---|---|
+| 1 | `users.conversations` with all four types: every channel, private channel, DM and group DM you're in, with names | 1 |
+| 2 | `users.list`: every person's name. Your 166 people fit in one call. | 1 |
+| 3 | `search.messages` since the last run, kept only where you're a member | 1 per 100 messages |
+
+- **Measured:** 24 hours took **4 requests in 1.2 seconds**.
+- **Fallback:** if Slack ever switches search off, the same token falls back to history per
+  conversation plus thread replies (step 3 of the old design). There's a test for it.
+- **One item per conversation:** messages are grouped, and each thread is its own item. The
+  model reads "#ops: 7 new (Asha, Ravi): …" instead of seven rows, which saves Gemini tokens.
 
 ### 1.3 IDs, not names: how to tell #core from #home
 
@@ -91,8 +92,7 @@ How we make sense of the IDs:
    instead.
 4. **You name the groups, by channel name, in `brief.yaml`.** Slack has **no public API for
    your sidebar sections**: `users.channelSections` is not documented and its page returns
-   404. So "Core" and "Home" must be written down once in the config. **Needs a code change.**
-   Example:
+   404. So "Core" and "Home" must be written down once in `brief.yaml`. **Built.** Example:
 
    ```yaml
    slack:
@@ -105,11 +105,9 @@ How we make sense of the IDs:
      weights: {Core: 2, Hospital: 1.5, People: 2, Home: 1, Other channels: 0.5}
    ```
 
-5. **The script stores the IDs.** On every run it matches these names to IDs and saves the
-   pairs. If someone **renames** `#core-team` to `#core`, the ID doesn't change. The script
-   then notices that the name it knows (`core-team`) now points to an ID whose name is `core`,
-   and warns you in the brief: "Slack: #core-team is now #core, update brief.yaml". Nothing is
-   silently lost.
+5. **Renames:** a channel you put in a group that gets renamed simply moves to
+   `other_group` until you update `brief.yaml`. It is never lost. (The ID-tracking warning
+   described earlier is not built.)
 6. **What goes to Gemini** is one compact block per conversation, already labelled:
    `[Core] #product — 7 new (Rahul ×4, Priya ×3): …`. The model never sees an ID.
 
@@ -287,12 +285,14 @@ Do steps 1–9 once, signed in as **the account you want to own the project** (s
    GOOGLE_CLIENT_SECRET=GOCSPX-...
    ```
 
-Then sign in **once per account**.
-- **Works today for one account only:** `auth google` saves to a single file,
-  `tokens/google.json`. A second run overwrites the first.
-- **Needs a code change for 3 accounts:** the command would take a label, for example
-  `auth google --account personal`. It would send Google `login_hint=<email>` so the right
-  account is preselected, and save to `tokens/google-personal.json`.
+Then sign in **once per account** (built 2026-11-22):
+- **Command:** `python -m orchestrator.brief auth google --account <label>`. The label is your
+  name for the account: `main` (the default), `work`, `family`, and so on.
+- **Where it's saved:** `tokens/google-<label>.json`, together with the account's email
+  address. The first account (`main`) stays in `tokens/google.json`.
+- **No duplicates:** signing in the same Gmail address under a second label is refused.
+- **What the brief does with it:** each account is read separately with its own watermark.
+  An expired login names only that account: "🔑 Gmail (work) needs a new login".
 
 Each sign-in goes like this:
 
@@ -322,14 +322,17 @@ When a login ends, the brief already says "🔑 Gmail needs a new login".
 
 ### 2.3 Fetching three inboxes with the fewest calls
 
-- **Works today:** 1 list call, then **1 call per email** (`gmail.py:44-46`). That is the N+1
-  pattern: 50 emails means 51 calls per account.
-- **Better (needs a code change):** for each account:
+- **Before:** 1 list call, then **1 call per email**. 50 emails meant 51 calls per account.
+- **Now (built and measured 2026-11-22):** for each account:
   1. 1 token refresh.
   2. 1 `messages.list` with `q="after:<epoch> -category:promotions -category:social
      -category:forums"`. It returns only IDs.
-  3. **1 batch request** to `https://www.googleapis.com/batch/gmail/v1` holding up to 50
-     `messages.get?format=metadata` calls. Google: max 100 per batch, recommends ≤50.
+  3. **1 batch request per 25 emails** to `https://www.googleapis.com/batch/gmail/v1`.
+     - A live batch of 50 once got "429 Too many concurrent requests for user" on 23 of its
+       parts, so we use 25.
+     - Failed parts are retried after 2, 4 and 8 seconds.
+     - If any still fail, that account is read again next run and nothing is skipped.
+     - Measured: 24 hours = 3 requests, 0.6 s. 3 days, 47 emails = 3 requests, 0.8 s.
   4. That's **3 HTTP requests per account, 9 for all three.** Each still counts as separate
      calls against quota, but the quota is very large: 6,000 units a minute per account,
      against 5 per list and 20 per get.
@@ -501,8 +504,8 @@ policy change.
    - `$top=50`
 
 Things to know:
-- **More than 50 emails:** follow `@odata.nextLink` (needs a code change: we read only the
-  first page).
+- **More than 50 emails:** the brief reads the newest `mail.max_messages` (50). Raise it in
+  `brief.yaml` if you get more in a day; `$top` goes up to 1000 in one call.
 - **`internetMessageHeaders` in a list call:** works. It was tested on Medoc's mailbox on 2026-11-22: 15 emails came back in one call, 0.6 seconds, with no error. Background: Microsoft documents it only on single-message
   GETs. If the first real run returns a `400`, remove it from `$select`. Newsletter detection
   still works through Focused/Other.

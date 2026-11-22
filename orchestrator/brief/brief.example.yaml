@@ -84,13 +84,29 @@ gold:
 slack:
   max_messages: 200
   skip_channels: []           # channel names without '#'
+  # Your own grouping (Slack's sidebar sections have no API). Channel names without '#';
+  # a channel in no group goes to other_group, every DM and group DM to dm_group.
+  groups: {}                  # e.g. {Core: [core-team, product], Hospital: [icu-ops], Home: [family]}
+  dm_group: People
+  other_group: Other channels
+  weights: {}                 # e.g. {Core: 2, People: 2, Hospital: 1.5, Other channels: 0.5}
 mail:
   max_messages: 50
   keep_newsletters_from: []   # senders whose list mail you still want
-  # Finance and HR mail stays out of the brief (it goes to Gemini otherwise).
-  exclude_senders: []
-  exclude_subject_words: [payslip, salary, payroll, invoice, reimbursement, appraisal, "offer letter",
-                          "form 16", tds, gst return, bank statement, credit card statement]
+  # Money and HR mail: listed at the bottom of the brief by the script (sender + subject),
+  # never sent to Gemini. Whole words, any case, in the subject; senders match anywhere.
+  private_senders: []         # e.g. [razorpay.com, hdfcbank, payroll@yourcompany.com]
+  private_subject_words: [payslip, salary, payroll, invoice, receipt, payment, refund, transaction,
+                          debited, credited, statement, subscription, reimbursement, appraisal,
+                          "offer letter", "form 16", tds, gst, emi, loan, "credit card"]
+  # Dropped entirely: one-time codes and sign-in links are useless by 8:15 am.
+  # Python regular expressions, any case, matched against the subject.
+  noise_subject_patterns:
+    - '\b(verification|confirmation|security|login|sign[- ]?in|one[- ]time|access)\s+code\b'
+    - '\bOTP\b'
+    - '^\W*\d{4,8}\b.*\bcode\b'   # "618363 is your KIRI verification code"
+    - '\b(secure|magic|sign[- ]?in|login)\s+link\b'
+    - '\b(verify|confirm)\s+your\s+(email|e-mail|account)\b'
 muted_words: []
 muted_senders: []
 

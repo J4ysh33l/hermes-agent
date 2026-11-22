@@ -44,6 +44,7 @@ class Http(Protocol):
         headers: dict[str, str] | None = None,
         form: dict[str, str] | None = None,
         json_body: Any = None,
+        data: bytes | None = None,
     ) -> Response: ...
 
 
@@ -57,8 +58,7 @@ def build_url(url: str, params: dict[str, Any] | None) -> str:
 class UrllibHttp:
     """Real network client. Raises HttpError for any non-2xx status."""
 
-    def request(self, method, url, *, params=None, headers=None, form=None, json_body=None) -> Response:
-        data = None
+    def request(self, method, url, *, params=None, headers=None, form=None, json_body=None, data=None) -> Response:
         hdrs = {"User-Agent": USER_AGENT, "Accept": "*/*", **(headers or {})}
         if form is not None:
             data = urllib.parse.urlencode(form).encode()

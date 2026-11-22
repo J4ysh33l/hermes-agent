@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -76,10 +77,15 @@ class Settings:
     india_gold: bool = True
     slack_max: int = 200
     slack_skip_channels: frozenset[str] = frozenset()
+    slack_groups: tuple[tuple[str, frozenset[str]], ...] = ()  # (group, channel names), first match wins
+    slack_dm_group: str = "People"
+    slack_other_group: str = "Other channels"
+    slack_group_weights: tuple[tuple[str, float], ...] = ()
     mail_max: int = 50
     keep_newsletters_from: tuple[str, ...] = ()
-    exclude_senders: tuple[str, ...] = ()
-    exclude_subject_words: tuple[str, ...] = ()
+    private_senders: tuple[str, ...] = ()  # mail listed in the brief by the script, never sent to the model
+    private_subject_words: tuple[str, ...] = ()
+    noise_subject_patterns: tuple[str, ...] = ()  # regexes; matching mail is dropped (one-time codes, links)
     muted_words: tuple[str, ...] = ()
     muted_senders: tuple[str, ...] = ()
     max_input_tokens: int = 12000
@@ -104,6 +110,11 @@ class Settings:
 
 def _tuple(value: Any) -> tuple[str, ...]:
     return tuple(str(v) for v in (value or ()))
+
+
+def _regex(pattern: str) -> str:
+    re.compile(pattern)  # a typo in brief.yaml fails at load, naming the pattern, not mid-run
+    return pattern
 
 
 def _topic(raw: dict[str, Any]) -> Topic:
@@ -139,10 +150,16 @@ def parse(raw: dict[str, Any], prefs: Prefs) -> Settings:
         india_gold=bool(gold.get("india_ibja", True)),
         slack_max=int(slack.get("max_messages", 200)),
         slack_skip_channels=frozenset(_tuple(slack.get("skip_channels"))),
+        slack_groups=tuple((str(g), frozenset(n.lstrip("#") for n in _tuple(names)))
+                           for g, names in (slack.get("groups") or {}).items()),
+        slack_dm_group=str(slack.get("dm_group", "People")),
+        slack_other_group=str(slack.get("other_group", "Other channels")),
+        slack_group_weights=tuple((str(g), float(w)) for g, w in (slack.get("weights") or {}).items()),
         mail_max=int(mail.get("max_messages", 50)),
         keep_newsletters_from=tuple(s.lower() for s in _tuple(mail.get("keep_newsletters_from"))),
-        exclude_senders=tuple(s.lower() for s in _tuple(mail.get("exclude_senders"))),
-        exclude_subject_words=tuple(s.lower() for s in _tuple(mail.get("exclude_subject_words"))),
+        private_senders=tuple(s.lower() for s in _tuple(mail.get("private_senders"))),
+        private_subject_words=tuple(s.lower() for s in _tuple(mail.get("private_subject_words"))),
+        noise_subject_patterns=tuple(_regex(p) for p in _tuple(mail.get("noise_subject_patterns"))),
         muted_words=tuple(s.lower() for s in _tuple(raw.get("muted_words"))),
         muted_senders=tuple(s.lower() for s in _tuple(raw.get("muted_senders"))),
         max_input_tokens=int(ranking.get("max_input_tokens", 12000)),

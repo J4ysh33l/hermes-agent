@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -40,7 +41,8 @@ markets:
   - {symbol: "^NSEI", label: "Nifty 50", group: India}
 gold: {symbol: "GC=F", fx_symbol: "INR=X"}
 mail:
-  exclude_subject_words: [payslip]
+  private_subject_words: [payslip]
+  noise_subject_patterns: ['verification code']
 ranking:
   max_input_tokens: 12000
   models: [{id: model-a}, {id: model-b, json_mode: false}]
@@ -56,10 +58,37 @@ IBJA_PAGE = (
 )
 
 
-def slack_reply(texts: list[str]) -> dict:
-    matches = [{"ts": str(NOW - 600 - n), "text": t, "username": "asha", "permalink": f"https://slack/{n}",
-                "channel": {"id": "C1", "name": "ops"}} for n, t in enumerate(texts)]
+def slack_reply(texts: list[str], channel: str = "C1") -> dict:
+    matches = [{"ts": f"{NOW - 600 - n:.6f}", "text": t, "user": "U1", "permalink": f"https://slack/{n}",
+                "channel": {"id": channel, "name": "ops"}} for n, t in enumerate(texts)]
     return {"ok": True, "messages": {"matches": matches, "paging": {"pages": 1}}}
+
+
+SLACK_CONVERSATIONS = {"ok": True, "channels": [
+    {"id": "C1", "name": "ops", "is_channel": True},
+    {"id": "D1", "is_im": True, "user": "U2"},
+    {"id": "G1", "name": "mpdm-asha--ravi--me-1", "is_mpim": True}]}
+SLACK_PEOPLE = {"U1": "Asha", "U2": "Ravi"}
+
+
+def slack_user(call) -> dict:
+    uid = query(call)["user"][0]
+    return {"ok": True, "user": {"id": uid, "profile": {"display_name": SLACK_PEOPLE.get(uid, "")}}}
+
+
+def gmail_batch(messages: dict[str, dict]):
+    """Answers the Gmail batch endpoint like Google: one multipart part per requested id."""
+    def answer(call) -> str:
+        ids = re.findall(r"GET /gmail/v1/users/me/messages/([^?]+)\?", call.data.decode())
+        parts = []
+        for mid in ids:
+            body = messages.get(mid)
+            status = "200 OK" if body else "429 Too Many Requests"
+            payload = body or {"error": {"message": "Too many concurrent requests for user."}}
+            parts.append(f"--batch_r\r\nContent-Type: application/http\r\nContent-ID: <response-{mid}>\r\n\r\n"
+                         f"HTTP/1.1 {status}\r\nContent-Type: application/json\r\n\r\n{json.dumps(payload)}\r\n")
+        return "".join(parts) + "--batch_r--\r\n"
+    return answer
 
 
 def gmail_message(mid: str, subject: str, newsletter: bool = False) -> dict:
@@ -73,13 +102,17 @@ def gmail_message(mid: str, subject: str, newsletter: bool = False) -> dict:
 def services(gemini=None) -> FakeHttp:
     """Every outside service in a healthy state."""
     http = FakeHttp()
+    http.on("GET", "https://slack.com/api/users.conversations", SLACK_CONVERSATIONS)
+    http.on("GET", "https://slack.com/api/users.list", {"ok": True, "members": [
+        {"id": "U1", "profile": {"display_name": "Asha"}}]})
+    http.on("GET", "https://slack.com/api/users.info", slack_user)  # only for ids users.list missed (U2)
     http.on("GET", "https://slack.com/api/search.messages", slack_reply(["Can you approve the vendor quote today?"]))
     http.on("POST", "https://oauth2.googleapis.com/token", {"access_token": "g-access"})
-    http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages?",
-            {"messages": [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]})
-    http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages/m1", gmail_message("m1", "Board meeting moved"))
-    http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages/m2", gmail_message("m2", "Weekly digest", True))
-    http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages/m3", gmail_message("m3", "Your payslip for Nov"))
+    mails = {"m1": gmail_message("m1", "Board meeting moved"), "m2": gmail_message("m2", "Weekly digest", True),
+             "m3": gmail_message("m3", "Your payslip for Nov"),
+             "m4": gmail_message("m4", "618363 is your KIRI verification code")}
+    http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages?", {"messages": [{"id": m} for m in mails]})
+    http.on("POST", "https://www.googleapis.com/batch/gmail/v1", gmail_batch(mails))
     http.on("POST", "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
             {"access_token": "ms-access", "refresh_token": "ms-refresh-2"})
     http.on("GET", "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages", {"value": [{
@@ -144,16 +177,38 @@ class EndToEnd(BriefCase):
         self.assertIn("Summary of i1", result.text)
         self.assertLess(len(result.text), 4096, "fits one Telegram message")
 
-    def test_newsletters_finance_mail_and_old_news_never_reach_the_model(self):
+    def test_newsletters_finance_mail_codes_and_old_news_never_reach_the_model(self):
         http = services()
-        self.run_brief(http)
+        result = self.run_brief(http)
         prompt = self.gemini_prompts(http)[0]
         self.assertIn("Board meeting moved", prompt)
         self.assertIn("Contract signature needed", prompt)
-        self.assertNotIn("Weekly digest", prompt)
-        self.assertNotIn("payslip", prompt.lower())
-        self.assertNotIn("Old story", prompt)
-        self.assertNotIn(KEY, prompt)
+        for absent in ("Weekly digest", "payslip", "verification code", "Old story", KEY):
+            self.assertNotIn(absent.lower(), prompt.lower())
+        self.assertIn("Money & HR · 1", result.text, "private mail is still listed, by the script")
+        self.assertIn("Your payslip for Nov", result.text)
+        self.assertNotIn("verification code", result.text, "one-time codes are dropped entirely")
+
+    def test_mail_is_read_with_one_batch_request_not_one_call_per_mail(self):
+        http = services()
+        self.run_brief(http)
+        self.assertEqual(http.count("https://www.googleapis.com/batch/gmail/v1"), 1)
+        self.assertEqual(http.count("https://gmail.googleapis.com/gmail/v1/users/me/messages/"), 0)
+
+    def test_mail_parts_throttled_inside_a_batch_are_retried(self):
+        http = services()
+        mails = {"m1": gmail_message("m1", "Board meeting moved")}
+        attempts = []
+
+        def flaky(call):
+            attempts.append(call)
+            return gmail_batch(mails if len(attempts) > 1 else {})(call)
+        http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/messages?", {"messages": [{"id": "m1"}]})
+        http.on("POST", "https://www.googleapis.com/batch/gmail/v1", flaky)
+        with mock.patch("orchestrator.brief.sources.gmail.time.sleep"):
+            self.run_brief(http)
+        self.assertEqual(len(attempts), 2)
+        self.assertIn("Board meeting moved", self.gemini_prompts(http)[0])
 
     def test_second_run_with_nothing_new_makes_no_model_call(self):
         self.run_brief(services())
@@ -299,6 +354,67 @@ class Units(unittest.TestCase):
             markets.india_gold(broken)
 
 
+class SlackUser(BriefCase):
+    def test_user_token_reads_member_conversations_in_two_calls_grouped_and_named(self):
+        http = services()
+        replies = slack_reply(["Can you approve the vendor quote today?", "Also the invoice"])
+        replies["messages"]["matches"] += slack_reply(["Lunch?"], channel="D1")["messages"]["matches"]
+        replies["messages"]["matches"] += slack_reply(["Not my channel"], channel="C9")["messages"]["matches"]
+        http.on("GET", "https://slack.com/api/search.messages", replies)
+        (self.state / "brief.yaml").write_text(CONFIG + "slack:\n  groups: {Core: [ops]}\n  weights: {Core: 2}\n",
+                                               encoding="utf-8")
+        self.run_brief(http)
+        self.assertEqual(http.count("https://slack.com/api/users.conversations"), 1)
+        self.assertEqual(http.count("https://slack.com/api/search.messages"), 1)
+        self.assertEqual(http.count("https://slack.com/api/conversations.history"), 0)
+        self.assertEqual(http.count("https://slack.com/api/users.info"), 1, "only the person users.list missed")
+        prompt = self.gemini_prompts(http)[0]
+        self.assertNotIn("Not my channel", prompt, "public channels you have not joined stay out")
+        self.assertIn("Core · #ops", prompt)
+        self.assertIn("People · DM: Ravi", prompt)
+        self.assertIn("Core (2)", prompt)
+        self.assertEqual(prompt.count("| slack |"), 2, "one item per conversation, not per message")
+
+    def test_reply_to_an_older_thread_is_its_own_item(self):
+        http = services()
+        reply = slack_reply(["Done, merged"])
+        reply["messages"]["matches"][0]["permalink"] = "https://x/archives/C1/p1?thread_ts=1700000000.000100&cid=C1"
+        http.on("GET", "https://slack.com/api/search.messages", reply)
+        self.run_brief(http)
+        self.assertIn("#ops (thread)", self.gemini_prompts(http)[0])
+
+    def test_search_switched_off_falls_back_to_history(self):
+        http = services()
+        http.on("GET", "https://slack.com/api/search.messages", {"ok": False, "error": "method_deprecated"})
+        http.on("GET", "https://slack.com/api/auth.test", {"ok": True, "url": "https://acme.slack.com/"})
+        http.on("GET", "https://slack.com/api/conversations.history", {"ok": True, "messages": [
+            {"ts": f"{NOW - 300:.6f}", "user": "U1", "text": "Ship the release today?"}]})
+        self.run_brief(http)
+        self.assertEqual(http.count("https://slack.com/api/conversations.history"), 3)
+        self.assertIn("Ship the release today?", self.gemini_prompts(http)[0])
+
+
+class GmailAccounts(BriefCase):
+    def test_each_account_is_read_and_an_expired_one_is_named_alone(self):
+        tokens = self.state / "tokens"
+        (tokens / "google-work.json").write_text('{"refresh_token": "g-work", "email": "w@x.com"}', encoding="utf-8")
+        (tokens / "google-old.json").write_text('{"refresh_token": "g-old"}', encoding="utf-8")
+        http = services()
+
+        def token(call):
+            if call.form["refresh_token"] == "g-old":
+                raise http_error(400, '{"error": "invalid_grant"}')(call)
+            return {"access_token": "g-access"}
+        http.on("POST", "https://oauth2.googleapis.com/token", token)
+        result = self.run_brief(http)
+        self.assertEqual(http.count("https://www.googleapis.com/batch/gmail/v1"), 2, "main and work")
+        self.assertIn("🔑 Gmail (old) needs a new login", result.text)
+        self.assertIn("auth google --account old", result.text)
+        prompt = self.gemini_prompts(http)[0]
+        self.assertIn("Gmail (work)", prompt)
+        self.assertIn("Board meeting moved", prompt)
+
+
 class SlackBot(BriefCase):
     def bot_services(self) -> FakeHttp:
         http = services()
@@ -312,9 +428,12 @@ class SlackBot(BriefCase):
             {"ts": f"{NOW - 200:.6f}", "user": "U1", "subtype": "channel_join", "text": "joined"}]})
         return http
 
-    def test_bot_token_reads_member_channels_only_and_wins_over_user_token(self):
-        with (self.home / ".env").open("a", encoding="utf-8") as env:
-            env.write("SLACK_BOT_TOKEN=bot-test\n")
+    def use_bot_token(self) -> None:
+        env = (self.home / ".env").read_text(encoding="utf-8").replace("SLACK_USER_TOKEN=slack-test\n", "")
+        (self.home / ".env").write_text(env + "SLACK_BOT_TOKEN=bot-test\n", encoding="utf-8")
+
+    def test_bot_token_reads_member_channels_only(self):
+        self.use_bot_token()
         http = self.bot_services()
         self.run_brief(http)
         read = [query(c)["channel"][0] for c in http.calls if "conversations.history" in c.url]
@@ -326,8 +445,7 @@ class SlackBot(BriefCase):
         self.assertNotIn("joined", prompt)
 
     def test_missing_bot_scope_is_reported_as_a_login_problem(self):
-        with (self.home / ".env").open("a", encoding="utf-8") as env:
-            env.write("SLACK_BOT_TOKEN=bot-test\n")
+        self.use_bot_token()
         http = self.bot_services()
         http.on("GET", "https://slack.com/api/conversations.list",
                 {"ok": False, "error": "missing_scope", "needed": "groups:read"})
@@ -378,9 +496,22 @@ class LoginCase(unittest.TestCase):
 
     def test_google_login_still_saves_its_refresh_token(self):
         http = FakeHttp().on("POST", "https://oauth2.googleapis.com/token", {"access_token": "a", "refresh_token": "g-new"})
+        http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile", {"emailAddress": "me@gmail.com"})
         self.login(auth.google, http, "http://localhost:8765/?code=g-code&scope=x")
-        self.assertEqual(http.calls[-1].form["code"], "g-code")
-        self.assertEqual(self.secrets.token("google")["refresh_token"], "g-new")
+        self.assertEqual(http.calls[0].form["code"], "g-code")
+        self.assertEqual(self.secrets.token("google"), {**self.secrets.token("google"), "refresh_token": "g-new",
+                                                        "email": "me@gmail.com"})
+
+    def test_second_gmail_account_gets_its_own_token_and_the_same_one_twice_is_refused(self):
+        http = FakeHttp().on("POST", "https://oauth2.googleapis.com/token", {"access_token": "a", "refresh_token": "g-2"})
+        http.on("GET", "https://gmail.googleapis.com/gmail/v1/users/me/profile", {"emailAddress": "work@gmail.com"})
+        auth.google(http, self.secrets, ask=lambda _p: "http://localhost:8765/?code=c", say=self.shown.append,
+                    account="work")
+        self.assertEqual(self.secrets.token("google-work")["email"], "work@gmail.com")
+        with self.assertRaises(SystemExit) as stop:
+            auth.google(http, self.secrets, ask=lambda _p: "http://localhost:8765/?code=c", say=self.shown.append,
+                        account="family")
+        self.assertIn("already saved as 'work'", str(stop.exception))
 
 
 if __name__ == "__main__":

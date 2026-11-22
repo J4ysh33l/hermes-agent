@@ -31,11 +31,17 @@ def _slack(http: Http, settings: Settings, secrets: Secrets, since: float) -> li
     return slack.fetch(http, secrets.get("SLACK_BOT_TOKEN"), secrets.get("SLACK_USER_TOKEN"), settings, since)
 
 
-def _gmail(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:
-    stored = secrets.token("google")
-    token = gmail.access_token(http, secrets.get("GOOGLE_CLIENT_ID"), secrets.get("GOOGLE_CLIENT_SECRET"),
-                               stored.get("refresh_token", ""))
-    return gmail.fetch(http, token, settings, since)
+def _gmail_account(account: gmail.Account) -> Callable[[Http, Settings, Secrets, float], list[Item]]:
+    def fetch(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:
+        stored = secrets.token(account.token_name)
+        token = gmail.access_token(http, secrets.get("GOOGLE_CLIENT_ID"), secrets.get("GOOGLE_CLIENT_SECRET"),
+                                   stored.get("refresh_token", ""), account.label)
+        return gmail.fetch(http, token, settings, since, account.label, stored.get("email", ""))
+    return fetch
+
+
+def _gmail_missing(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:
+    raise SourceError("not set up (run: python -m orchestrator.brief auth google)", kind="skipped")
 
 
 def _outlook(http: Http, settings: Settings, secrets: Secrets, since: float) -> list[Item]:
@@ -58,16 +64,27 @@ def _news(http: Http, settings: Settings, secrets: Secrets, since: float) -> lis
     return items
 
 
-FETCHERS: dict[str, Callable[[Http, Settings, Secrets, float], list[Item]]] = {
-    "slack": _slack, "gmail": _gmail, "outlook": _outlook, "news": _news,
-}
+Fetcher = Callable[[Http, Settings, Secrets, float], list[Item]]
+FETCHERS: dict[str, Fetcher] = {"slack": _slack, "gmail": _gmail_missing, "outlook": _outlook, "news": _news}
+
+
+def _fetchers(settings: Settings, secrets: Secrets) -> list[tuple[str, Fetcher]]:
+    """Enabled sources in order. Gmail becomes one entry per logged-in account ('gmail',
+    'gmail:work', ...), each with its own watermark and its own login alert."""
+    out: list[tuple[str, Fetcher]] = []
+    for name, fetch in FETCHERS.items():
+        if name not in settings.sources:
+            continue
+        if name == "gmail" and (found := gmail.accounts(secrets.token_dir)):
+            out += [("gmail" if a.label == gmail.MAIN else f"gmail:{a.label}", _gmail_account(a)) for a in found]
+        else:
+            out.append((name, fetch))
+    return out
 
 
 def collect(http: Http, settings: Settings, secrets: Secrets, store: Store, now: float) -> list[SourceResult]:
     results = []
-    for name, fetch in FETCHERS.items():
-        if name not in settings.sources:
-            continue
+    for name, fetch in _fetchers(settings, secrets):
         try:
             items = fetch(http, settings, secrets, store.since(name, now, settings.lookback_hours))
             results.append(SourceResult(name, tuple(items)))
@@ -85,8 +102,8 @@ def run(http: Http, settings: Settings, secrets: Secrets, store: Store, now: flo
 
     work = [i for r in results if r.name != "news" for i in r.items]
     fresh_news = [i for r in results if r.name == "news" for i in r.items]
-    kept_work, _ = filters.keep(work, settings, store.is_seen)
-    kept_news, _ = filters.keep(fresh_news, settings, store.is_seen)
+    kept_work, private, _ = filters.keep(work, settings, store.is_seen)
+    kept_news, _, _ = filters.keep(fresh_news, settings, store.is_seen)
     candidates = kept_work + filters.cap_news(kept_news, settings)
     fits, over = filters.fit_budget(candidates, settings.max_input_tokens - PROMPT_OVERHEAD_TOKENS)
 
@@ -98,11 +115,11 @@ def run(http: Http, settings: Settings, secrets: Secrets, store: Store, now: flo
     day = datetime.fromtimestamp(now, tz)
     text = render.brief_text(day=day, ranked=list(ranked.items), lines=ranked.lines,
                              total_new=len(ranked.items) + len(rest), markets=market, results=results,
-                             model=ranked.model, tz=tz)
+                             model=ranked.model, tz=tz, private=private)
     if not dry_run:
         meta = {"model": ranked.model, "model_errors": list(ranked.errors), "over_budget": len(over),
                 "failed": {r.name: r.error for r in results if r.error}}
         store.save_edition(day.strftime("%Y-%m-%d"), text, list(ranked.items), rest, meta)
-        store.mark_seen([i.uid for i in kept_work + kept_news], now)
+        store.mark_seen([i.uid for i in kept_work + kept_news + private], now)
         store.mark_run([r.name for r in results if r.ok], now)
     return RunResult(text=text, model=ranked.model, new_items=len(ranked.items) + len(rest), ranked=len(ranked.items))

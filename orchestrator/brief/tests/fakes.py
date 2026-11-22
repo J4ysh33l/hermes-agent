@@ -45,6 +45,7 @@ class Call:
     headers: dict[str, str]
     form: dict[str, str] | None
     json_body: Any
+    data: bytes | None = None
 
 
 Handler = Callable[[Call], Any]
@@ -62,9 +63,9 @@ class FakeHttp:
         self.routes[f"{method} {prefix}"] = handler if callable(handler) else (lambda _c, v=handler: v)
         return self
 
-    def request(self, method, url, *, params=None, headers=None, form=None, json_body=None) -> Response:
+    def request(self, method, url, *, params=None, headers=None, form=None, json_body=None, data=None) -> Response:
         full = build_url(url, params)
-        call = Call(method, full, headers or {}, form, json_body)
+        call = Call(method, full, headers or {}, form, json_body, data)
         self.calls.append(call)
         matches = [k for k in self.routes if f"{method} {full}".startswith(k)]
         if not matches:

@@ -160,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("models", help="list the Gemini models your key can call")
     auth_p = sub.add_parser("auth", help="one-time login")
     auth_p.add_argument("service", choices=["google", "microsoft"])
+    auth_p.add_argument("--account", default="main", help="google only: your label for this Gmail account")
     chat = sub.add_parser("chat", help="the same commands as /brief in Telegram")
     chat.add_argument("words", nargs="*")
     args = parser.parse_args(argv)
@@ -169,7 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "models":
         return cmd_models(ctx)
     if args.command == "auth":
-        (auth.google if args.service == "google" else auth.microsoft)(ctx.http, ctx.secrets())
+        if args.service == "google":
+            auth.google(ctx.http, ctx.secrets(), account=args.account)
+        else:
+            auth.microsoft(ctx.http, ctx.secrets())
         return 0
     print(handle_chat_command(" ".join(args.words), ctx.state_dir))
     return 0

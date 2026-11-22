@@ -21,6 +21,7 @@ MAX_OUTPUT_TOKENS = 1200
 
 INSTRUCTIONS = """You pick the most important items for a busy founder's 8am brief (Mumbai, India).
 Interests, by weight: {topics}.
+Slack groups, by weight: {groups}.
 Work items (Slack, Gmail, Outlook) that need a reply, a decision or carry a deadline outrank news.
 Skip routine notifications, automated alerts that need no action, and duplicates of the same story.
 Return JSON only: {{"top": [{{"id": "<item id>", "line": "<one sentence, max 22 words, what it is and why it matters>"}}]}}
@@ -46,7 +47,8 @@ def build_prompt(items: list[Item], settings: Settings) -> tuple[str, dict[str, 
         for key, i in by_id.items()
     ]
     topics = ", ".join(f"{t.name} ({t.weight:g})" for t in settings.all_topics())
-    text = INSTRUCTIONS.format(topics=topics, n=settings.top_items, items="\n".join(rows))
+    groups = ", ".join(f"{g} ({w:g})" for g, w in settings.slack_group_weights) or "all equal"
+    text = INSTRUCTIONS.format(topics=topics, groups=groups, n=settings.top_items, items="\n".join(rows))
     return text, by_id
 
 

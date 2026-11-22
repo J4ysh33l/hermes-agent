@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 import secrets as pysecrets
 import time
 import urllib.parse
@@ -55,20 +56,31 @@ def _exchange(http: Http, url: str, form: dict[str, str], service: str) -> dict:
     return data
 
 
-def google(http: Http, secrets: Secrets, ask: Callable[[str], str] = input, say: Callable[[str], None] = print) -> None:
+def google(http: Http, secrets: Secrets, ask: Callable[[str], str] = input, say: Callable[[str], None] = print,
+           account: str = gmail.MAIN) -> None:
+    """One login per Gmail account; ``account`` is your label for it (main, work, family...)."""
+    if not re.fullmatch(r"[a-z0-9_-]{1,20}", account):
+        raise SystemExit("Account label: up to 20 lowercase letters, digits, '-' or '_'.")
     client_id, client_secret = secrets.get("GOOGLE_CLIENT_ID"), secrets.get("GOOGLE_CLIENT_SECRET")
     if not (client_id and client_secret):
         raise SystemExit("Put GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $HERMES_HOME/.env first.")
     verifier, challenge = _pkce()
     params = {"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code", "scope": gmail.SCOPE,
-              "access_type": "offline", "prompt": "consent", "code_challenge": challenge,
+              "access_type": "offline", "prompt": "select_account consent", "code_challenge": challenge,
               "code_challenge_method": "S256"}
+    say(f"Signing in the Gmail account you call '{account}'. Use a private window so the right account is used.")
     code = _paste_back(GOOGLE_AUTH + "?" + urllib.parse.urlencode(params), "Google", ask, say)
     form = {"client_id": client_id, "client_secret": client_secret, "code": code, "code_verifier": verifier,
             "grant_type": "authorization_code", "redirect_uri": REDIRECT}
     data = _exchange(http, gmail.TOKEN_URL, form, "Google")
-    secrets.save_token("google", {"refresh_token": data["refresh_token"], "saved_at": time.time()})
-    say("Gmail login saved.")
+    email = gmail.address(http, data["access_token"])
+    taken = [a.label for a in gmail.accounts(secrets.token_dir)
+             if a.label != account and secrets.token(a.token_name).get("email") == email]
+    if taken:
+        raise SystemExit(f"{email} is already saved as '{taken[0]}'. Sign in with a different account.")
+    secrets.save_token(gmail.token_name(account),
+                       {"refresh_token": data["refresh_token"], "email": email, "saved_at": time.time()})
+    say(f"Gmail login saved: {email} as '{account}'.")
 
 
 def microsoft(http: Http, secrets: Secrets, ask: Callable[[str], str] = input,

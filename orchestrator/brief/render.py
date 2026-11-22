@@ -11,6 +11,14 @@ from .items import Item, Markets, Quote, SourceResult
 
 ICONS = {"slack": "💬", "gmail": "✉️", "outlook": "✉️", "news": "📰"}
 SOURCE_LABELS = {"slack": "Slack", "gmail": "Gmail", "outlook": "Outlook", "news": "News", "markets": "Markets"}
+PRIVATE_SHOWN = 8
+
+
+def source_label(name: str) -> str:
+    """'gmail:work' → 'Gmail (work)'."""
+    base, _, account = name.partition(":")
+    label = SOURCE_LABELS.get(base, base)
+    return f"{label} ({account})" if account else label
 MARKDOWN_SPECIALS = re.compile(r"[*_`\[\]]")
 MORE_LIMIT = 80
 LONG_URL = 200
@@ -98,7 +106,7 @@ def _item_line(n: int, item: Item, line: str) -> str:
 
 def brief_text(
     *, day: datetime, ranked: list[Item], lines: dict[str, str], total_new: int, markets: Markets | None,
-    results: list[SourceResult], model: str, tz: ZoneInfo,
+    results: list[SourceResult], model: str, tz: ZoneInfo, private: list[Item] | None = None,
 ) -> str:
     out = [f"**Morning brief · {day.strftime('%a %d %b')}**", ""]
     if markets and (markets.quotes or markets.india_gold):
@@ -108,6 +116,7 @@ def brief_text(
         out += [_item_line(n, item, lines.get(item.uid, "")) for n, item in enumerate(ranked, start=1)]
     else:
         out.append("Nothing new since the last brief.")
+    out += _private_block(private or [])
     rest = total_new - len(ranked)
     if rest > 0:
         out += ["", f"{rest} more new items. Full list: /brief more"]
@@ -115,13 +124,27 @@ def brief_text(
     return "\n".join(out).strip()
 
 
+def _private_block(items: list[Item]) -> list[str]:
+    """Money and HR mail, listed by the script: sender and subject only, never sent to the model."""
+    if not items:
+        return []
+    out = ["", f"**💳 Money & HR · {len(items)}** (not sent to AI)"]
+    for item in items[:PRIVATE_SHOWN]:
+        who = plain(item.sender.split("<")[0].strip().strip('"') or item.sender)
+        link = f" [open]({short_url(item.url, item.title)})" if item.url else ""
+        out.append(f"• {who}: {plain(item.title)}{link}")
+    if len(items) > PRIVATE_SHOWN:
+        out.append(f"…and {len(items) - PRIVATE_SHOWN} more")
+    return out
+
+
 def _problems(results: list[SourceResult], markets: Markets | None, model: str, had_items: bool) -> list[str]:
     notes = []
     for r in results:
         if r.error_kind == "auth":
-            notes.append(f"🔑 {SOURCE_LABELS.get(r.name, r.name)} needs a new login: {r.error}")
+            notes.append(f"🔑 {source_label(r.name)} needs a new login: {r.error}")
         elif r.error:
-            notes.append(f"⚠️ {SOURCE_LABELS.get(r.name, r.name)} not included: {r.error}")
+            notes.append(f"⚠️ {source_label(r.name)} not included: {r.error}")
     if markets and markets.errors:
         notes.append("⚠️ Markets missing: " + "; ".join(markets.errors[:4]))
     if had_items and not model:

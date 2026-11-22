@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .items import Item
@@ -14,7 +15,8 @@ CHARS_PER_TOKEN = 4  # rough budget estimate; real counts are checked by the pro
 class Dropped:
     seen: int = 0
     newsletters: int = 0
-    excluded_mail: int = 0
+    noise: int = 0
+    private: int = 0
     muted: int = 0
     over_budget: int = 0
 
@@ -28,12 +30,23 @@ def _is_newsletter(item: Item, settings: Settings) -> bool:
     return item.newsletter and not _contains_any(item.sender, settings.keep_newsletters_from)
 
 
-def _is_excluded_mail(item: Item, settings: Settings) -> bool:
-    """Finance and HR mail never reaches the model."""
-    if item.source not in ("gmail", "outlook"):
+def _is_mail(item: Item) -> bool:
+    return item.source in ("gmail", "outlook")
+
+
+def _is_noise(item: Item, settings: Settings) -> bool:
+    """One-time codes and sign-in links: expired by the time the brief arrives."""
+    return _is_mail(item) and any(re.search(p, item.title, re.IGNORECASE) for p in settings.noise_subject_patterns)
+
+
+def _is_private(item: Item, settings: Settings) -> bool:
+    """Money and HR mail: listed by the script, never sent to the model. Whole words only, so
+    'tax' does not match 'syntax'."""
+    if not _is_mail(item):
         return False
-    return _contains_any(item.sender, settings.exclude_senders) or _contains_any(
-        item.title, settings.exclude_subject_words)
+    words = settings.private_subject_words
+    return _contains_any(item.sender, settings.private_senders) or any(
+        re.search(rf"\b{re.escape(w)}\b", item.title, re.IGNORECASE) for w in words if w)
 
 
 def _is_muted(item: Item, settings: Settings) -> bool:
@@ -41,20 +54,24 @@ def _is_muted(item: Item, settings: Settings) -> bool:
         f"{item.title} {item.snippet}", settings.all_muted_words())
 
 
-def keep(items: list[Item], settings: Settings, is_seen) -> tuple[list[Item], Dropped]:
-    """Drop seen, newsletter, finance/HR and muted items. Order is kept."""
-    counts = {"seen": 0, "newsletters": 0, "excluded_mail": 0, "muted": 0}
-    kept = []
+def keep(items: list[Item], settings: Settings, is_seen) -> tuple[list[Item], list[Item], Dropped]:
+    """Split items into (for the model, private: listed without the model, counts of what was
+    dropped). Drops seen, newsletters, one-time codes and muted items. Order is kept."""
+    counts = {"seen": 0, "newsletters": 0, "noise": 0, "private": 0, "muted": 0}
+    kept, private = [], []
     for item in items:
         reason = ("seen" if is_seen(item.uid) else
                   "newsletters" if _is_newsletter(item, settings) else
-                  "excluded_mail" if _is_excluded_mail(item, settings) else
-                  "muted" if _is_muted(item, settings) else "")
+                  "noise" if _is_noise(item, settings) else
+                  "muted" if _is_muted(item, settings) else
+                  "private" if _is_private(item, settings) else "")
         if reason:
             counts[reason] += 1
-        else:
+        if reason == "private":
+            private.append(item)
+        elif not reason:
             kept.append(item)
-    return kept, Dropped(**counts)
+    return kept, private, Dropped(**counts)
 
 
 def cap_news(news: list[Item], settings: Settings) -> list[Item]:
