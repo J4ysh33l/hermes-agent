@@ -1,0 +1,5 @@
+id,kicker,headline,price,logo
+a,This week only,Fresh batch is ready,Rs 499,logo.png
+b,New,A deliberately very long headline that has to shrink to fit inside the box without being cut off anywhere,Rs 1299,
+c,Limited,Short one,Rs 99,missing_logo.png
+d,Oops,No price column on this row's template,,logo.png
