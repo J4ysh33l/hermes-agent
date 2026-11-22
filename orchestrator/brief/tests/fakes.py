@@ -34,7 +34,8 @@ def chart(price: float, prev: float, tz_offset: int = -18000, as_of: float = NOW
 
 def gemini_answer(ids: list[str]) -> dict:
     top = [{"id": i, "line": f"Summary of {i}"} for i in ids]
-    return {"candidates": [{"content": {"parts": [{"text": json.dumps({"top": top})}]}}]}
+    return {"candidates": [{"content": {"parts": [{"text": json.dumps({"top": top})}]}}],
+            "usageMetadata": {"promptTokenCount": 1500, "candidatesTokenCount": 120, "totalTokenCount": 1620}}
 
 
 @dataclass

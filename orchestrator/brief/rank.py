@@ -11,11 +11,12 @@ import json
 import re
 from dataclasses import dataclass
 
+from orchestrator import llm
+
 from .items import Item
 from .net import Http, HttpError
 from .settings import ModelChoice, Settings
 
-ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MAX_OUTPUT_TOKENS = 1200
 
 INSTRUCTIONS = """You pick the most important items for a busy founder's 8am brief (Mumbai, India).
@@ -49,11 +50,6 @@ def build_prompt(items: list[Item], settings: Settings) -> tuple[str, dict[str, 
     return text, by_id
 
 
-def _answer_text(data: dict) -> str:
-    parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
-    return "".join(p.get("text", "") for p in parts)
-
-
 def parse_answer(text: str, by_id: dict[str, Item], limit: int) -> tuple[list[Item], dict[str, str]]:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
@@ -75,13 +71,8 @@ def parse_answer(text: str, by_id: dict[str, Item], limit: int) -> tuple[list[It
 
 
 def _call(http: Http, api_key: str, model: ModelChoice, prompt: str) -> str:
-    config = {"temperature": 0.2, "maxOutputTokens": MAX_OUTPUT_TOKENS}
-    if model.json_mode:
-        config["responseMimeType"] = "application/json"
-    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": config}
-    data = http.request("POST", ENDPOINT.format(model=model.id), headers={"x-goog-api-key": api_key},
-                        json_body=body).json()
-    return _answer_text(data)
+    return llm.gemini(http, api_key, model.id, prompt, workflow="brief", step="rank", json_mode=model.json_mode,
+                      max_output_tokens=MAX_OUTPUT_TOKENS)
 
 
 def unranked(items: list[Item], limit: int) -> list[Item]:

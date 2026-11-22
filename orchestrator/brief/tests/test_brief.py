@@ -6,10 +6,12 @@ Run: python3 orchestrator/brief/tests/test_brief.py   (or orchestrator/run_check
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -104,9 +106,16 @@ class BriefCase(unittest.TestCase):
         (self.state / "tokens").mkdir()
         (self.state / "tokens" / "google.json").write_text('{"refresh_token": "g-refresh"}', encoding="utf-8")
         (self.state / "tokens" / "microsoft.json").write_text('{"refresh_token": "ms-refresh-1"}', encoding="utf-8")
+        self.env = mock.patch.dict(os.environ, {"HERMES_HOME": str(self.home)})  # usage log stays in the temp home
+        self.env.start()
 
     def tearDown(self) -> None:
+        self.env.stop()
         self.tmp.cleanup()
+
+    def usage_lines(self) -> list[dict]:
+        path = self.home / "usage" / "calls.jsonl"
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.is_file() else []
 
     def run_brief(self, http: FakeHttp, now: float = NOW, dry_run: bool = False) -> pipeline.RunResult:
         secrets = Secrets(self.home / ".env", self.state / "tokens", environ={})
@@ -122,6 +131,9 @@ class EndToEnd(BriefCase):
         result = self.run_brief(http)
         self.assertEqual(len(self.gemini_prompts(http)), 1, "exactly one model call")
         self.assertEqual(result.model, "model-a")
+        [line] = self.usage_lines()
+        self.assertEqual((line["workflow"], line["step"], line["model"], line["in"], line["out"], line["ok"]),
+                         ("brief", "rank", "model-a", 1500, 120, True))
         self.assertIn("S&P 500 6,000 ▼1.64%", result.text)
         self.assertIn("₹86,807/10g", result.text)  # 3000 $/oz * 90 ₹/$ / 31.1035 g * 10
         self.assertIn("Gold India*: ₹1,23,893/10g ▼0.89% (20 Nov)", result.text)
@@ -145,6 +157,7 @@ class EndToEnd(BriefCase):
         http = services()
         result = self.run_brief(http, now=NOW + 60)
         self.assertEqual(self.gemini_prompts(http), [])
+        self.assertEqual(len(self.usage_lines()), 1, "only the first run logged a call")
         self.assertIn("Nothing new since the last brief.", result.text)
         self.assertIn("S&P 500", result.text, "markets still sent on a quiet day")
 
@@ -186,6 +199,8 @@ class EndToEnd(BriefCase):
             return gemini_answer(["i2"])
         result = self.run_brief(services(gemini))
         self.assertEqual(result.model, "model-b")
+        self.assertEqual([(u["model"], u["ok"]) for u in self.usage_lines()], [("model-a", False), ("model-b", True)],
+                         "the failed attempt is logged too")
 
     def test_every_model_failing_still_sends_an_unranked_brief(self):
         result = self.run_brief(services(http_error(500, "boom")))

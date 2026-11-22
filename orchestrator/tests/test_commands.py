@@ -53,6 +53,9 @@ class Commands(unittest.TestCase):
             def register_command(self, name, handler, **kw):
                 registered[name] = handler
 
+            def register_hook(self, name, fn):
+                pass
+
         plugin.register(Ctx())
         self.assertEqual(set(registered), {"menu"} | {c.name for c in commands.table()})
         self.assertIn("/brief", registered["menu"]())

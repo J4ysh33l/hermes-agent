@@ -1,6 +1,6 @@
-"""Every Telegram command this fork adds, in one table. Rule for every command: its first word
-``help``, ``-help``, ``--help``, ``-h`` or ``?`` prints its own help, and ``/menu`` lists them all.
-None of this calls a model.
+"""Every Telegram command this fork adds, in one table. Rules for every command (checked by
+tests/test_commands.py): its first word ``help``, ``-help``, ``--help``, ``-h`` or ``?`` prints its
+own help, ``/menu`` lists it, and it never calls a model.
 
 Hermes owns ``/help`` (its own commands), so ours is ``/menu``.
 """
@@ -33,9 +33,23 @@ def _brief_help() -> str:
     return CHAT_HELP
 
 
+def _usage(args: str) -> str:
+    from orchestrator.usage import handle_chat_command
+
+    return handle_chat_command(args)
+
+
+def _usage_help() -> str:
+    from orchestrator.usage import USAGE_HELP
+
+    return USAGE_HELP
+
+
 def table() -> tuple[ChatCommand, ...]:
     return (
         ChatCommand("brief", "Morning brief: full list, topics, watchlist, mutes", _brief_help(), _brief),
+        ChatCommand("usage", "Tokens used per workflow and model, paid-tier cost, what to trim", _usage_help(),
+                    _usage),
     )
 
 

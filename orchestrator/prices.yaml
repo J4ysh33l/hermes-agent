@@ -1,0 +1,18 @@
+# Model prices and free-tier limits used by /usage. No model is called to read this.
+# USD per 1M tokens on the PAID tier (what you would pay if you left the free tier).
+# null = not known yet: the report lists the model without a cost instead of guessing.
+# Sources checked 2026-11-22: Google's Gemini 3.1 Flash-Lite launch post (standard paid tier).
+# Re-check https://ai.google.dev/pricing before relying on these.
+# free_rpd = free-tier requests per day on your account (AI Studio dashboard, 2026-11-21).
+
+models:
+  gemini-3.1-flash-lite: {input: 0.25, output: 1.50, cached_input: 0.025, free_rpd: 500}
+  gemini-3.5-flash-lite: {input: null, output: null, free_rpd: 500}
+  gemma-4-31b-it: {input: null, output: null, free_rpd: 14400}
+  gemma-4-26b-it: {input: null, output: null, free_rpd: 14400}
+
+# Suggestion thresholds for the /usage report.
+thresholds:
+  free_rpd_warn_pct: 70        # warn when a model's busiest day used this share of its free requests
+  avg_input_warn_tokens: 8000  # a step whose average prompt is larger than this should be trimmed
+  failure_warn_pct: 10
