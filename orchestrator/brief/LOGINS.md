@@ -132,7 +132,11 @@ How we make sense of the IDs:
          - mpim:read
          - mpim:history
          - users:read
+         - users:read.email
          - search:read
+         - chat:write
+         - im:write
+         - mpim:write
    settings:
      org_deploy_enabled: false
      socket_mode_enabled: false
@@ -141,6 +145,14 @@ How we make sense of the IDs:
 
    - These are all **user** scopes and there is no bot user, so the app reads *as you*.
    - `search:read` is only for step 5.
+   - The last four scopes are for **sending** messages as you (Part 5):
+     - `users:read.email`: find a colleague by email
+     - `chat:write`: post and schedule messages
+     - `im:write`: open a 1:1 DM
+     - `mpim:write`: open a group DM
+   - If you already installed the app without them, add them under **OAuth & Permissions →
+     User Token Scopes**. Then click **Reinstall to <workspace>** and copy the new `xoxp-`
+     token.
    - `token_rotation_enabled: false` keeps the token from expiring every 12 hours.
 5. Click **Next**, check the summary, then **Create**.
 6. In the left menu, open **OAuth & Permissions** and click **Install to <workspace>**.
@@ -567,7 +579,33 @@ References:
 - JSON batching: https://learn.microsoft.com/en-us/graph/json-batching
 - Throttling limits: https://learn.microsoft.com/en-us/graph/throttling-limits
 
-### 4.5 Not confirmed by the docs (find out on the first real run)
+### 4.5 Sending messages and calendars, references
+
+- chat.postMessage (about 1 message a second per channel; a user token posts as you): https://docs.slack.dev/reference/methods/chat.postMessage
+- conversations.open (1–8 users; 1 = DM, more = group DM): https://docs.slack.dev/reference/methods/conversations.open
+- chat.scheduleMessage (up to 120 days ahead, max 30 per 5 minutes per channel): https://docs.slack.dev/reference/methods/chat.scheduleMessage
+- users.lookupByEmail: https://docs.slack.dev/reference/methods/users.lookupByEmail
+- Token behaviour ("write actions with user tokens are performed as if by the user"): https://docs.slack.dev/authentication/tokens
+- Slack developer policy (no impersonation, no spam, minimal scopes): https://docs.slack.dev/developer-policy
+- Graph getSchedule (free/busy for up to 20 people, under 62 days): https://learn.microsoft.com/en-us/graph/api/calendar-getschedule?view=graph-rest-1.0 and https://learn.microsoft.com/en-us/graph/outlook-get-free-busy-schedule
+- Graph findMeetingTimes: https://learn.microsoft.com/en-us/graph/api/user-findmeetingtimes?view=graph-rest-1.0
+- Graph calendarView: https://learn.microsoft.com/en-us/graph/api/user-list-calendarview?view=graph-rest-1.0
+- Graph create event (invites go out automatically; Teams link): https://learn.microsoft.com/en-us/graph/api/user-post-events?view=graph-rest-1.0
+- Google freebusy.query: https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query
+- Google Calendar scopes: https://developers.google.com/workspace/calendar/api/auth
+- Google events.insert (`sendUpdates`, Meet via `conferenceData`): https://developers.google.com/workspace/calendar/api/v3/reference/events/insert and https://developers.google.com/workspace/calendar/api/guides/create-events
+- Google calendar sharing (free/busy only if shared): https://developers.google.com/workspace/calendar/api/concepts/sharing
+
+### 4.6 Not confirmed by the docs (find out on the first real run)
+
+- Whether a message sent with the user token shows an "APP" label next to your name. Slack
+  says only that it acts "as if by the user".
+- Whether `getSchedule` needs `Calendars.Read` or only `Calendars.ReadBasic`. Microsoft's pages
+  disagree; `Calendars.ReadWrite` covers both.
+- Whether Google marks `calendar.events` and `calendar.events.freebusy` as sensitive. Check the
+  **Data Access** page.
+- Whether Hermes' Telegram adapter can show Send / Edit / Cancel buttons. If not, use reply
+  commands (`/send`, `/cancel`).
 
 - Whether `search.messages` returns bot messages and thread replies, and how far its index
   lags behind.
@@ -577,3 +615,110 @@ References:
 - Whether your tenant shows the new tabbed Authentication screen or the old one.
 - Whether "Personal mode" is open to ordinary @gmail.com accounts without the Developer
   Preview.
+
+---
+
+## Part 5: Sending Slack messages and scheduling meetings
+
+**Needs a code change:** none of this is built yet. Part 5 covers the logins it needs and how
+it would work. What you chose:
+- **Calendars:** check **both** Outlook and Google for busy times.
+- **Sending:** Hermes **shows the drafts first**. Nothing is sent until you approve.
+
+### 5.1 What you can ask, and how many Gemini calls each takes
+
+| You say (in Telegram) | What happens | Gemini calls |
+|---|---|---|
+| `/slack send @priya @rahul: Please send the Q3 numbers by 5` | Names are matched to Slack users, then a preview: "Send to Priya, Rahul (group DM)?" | **0** (a fixed command, read by a script) |
+| "Tell Priya, Rahul and Amit that the review moves to Friday" | Hermes understands the sentence and fills in the same `/slack send`, then the preview | **1** (the normal Hermes turn) |
+| `/meet 15:00-17:00 today` or "Set up all my meetings between 3 and 5" | Described in 5.2 | **1** |
+| `/slack schedule 09:00 tomorrow @priya: …` | Same preview, then Slack sends it at that time | **0** |
+
+### 5.2 "Set up my meetings between 3 and 5", step by step
+
+1. **Who needs you (the 1 Gemini call).**
+   - The script collects the last 3 days of Slack DMs and mentions, plus emails, that look
+     like meeting requests. A word filter ("call", "meet", "sync", "discuss", "15 min",
+     "available?") runs first, so the input is small.
+   - Gemini returns a list: person, reason, suggested length (15/30/60 min), urgency, and
+     the message link.
+2. **Your free time (no model).**
+   - Outlook: `calendarView` from 15:00 to 17:00.
+   - Google: `freebusy.query` for each Google account whose calendar you want checked.
+   - Busy times from all calendars are merged. Anything busy anywhere is off limits.
+3. **Their free time (no model, optional).**
+   - For colleagues in your company, Outlook `getSchedule` returns their busy times, up to
+     20 people at once.
+   - Each colleague's own sharing settings decide how much detail is shown. Free/busy is
+     always enough to pick a slot.
+   - Gmail contacts show free/busy only if they shared their calendar with you. Otherwise
+     only your own time is checked.
+4. **Slots (no model).**
+   - The most urgent request gets the earliest slot. Each person's suggested length is used,
+     with a 5-minute gap between meetings.
+   - If it doesn't all fit, the overflow is listed as "doesn't fit today".
+5. **Preview in Telegram (no model).**
+   - Hermes shows one line per meeting, for example:
+     `1. Priya — 15:00–15:30 — "Hi Priya, I can do 3:00–3:30 today for the vendor contract. Works?"`
+   - The messages come from a template, so writing them doesn't call Gemini.
+   - You reply **Send all**, **Send 1,3**, **Edit 2: <new text>**, or **Cancel**.
+6. **Send (no model), only after you approve:**
+   - **Slack:** `conversations.open` with the person's ID gives the DM channel. Then
+     `chat.postMessage` sends the text **as you**.
+   - **Calendar (optional, only if you said "and book it"):**
+     - Outlook: `POST /me/events` with the attendee and a Teams link. **Outlook sends the
+       invite email by itself at that moment** and can't be told not to, which is why it
+       waits for your approval.
+     - Google: `events.insert` with `sendUpdates=all` and a Meet link.
+     - You set the default calendar for booking in `brief.yaml`.
+   - Every sent message and invite is written to `$HERMES_HOME/brief/sent.jsonl`, so you can
+     see what Hermes sent and when.
+
+**"Send this to X, Y and Z":**
+- Slack matches each name using the cached user list: display name, real name or email.
+- If a name matches two people, the preview asks which one. Nothing goes to a guess.
+- **One message per person (default):** separate DMs. This is safest.
+- **One shared group DM:** `conversations.open` with up to 8 people.
+- Slack allows about 1 message a second per conversation, so 20 people take about 20 seconds.
+- Not allowed: sending in bulk to people you don't normally talk to. Slack's developer
+  policy bans spam and can revoke the token.
+
+### 5.3 Extra login steps for this
+
+**Slack:** the four sending scopes are already in the manifest in 1.4. If the app is already
+installed, add the scopes, click **Reinstall to <workspace>**, and update `SLACK_USER_TOKEN`.
+
+**Outlook calendar:** same Entra app as in 3.1.
+1. Open **Entra ID → App registrations → Morning Brief → API permissions → Add a permission →
+   Microsoft Graph → Delegated** and tick:
+   - **Calendars.ReadWrite**: read your calendar and create events. It also covers
+     `calendarView`.
+   - **Calendars.Read.Shared**: needed for `findMeetingTimes` and for colleagues' calendars.
+2. Click **Add permissions**, then **Grant admin consent for <company>**.
+3. Add the scopes to the login request. **Needs a code change:** `SCOPES` in
+   `sources/outlook.py` becomes `offline_access Mail.Read Calendars.ReadWrite
+   Calendars.Read.Shared`.
+4. Sign in to Outlook again (3.1 step 9). An existing login does not pick up new
+   permissions.
+
+**Google calendar:** same Google Cloud project as in 2.2.
+1. Go to **☰ Menu → APIs & Services → Library → Google Calendar API → Enable**.
+2. Go to **Google Auth platform → Data Access → Add or remove scopes** and add:
+   - `https://www.googleapis.com/auth/calendar.events`: create events in your calendars.
+   - `https://www.googleapis.com/auth/calendar.events.freebusy`: busy times on calendars
+     you can see.
+3. Click **Update → Save**. The app stays **In production**, unverified, which is fine for
+   personal use.
+4. **Needs a code change:** the Google login asks for these scopes next to `gmail.readonly`,
+   and you choose per account whether its calendar is included.
+5. Sign in again for each account whose calendar you want. Tick **every** checkbox on the
+   permission screen. An unticked calendar box gives `403` on calendar calls only.
+
+### 5.4 Safety rules for sending as you
+
+- Nothing is sent and no invite is created without your explicit **Send** in Telegram. A
+  preview expires after 30 minutes.
+- Every message and invite is logged in `sent.jsonl`.
+- A wrong or ambiguous name stops that line. Hermes never guesses who you meant.
+- There's a daily cap on messages Hermes sends for you (default 30). Set it in `brief.yaml`.
+- The token never appears in chat or logs. It lives only in `$HERMES_HOME/.env`.
