@@ -85,7 +85,7 @@ def table() -> tuple[ChatCommand, ...]:
                     _slack),
         ChatCommand("meet", "Book Outlook meetings + Slack notes: 1:1s, all-hands, approve", _outreach_help("meet"),
                     _meet),
-        ChatCommand("hr", "Payslips from your salary sheet: show, test, send", _hr_help(), _hr),
+        ChatCommand("hr", "Payslips from the salary sheet; interviews on one Teams link", _hr_help(), _hr),
     )
 
 

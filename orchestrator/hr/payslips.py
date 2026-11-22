@@ -164,7 +164,7 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
                 else "Nothing was made. Fix all of this, then send the sheet again:")
         lines = [head, *checked.report()]
         if checked.can_leave_out():
-            _save(paths.blocked, {"created": now, "sheet": str(sheet_path), "start": period.start.isoformat(),
+            save_private(paths.blocked, {"created": now, "sheet": str(sheet_path), "start": period.start.isoformat(),
                                   "end": period.end.isoformat(), "pay_date": period.pay_date.isoformat(),
                                   "left_out": list(checked.batch.left_out)})
             lines += _offer(checked)
@@ -183,12 +183,12 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
         doc.unlink()
     items = [{"name": s.name, "first": s.first, "email": s.email, "file": str(p), "net": str(s.net)}
              for s, p in zip(batch.slips, pdfs)]
-    _save(paths.pending, {"created": now, "month": period.month, "items": items, "notes": report})
+    save_private(paths.pending, {"created": now, "month": period.month, "items": items, "notes": report})
     return "\n".join([f"✅ {len(items)} payslips for {period.month} are ready. Nothing is sent yet.", *report,
                       "", "Next: /hr payslip show (list with net pay) · test (2 samples to you) · yes · no"])
 
 
-def _save(path: Path, data: dict) -> None:
+def save_private(path: Path, data: dict) -> None:
     _private_dir(path.parent)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.chmod(path, 0o600)

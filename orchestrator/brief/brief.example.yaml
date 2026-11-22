@@ -159,7 +159,7 @@ outreach:
       Hi everyone, we have an all-hands on {day}, {start}–{end} IST: {topic}. A calendar invite
       has been sent to everyone in this channel.{join}
 
-# ---------------------------------------------------------------- HR (/hr payslip)
+# ---------------------------------------------------------------- HR (/hr payslip, /hr interview)
 # Payslips from your monthly salary sheet. See orchestrator/hr/README.md. Pay never goes to a model.
 hr:
   weekly_off: [sunday]        # LOP = Compensation ÷ working days × LOP days; add saturday if it's off
@@ -171,3 +171,11 @@ hr:
   # Saturdays are working days; only Sunday is off.
   mail_subject: "Payslip for {month}"
   mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"
+  # /hr interview: one Teams link for the block, each candidate invited to their own slot.
+  max_interviews: 30          # candidates in one batch
+  interview:                  # leave a key out to keep the default wording (orchestrator/hr/settings.py)
+    company: "Medoc Health"
+    # Placeholders: {first} {name} {position} {day} {start} {end} {length} {join} {sender} {company}
+    candidate_subject: "Interview for {position} at {company} | {day}, {start} IST"
+    # candidate_body: HTML; must contain {join}. The panel's also take {positions} {schedule}.
+    panel_subject: "Interviews: {positions} | {day}"
