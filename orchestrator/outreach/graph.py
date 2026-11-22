@@ -5,7 +5,9 @@ creating events) and User.ReadBasic.All (finding a colleague's email by name). A
 can be swapped for any scope the account already consented to; if the permissions were granted
 after your last sign-in, sign in once more (``python -m orchestrator.brief auth microsoft``).
 
-Creating an event with attendees makes Outlook send the invite email at that moment.
+Creating an event with attendees makes Outlook send each of them the invite email at that moment,
+from your mailbox, with Accept/Decline buttons and (for a Teams event) the Teams join link in the
+body. ``transactionId`` makes a retried create return the same event instead of a second invite.
 """
 
 from __future__ import annotations
@@ -72,15 +74,21 @@ def find_people(http: Http, token: str, word: str) -> list[dict[str, str]]:
 
 
 def create_event(http: Http, token: str, *, subject: str, body_html: str, start: datetime, end: datetime,
-                 attendees: list[dict[str, str]], teams: bool) -> tuple[str, str]:
+                 attendees: list[dict[str, str]], teams: bool, transaction_id: str = "") -> tuple[str, str]:
     """Returns (event id, Teams join link or ''). Outlook emails the invite immediately."""
     body = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
             "start": {"dateTime": _iso(start), "timeZone": "UTC"},
             "end": {"dateTime": _iso(end), "timeZone": "UTC"},
             "attendees": [{"emailAddress": {"address": a["email"], "name": a.get("name", "")}, "type": "required"}
                           for a in attendees],
-            "allowNewTimeProposals": True}
+            "allowNewTimeProposals": True, "responseRequested": True}
+    if transaction_id:
+        body["transactionId"] = transaction_id
     if teams:
         body |= {"isOnlineMeeting": True, "onlineMeetingProvider": "teamsForBusiness"}
     data = _call(http, token, "POST", "/me/events", json_body=body)
-    return data.get("id", ""), ((data.get("onlineMeeting") or {}).get("joinUrl") or "")
+    join = (data.get("onlineMeeting") or {}).get("joinUrl") or ""
+    if teams and not join and data.get("id"):  # the Teams link can lag the create by a moment
+        again = _call(http, token, "GET", f"/me/events/{data['id']}", params={"$select": "onlineMeeting"})
+        join = (again.get("onlineMeeting") or {}).get("joinUrl") or ""
+    return data.get("id", ""), join

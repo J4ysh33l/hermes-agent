@@ -103,10 +103,10 @@ def _meeting_line(session: Session, slot: slots.Slot[Person], topic: str, minute
     actions = [event]
     note = ""
     if p.slack_id:
-        note = fill(t.meeting_note, **values)
+        note = fill(t.meeting_note, **{**values, "join": "{join}"})  # filled with the link after the invite
         actions.append(Action("dm", text=note, user_ids=(p.slack_id,)))
     where = "" if p.slack_id else " (no Slack: invite email only)"
-    label = f"{p.name} — {values['start']}–{values['end']}{where}" + (f"\n   “{_short(note)}”" if note else "")
+    label = f"{p.name} — {values['start']}–{values['end']}{where}" + (f"\n   “{_short(note.replace('{join}', ''))}”" if note else "")
     return Line(label, tuple(actions))
 
 

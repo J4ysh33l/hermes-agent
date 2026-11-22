@@ -21,7 +21,7 @@ class Templates:
     meeting_body: str = ("Hi {first},<br><br>Setting up {length} minutes to discuss {topic}. "
                          "The Teams link is below.<br><br>Thanks")
     meeting_note: str = ("Hi {first}, I've sent you a calendar invite for {day}, {start}–{end} IST "
-                         "({length} min) to discuss {topic}. The Teams link is in the invite. "
+                         "({length} min) to discuss {topic}.{join} "
                          "If the time doesn't work, let me know and I'll move it.")
     allhands_subject: str = "All hands: {topic}"
     allhands_body: str = "Hi all,<br><br>All hands on {topic}. The Teams link is below.<br><br>Thanks"

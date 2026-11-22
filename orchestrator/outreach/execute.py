@@ -4,6 +4,7 @@ invite that wasn't created); the other lines still go. Every attempt is logged i
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
 from orchestrator.brief.net import HttpError
@@ -14,12 +15,17 @@ from .plan import Action, Plan
 from .session import Session
 
 
-def _dm(session: Session, action: Action) -> str:
+def with_join(text: str, join: str) -> str:
+    """{join} in a template becomes the Teams link of the event created just before it."""
+    return text.replace("{join}", f" Join on Teams: {join}" if join else "")
+
+
+def _dm(session: Session, action: Action, join: str) -> str:
     channel = slackapi.open_dm(session.http, session.slack_token, list(action.user_ids))
     if action.kind == "scheduled":
-        slackapi.schedule(session.http, session.slack_token, channel, action.text, action.post_at)
+        slackapi.schedule(session.http, session.slack_token, channel, with_join(action.text, join), action.post_at)
         return channel
-    slackapi.send(session.http, session.slack_token, channel, action.text)
+    slackapi.send(session.http, session.slack_token, channel, with_join(action.text, join))
     return channel
 
 
@@ -27,13 +33,13 @@ def _event(session: Session, action: Action) -> str:
     _id, join = graph.create_event(
         session.http, session.graph_token(), subject=action.subject, body_html=action.text,
         start=datetime.fromisoformat(action.start), end=datetime.fromisoformat(action.end),
-        attendees=[{"name": n, "email": e} for n, e in action.attendees], teams=action.teams)
+        attendees=[{"name": n, "email": e} for n, e in action.attendees], teams=action.teams,
+        transaction_id=hashlib.sha256(f"{action.subject}|{action.start}|{action.attendees}".encode()).hexdigest()[:40])
     return join
 
 
 def _post(session: Session, action: Action, join: str) -> None:
-    text = action.text.replace("{join}", f" Teams link: {join}" if join else "")
-    slackapi.send(session.http, session.slack_token, action.channel_id, text)
+    slackapi.send(session.http, session.slack_token, action.channel_id, with_join(action.text, join))
 
 
 def _who(action: Action) -> str:
@@ -60,7 +66,7 @@ def run(session: Session, plan: Plan, picked: list[int]) -> str:
                 elif action.kind == "channel_post":
                     _post(session, action, join)
                 else:
-                    _dm(session, action)
+                    _dm(session, action, join)
             except (OutreachError, HttpError) as exc:
                 session.store.log(session.now, action.kind, _who(action), action.subject or action.text, False, str(exc))
                 failed.append(f"{index + 1}. {line.label.splitlines()[0]} — {exc}")

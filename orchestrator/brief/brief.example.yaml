@@ -146,13 +146,13 @@ outreach:
     - {id: gemini-3.5-flash-lite, json_mode: true}
     - {id: gemma-4-31b-it, json_mode: false}
   # Your wording. Placeholders: {first} {name} {topic} {length} {day} {start} {end} {join}.
+  # {join} becomes " Join on Teams: <link>" in the Slack note and the channel post.
   # Bodies are HTML (use <br> for a new line). Leave a key out to keep the default.
   templates:
     meeting_subject: "{topic} | {first} / 1:1"
     meeting_note: >-
       Hi {first}, I've sent you a calendar invite for {day}, {start}–{end} IST ({length} min)
-      to discuss {topic}. The Teams link is in the invite. If the time doesn't work, let me know
-      and I'll move it.
+      to discuss {topic}.{join} If the time doesn't work, let me know and I'll move it.
     allhands_subject: "All hands: {topic}"
     allhands_post: >-
       Hi everyone, we have an all-hands on {day}, {start}–{end} IST: {topic}. A calendar invite

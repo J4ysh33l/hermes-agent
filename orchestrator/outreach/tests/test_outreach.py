@@ -215,7 +215,15 @@ class Meetings(Base):
         self.assertEqual(event["attendees"][0]["emailAddress"]["address"], "priya@co.com")
         self.assertTrue(event["isOnlineMeeting"])
         self.assertIn("vendor contract", self.posts()[0]["text"])
+        self.assertIn("Join on Teams: https://teams.example/j/1", self.posts()[0]["text"])
+        self.assertTrue(event["responseRequested"])
         self.assertEqual(self.model_calls(), [])
+
+    def test_a_retried_invite_carries_the_same_transaction_id(self):
+        self.meet("15:00 30m @priya: vendor contract")
+        self.meet("15:00 30m @priya: vendor contract")
+        self.assertEqual(self.events[0]["transactionId"], self.events[1]["transactionId"],
+                         "Outlook returns the first event instead of sending a second invite")
 
     def test_busy_at_that_time_shows_the_next_free_slot_instead(self):
         self.busy = [graph_event((15, 0), (15, 30))]
