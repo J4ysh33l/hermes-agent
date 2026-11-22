@@ -779,7 +779,7 @@ installed, add the scopes, click **Reinstall to <workspace>**, and update `SLACK
    - **Calendars.Read.Shared**: needed for `findMeetingTimes` and for colleagues' calendars.
 2. Click **Add permissions**, then **Grant admin consent for <company>**.
 3. The login already asks for them (`LOGIN_SCOPES` in `sources/outlook.py`:
-   `Calendars.ReadWrite User.ReadBasic.All`; tick **User.ReadBasic.All** too, it finds colleagues
+   `User.Read Mail.Read Mail.Send Calendars.ReadWrite User.ReadBasic.All`; tick **User.ReadBasic.All** too, it finds colleagues
    by name). The brief's own refresh still asks only for Mail.Read.
 4. Sign in to Outlook again (3.1 step 9). An existing login does not pick up new
    permissions.

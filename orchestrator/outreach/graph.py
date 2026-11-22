@@ -96,7 +96,7 @@ def create_event(http: Http, token: str, *, subject: str, body_html: str, start:
 
 
 def me(http: Http, token: str) -> str:
-    """Your own email address (needs User.Read, which every sign-in carries)."""
+    """Your own email address (needs User.Read; sign-in asks for it explicitly, it is not implied)."""
     data = _call(http, token, "GET", "/me", params={"$select": "mail,userPrincipalName"})
     return data.get("mail") or data.get("userPrincipalName") or ""
 
