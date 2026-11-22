@@ -8,23 +8,23 @@ everything. **No AI model sees pay or bank details.**
 1. Send Hermes the sheet (.xlsx or .csv) and say the period and the pay date: "payslips for
    1–30 Nov, paid 2 Dec". The agent passes only the file path to
    `$HERMES_HOME/scripts/hr_payslips.py` (skill `orchestrator:hr-payslips`).
-   On the host you can also run `python -m orchestrator.hr payslips <sheet> 01/11/2026 30/11/2026 02/12/2026`.
+   On the host you can also run `python -m orchestrator.hr payslip <sheet> 01/11/2026 30/11/2026 02/12/2026`.
 2. Before making anything, the script checks the template, the columns and every row. It lists
    **every** problem in one reply: missing columns, missing or `0` values, bad dates and numbers,
    Basic + HRA ≠ Compensation, LOP over the working days, and duplicate emails, one line per
    employee. Nothing is made yet. It also warns about blank bank details and mid-period joiners.
-   `/hr check <sheet> <from> <to>` runs only this check.
-   - **Only some rows wrong?** The reply offers `/hr skip`: it makes everyone else's slips and
-     leaves those employees out. Their names stay listed in `/hr show` until you send a fixed sheet.
-     Both rows that share an email are left out. If the sheet changes before `/hr skip`, nothing
+   `/hr payslip check <sheet> <from> <to>` runs only this check.
+   - **Only some rows wrong?** The reply offers `/hr payslip skip`: it makes everyone else's slips and
+     leaves those employees out. Their names stay listed in `/hr payslip show` until you send a fixed sheet.
+     Both rows that share an email are left out. If the sheet changes before `/hr payslip skip`, nothing
      is made and the new list is offered instead. The offer expires with the batch (2 hours).
    - Missing columns or a missing template can't be skipped: fix them and send the sheet again.
 3. It makes one PDF per person in `$HERMES_HOME/hr/payslips/<YYYY-MM>/`.
 4. It replies with counts only.
-5. `/hr show`: name, email and net pay for each person, plus the total.
-6. `/hr test`: two sample slips are emailed to **you**. `/hr test all` emails every slip to you.
-7. `/hr yes`: each person gets their own slip from your Outlook. `/hr yes 1-10` sends only those.
-   `/hr no` cancels. A batch expires after 2 hours.
+5. `/hr payslip show`: name, email and net pay for each person, plus the total.
+6. `/hr payslip test`: two sample slips are emailed to **you**. `/hr payslip test all` emails every slip to you.
+7. `/hr payslip yes`: each person gets their own slip from your Outlook. `/hr payslip yes 1-10` sends only those.
+   `/hr payslip no` cancels. A batch expires after 2 hours.
 
 ## The sheet
 
@@ -68,7 +68,7 @@ total_deductions reimbursement net_pay`.
 - **Fakes plus real LibreOffice** (`tests/test_hr.py`, 13 tests):
   - working-day LOP
   - every bad row listed, and nothing made
-  - `/hr skip` makes only the good rows; a changed sheet or a missing column makes nothing
+  - `/hr payslip skip` makes only the good rows; a changed sheet or a missing column makes nothing
   - placeholders split across runs
   - PDFs made, and the agent's reply carries no figures
   - `test` emails only you, `yes` emails each person their own PDF
@@ -76,4 +76,4 @@ total_deductions reimbursement net_pay`.
   - expiry
 - Breaking the LOP rule or the test-mail target turns tests red.
 - **Live, 2026-11-22:** your template, converted, rendered correctly with 3 sample rows. After
-  Mail.Send was granted, `/hr test` emailed two sample slips to you from Outlook.
+  Mail.Send was granted, `/hr payslip test` emailed two sample slips to you from Outlook.

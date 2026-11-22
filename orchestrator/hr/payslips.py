@@ -2,7 +2,7 @@
 PDF, and save the batch for approval. Nothing is emailed here.
 
 The text this returns for Hermes' agent carries counts and problems only, never amounts, so
-salary figures don't pass through the agent's model. ``/hr show`` (a command, no model) lists
+salary figures don't pass through the agent's model. ``/hr payslip show`` (a command, no model) lists
 names, addresses and net pay for you.
 """
 
@@ -36,7 +36,7 @@ class Paths:
 
     @property
     def blocked(self) -> Path:
-        """The last run stopped only by bad rows: what ``/hr skip`` re-runs without them."""
+        """The last run stopped only by bad rows: what ``/hr payslip skip`` re-runs without them."""
         return self.home / "blocked.json"
 
     @property
@@ -117,7 +117,7 @@ class Checked:
         return b is not None and not self.sheet_errors and bool(b.slips) and (leave_out or not b.problems)
 
     def can_leave_out(self) -> bool:
-        """Only rows are wrong, and at least one other row is fine: /hr skip can go ahead."""
+        """Only rows are wrong, and at least one other row is fine: /hr payslip skip can go ahead."""
         return not self.ready() and self.ready(leave_out=True)
 
     def report(self, leave_out: bool = False) -> list[str]:
@@ -148,12 +148,12 @@ def check(sheet_path: Path, period: Period, settings: Settings, paths: Paths) ->
 def _offer(checked: Checked) -> list[str]:
     b = checked.batch
     names = ", ".join(w.split("(", 1)[1].rstrip(")") for w in b.left_out)
-    return ["", f"Leave out {len(b.left_out)} ({names}) and make the other {len(b.slips)} slips? /hr skip"]
+    return ["", f"Leave out {len(b.left_out)} ({names}) and make the other {len(b.slips)} slips? /hr payslip skip"]
 
 
 def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, now: float | None = None,
             leave_out: tuple[str, ...] | None = None) -> str:
-    """``leave_out``: the rows you agreed to leave out (from ``/hr skip``). If the sheet now has a
+    """``leave_out``: the rows you agreed to leave out (from ``/hr payslip skip``). If the sheet now has a
     different set of bad rows, nothing is made and the new list is offered instead."""
     now = time.time() if now is None else now
     checked = check(sheet_path, period, settings, paths)
@@ -185,7 +185,7 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
              for s, p in zip(batch.slips, pdfs)]
     _save(paths.pending, {"created": now, "month": period.month, "items": items, "notes": report})
     return "\n".join([f"✅ {len(items)} payslips for {period.month} are ready. Nothing is sent yet.", *report,
-                      "", "Next: /hr show (list with net pay) · /hr test (2 samples to you) · /hr yes · /hr no"])
+                      "", "Next: /hr payslip show (list with net pay) · test (2 samples to you) · yes · no"])
 
 
 def _save(path: Path, data: dict) -> None:
