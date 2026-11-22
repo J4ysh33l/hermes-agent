@@ -1,0 +1,10 @@
+"""Outreach draft entry point for Hermes' agent (see orchestrator/outreach/SKILL.md). Written by
+orchestrator/brief/install.sh into $HERMES_HOME/scripts/. It saves a plan; it never sends."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.outreach.cli import main  # noqa: E402
+
+sys.exit(main(["draft", *sys.argv[1:]]))

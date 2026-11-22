@@ -26,7 +26,7 @@ from fakes import NOW, FakeHttp, chart, gemini_answer, http_error, query, rss
 from orchestrator.brief import auth, cli, filters, pipeline, rank, render, settings
 from orchestrator.brief.creds import Secrets
 from orchestrator.brief.items import Item
-from orchestrator.brief.sources import markets, news
+from orchestrator.brief.sources import markets, news, outlook
 from orchestrator.brief.store import Store
 
 GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -552,6 +552,15 @@ class LoginCase(unittest.TestCase):
         challenge = base64.urlsafe_b64encode(hashlib.sha256(form["code_verifier"].encode()).digest())
         self.assertEqual(challenge.rstrip(b"=").decode(), link["code_challenge"][0])
         self.assertEqual(self.secrets.token("microsoft")["refresh_token"], "ms-new")
+
+    def test_microsoft_login_asks_for_every_scope_a_later_refresh_needs(self):
+        # A refresh token only yields scopes consented at sign-in; User.Read is not implied.
+        http = FakeHttp().on("POST", "https://login.microsoftonline.com/tenant/oauth2/v2.0/token",
+                             {"access_token": "a", "refresh_token": "ms-new"})
+        self.login(auth.microsoft, http, "http://localhost:8765/?code=the-code&state=x")
+        asked = set(self.link()["scope"][0].split())
+        for needed in (outlook.SCOPES, outlook.MEETING_SCOPES, outlook.SEND_SCOPES):
+            self.assertLessEqual(set(needed.split()), asked, needed)
 
     def test_microsoft_refusal_in_the_pasted_address_is_shown_and_nothing_is_saved(self):
         landed = "http://localhost:8765/?error=access_denied&error_description=AADSTS65004%3A+User+declined"

@@ -21,7 +21,9 @@ not upstream Hermes code and never touches Hermes' core.
   free-tier headroom, paid-tier cost (`prices.yaml`) and what to trim, with no model call.
 - **Every Telegram command answers `help`, `-help`, `--help`, `-h` and `?`** with its own usage,
   and is listed by `/menu` (Hermes keeps `/help` for its own commands). Add a command by adding a
-  row to `commands.py`; `tests/test_commands.py` checks the rule for every row. No command calls a model.
+  row to `commands.py`; `tests/test_commands.py` checks the rule for every row. A command calls a
+  model only when you ask it to read a sentence or write drafts (`/slack draft`, `/meet <sentence>`),
+  one call, through `llm.py`.
 - **Before every push:** `orchestrator/run_checks.sh` (all tests here + the secret scan). CI runs
   the same on every PR touching this folder (`.github/workflows/orchestrator-checks.yml`).
 
@@ -35,6 +37,8 @@ not upstream Hermes code and never touches Hermes' core.
 | `llm.py`, `usage.py`, `prices.yaml` | The one logged model client; the usage log and `/usage` report; prices and free limits. |
 | `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
+| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr yes`; no model sees pay. `hr/README.md`. |
+| `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 
 Each workflow will get its own folder here and ship as a Hermes profile distribution.

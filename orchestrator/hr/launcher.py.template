@@ -1,0 +1,10 @@
+"""Payslip entry point for Hermes' agent (see orchestrator/hr/SKILL.md). Written by
+orchestrator/brief/install.sh into $HERMES_HOME/scripts/. It prepares slips; it never emails."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.hr.cli import main  # noqa: E402
+
+sys.exit(main(["payslips", *sys.argv[1:]]))

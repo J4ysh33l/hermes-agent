@@ -126,3 +126,47 @@ ranking:
     - {id: gemini-3.1-flash-lite, json_mode: true}
     - {id: gemini-3.5-flash-lite, json_mode: true}
     - {id: gemma-4-31b-it, json_mode: false}
+
+# ---------------------------------------------------------------- outreach (/slack, /meet)
+# Slack messages sent as you and Outlook meetings. See orchestrator/outreach/README.md.
+outreach:
+  daily_cap: 50               # Slack messages + invites + channel posts sent for you per day
+  preview_minutes: 30         # a plan waiting for /slack yes or /meet yes expires after this
+  gap_minutes: 5              # break between back-to-back meetings (and around your busy events)
+  default_length: 30          # 1:1 minutes when you don't say
+  allhands_length: 60
+  teams: true                 # every invite is a Teams meeting
+  detect_days: 3              # "/meet 15:00-17:00": how far back to look for meeting requests
+  big_from_people: 4          # this many people or more → models_big; fewer → models_small
+  models_small:               # one person or a few: Gemma first
+    - {id: gemma-4-31b-it, json_mode: false}
+    - {id: gemini-3.1-flash-lite, json_mode: true}
+  models_big:                 # big batches (10 people, detection): Gemini first
+    - {id: gemini-3.1-flash-lite, json_mode: true}
+    - {id: gemini-3.5-flash-lite, json_mode: true}
+    - {id: gemma-4-31b-it, json_mode: false}
+  # Your wording. Placeholders: {first} {name} {topic} {length} {day} {start} {end} {join}.
+  # {join} becomes " Join on Teams: <link>" in the Slack note and the channel post.
+  # Bodies are HTML (use <br> for a new line). Leave a key out to keep the default.
+  templates:
+    meeting_subject: "{topic} | 1:1"
+    meeting_note: >-
+      Hi {first}, I've sent you a calendar invite for {day}, {start}–{end} IST ({length} min)
+      to discuss {topic}.{join} If the time doesn't work, let me know and I'll move it.
+    allhands_subject: "All hands: {topic}"
+    allhands_post: >-
+      Hi everyone, we have an all-hands on {day}, {start}–{end} IST: {topic}. A calendar invite
+      has been sent to everyone in this channel.{join}
+
+# ---------------------------------------------------------------- HR (/hr payslips)
+# Payslips from your monthly salary sheet. See orchestrator/hr/README.md. Pay never goes to a model.
+hr:
+  weekly_off: [sunday]        # LOP = Compensation ÷ working days × LOP days; add saturday if it's off
+  holidays: []                # e.g. [2026-11-08, 2026-12-25]: not working days either
+  payslip_template: payslip.docx   # in $HERMES_HOME/hr/templates/, with {{fields}}
+  max_per_run: 200
+  preview_minutes: 120        # a batch waiting for /hr yes expires after this
+  sender_name: "Jaysheel Bhatt, Medoc Health"   # signs the payslip email
+  # Saturdays are working days; only Sunday is off.
+  mail_subject: "Payslip for {month}"
+  mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"
