@@ -1,0 +1,128 @@
+# Morning brief settings. Copy to $HERMES_HOME/brief/brief.yaml and edit there.
+# Things you change from Telegram (/brief watch, /brief mute, /brief follow) are kept in
+# $HERMES_HOME/brief/prefs.json instead, so this file keeps your comments.
+# No secrets in this file: tokens and keys live in $HERMES_HOME/.env (see orchestrator/brief/README.md).
+
+timezone: Asia/Kolkata
+lookback_hours: 26          # first run (or after a gap): how far back to read
+top_items: 8                # news headlines (the only items with links)
+work_items: 15              # Slack, Gmail and Outlook items summarised; /brief more shows everything
+
+# Which sources run. A source with no credentials is reported as "not set up", never silently skipped.
+sources:
+  slack: true
+  gmail: true
+  outlook: true
+  news: true
+  markets: true
+
+# ---------------------------------------------------------------- news topics
+# Every feed URL below answered with items on 2026-11-22.
+# Each topic is read from Google News RSS searches (last 24 h, India edition) and/or publisher
+# RSS feeds. hacker_news: true also pulls Hacker News top stories that match the keywords.
+# weight: 1 = normal, 2 = favour it when ranking, 0.5 = only if it is big.
+topics:
+  - name: AI and tech
+    weight: 1.5
+    queries: ["artificial intelligence", "OpenAI OR Anthropic OR DeepMind OR Nvidia", "AI regulation"]
+    feeds:
+      - https://techcrunch.com/category/artificial-intelligence/feed/
+      - https://www.theverge.com/rss/index.xml
+      - https://feeds.arstechnica.com/arstechnica/index
+    hacker_news: true
+    keywords: [ai, llm, gpt, claude, gemini, openai, anthropic, nvidia, model, chip, robot]
+    per_run: 10
+
+  - name: Startups and funding
+    weight: 1.5
+    queries: ["Indian startup funding", "startup raises Series A OR Series B", "venture capital fund India"]
+    feeds:
+      - https://inc42.com/feed/
+      - https://yourstory.com/feed
+      - https://economictimes.indiatimes.com/tech/rssfeeds/13357270.cms
+      - https://techcrunch.com/feed/
+    per_run: 8
+
+  - name: Markets and economy
+    weight: 1
+    queries: ["Sensex Nifty today", "Wall Street stocks close", "RBI OR Federal Reserve rates"]
+    per_run: 6
+
+  - name: Politics and policy
+    weight: 1
+    queries: ["India politics", "Parliament India bill policy", "world news geopolitics"]
+    feeds:
+      - https://www.thehindu.com/news/national/feeder/default.rss
+    per_run: 6
+
+  - name: Mumbai and Maharashtra
+    weight: 1.5
+    queries: ["Mumbai", "Maharashtra government", "BMC Mumbai"]
+    feeds:
+      - https://www.hindustantimes.com/feeds/rss/cities/mumbai-news/rssfeed.xml
+    per_run: 8
+
+# ---------------------------------------------------------------- markets (no model call)
+# Yahoo Finance symbols. Add single stocks from Telegram: /brief watch NVDA (kept in prefs.json).
+markets:
+# group = the line it is printed on.
+  - {symbol: "^GSPC", label: "S&P 500", group: US}
+  - {symbol: "^IXIC", label: "Nasdaq", group: US}
+  - {symbol: "^DJI", label: "Dow", group: US}
+  - {symbol: "^VIX", label: "VIX", group: US}
+  - {symbol: "^NSEI", label: "Nifty 50", group: India}
+  - {symbol: "^BSESN", label: "Sensex", group: India}
+  - {symbol: "^INDIAVIX", label: "India VIX", group: India}
+  - {symbol: "^TNX", label: "US 10Y", unit: "%", group: Rates and FX}
+  - {symbol: "INR=X", label: "USD/INR", group: Rates and FX}
+gold:
+  symbol: "GC=F"              # COMEX gold futures, USD per troy ounce
+  fx_symbol: "INR=X"
+  show_usd_per_oz: true       # also shows the world price converted to ₹/10 g (before duty and GST)
+  india_ibja: true            # "Gold India*": IBJA 24K (999) ₹/10 g from ibjarates.com, excl. GST
+
+# ---------------------------------------------------------------- mail and Slack filters
+slack:
+  max_messages: 200
+  skip_channels: []           # channel names without '#'
+  # Your own grouping (Slack's sidebar sections have no API). Channel names without '#';
+  # a channel in no group goes to other_group, every DM and group DM to dm_group.
+  groups: {}                  # e.g. {Core: [core-team, product], Hospital: [icu-ops], Home: [family]}
+  dm_group: Direct messages
+  other_group: Channels
+  weights: {}                 # e.g. {Core: 2, Direct messages: 2, Hospital: 1.5, Channels: 0.5}
+mail:
+  max_messages: 50
+  keep_newsletters_from: []   # senders whose list mail you still want
+  # Money and HR mail: listed under its account by the script (subject only),
+  # never sent to Gemini. Whole words, any case, in the subject; senders match anywhere.
+  private_senders: []         # e.g. [razorpay.com, hdfcbank, payroll@yourcompany.com]
+  private_subject_words: [payslip, salary, payroll, invoice, receipt, payment, refund, transaction,
+                          debited, credited, statement, subscription, reimbursement, appraisal,
+                          "offer letter", "form 16", tds, gst, emi, loan, "credit card"]
+  # Dropped entirely: one-time codes, sign-in links and sign-in/security notices are useless
+  # by 8:15 am. Python regular expressions, any case, matched against the subject.
+  noise_subject_patterns:
+    - '\b(verification|confirmation|security|login|sign[- ]?in|one[- ]time|access)\s+code\b'
+    - '\bOTP\b'
+    - '^\W*\d{4,8}\b.*\bcode\b'   # "618363 is your KIRI verification code"
+    - '\b(secure|magic|sign[- ]?in|login)\s+link\b'
+    - '\b(verify|confirm)\s+your\s+(email|e-mail|account)\b'
+    - '\bsecurity\s+alert\b'       # Google "Security alert"
+    - '\b(reset|change)\s+your\s+(\w+\s+)?password\b'
+    - '\bpassword\s+(reset|change|changed|updated)\b'
+    - '\bnew\s+(sign[- ]?in|login|device)\b'
+    - '\b(signed|logged)\s+in\s+(to|from|on)\b'
+    - '\bnew\s+(public|ssh|gpg|deploy)\s+key\b'   # GitHub "A new public key was added"
+muted_words: []
+muted_senders: []
+
+# ---------------------------------------------------------------- ranking model
+# Tried in order; a 429 / 5xx / timeout moves to the next. Check the exact IDs on the host with
+# `python -m orchestrator.brief models` (lists what your key can call).
+ranking:
+  max_input_tokens: 12000     # keeps Gemma 4 (16K tokens/minute) usable as the last fallback
+  models:
+    - {id: gemini-3.1-flash-lite, json_mode: true}
+    - {id: gemini-3.5-flash-lite, json_mode: true}
+    - {id: gemma-4-31b-it, json_mode: false}

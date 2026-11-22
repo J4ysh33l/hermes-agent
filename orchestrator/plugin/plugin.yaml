@@ -1,0 +1,4 @@
+name: orchestrator
+version: 0.2.0
+description: "Fork-only Telegram commands (/menu, /brief, ...). Scripts only, no model calls."
+author: orchestrator (fork-only)
