@@ -2,6 +2,10 @@
 
 The message texts are templates here so you can replace them with your own drafts without a code
 change. Placeholders: {first} {name} {topic} {length} {day} {start} {end} {join}.
+
+How drafted messages sound comes from ``$HERMES_HOME/brief/outreach/style.md`` when it exists
+(free text: registers, rules, a few example messages). It lives outside the repo because its
+examples are real workplace messages. The facts-only rules are added by ``understand`` either way.
 """
 
 from __future__ import annotations
@@ -29,6 +33,11 @@ class Templates:
                           "A calendar invite has been sent to everyone in this channel.{join}")
 
 
+DEFAULT_STYLE = "Professional, warm and concise. Greet the person by first name. No emojis, no sign-off."
+STYLE_FILE = "outreach/style.md"
+STYLE_LIMIT = 6000  # characters; the style rides on every draft call, so it stays well under the budget
+
+
 @dataclass(frozen=True)
 class Settings:
     timezone: str = "Asia/Kolkata"
@@ -48,6 +57,7 @@ class Settings:
                                            ModelChoice("gemini-3.5-flash-lite"),
                                            ModelChoice("gemma-4-31b-it", False))
     templates: Templates = field(default_factory=Templates)
+    style: str = DEFAULT_STYLE
 
     def models_for(self, people: int) -> tuple[ModelChoice, ...]:
         return self.models_big if people >= self.big_from_people else self.models_small
@@ -59,7 +69,7 @@ def _models(raw: Any, default: tuple[ModelChoice, ...]) -> tuple[ModelChoice, ..
     return tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in raw)
 
 
-def parse(raw: dict[str, Any]) -> Settings:
+def parse(raw: dict[str, Any], style: str = "") -> Settings:
     out = raw.get("outreach") or {}
     base = Settings()
     known = Templates.__dataclass_fields__
@@ -77,10 +87,12 @@ def parse(raw: dict[str, Any]) -> Settings:
         models_small=_models(out.get("models_small"), base.models_small),
         models_big=_models(out.get("models_big"), base.models_big),
         templates=Templates(**{k: str(v) for k, v in (out.get("templates") or {}).items() if k in known}),
+        style=style.strip()[:STYLE_LIMIT] or base.style,
     )
 
 
 def load(state_dir: Path) -> Settings:
     path = state_dir / "brief.yaml"
     raw = yaml.safe_load((path if path.is_file() else EXAMPLE).read_text(encoding="utf-8")) or {}
-    return parse(raw)
+    style = state_dir / STYLE_FILE
+    return parse(raw, style.read_text(encoding="utf-8") if style.is_file() else "")

@@ -10,7 +10,7 @@ one call per request. Only a command **you** type sends a plan: `/slack yes` or 
 |---|---|---|
 | `/slack send @priya @rahul: <text>` | 0 | Sent at once, your exact words, one DM each (`send group …` for one group DM) |
 | `/slack schedule tomorrow 9am @priya: <text>` | 0 | Slack holds it and delivers it then (`chat.scheduleMessage`) |
-| `/slack draft @a @b @c: <what each should do>` | 1 | One professional message per person → preview → `/slack yes` |
+| `/slack draft @a @b @c: <what each should do>` | 1 | One message per person, in your style → preview → `/slack yes` |
 | `/slack <any sentence>` | 1 | "tell Priya and Rahul the review moves to Friday" → drafts → `/slack yes` |
 | `/meet 15:00 30m @priya: vendor contract` | 0 | Booked at once if you are free then; otherwise shows the next free slot |
 | `/meet 15:00-19:00 15m @a @b … : Q3 reviews` | 0 | 1:1s back to back from 15:00 → preview → `/meet yes` |
@@ -57,6 +57,12 @@ people, 15:00–19:00, 15 min each → 15:00, 15:20, … 18:00–18:15.
   keeps working before this step.
 - **Gemini:** `GEMINI_API_KEY`, for drafts and sentences only.
 - **Your wording:** `outreach.templates` in `brief.yaml` (see `brief.example.yaml`).
+- **Your style:** `$HERMES_HOME/brief/outreach/style.md`, free text the draft model reads on every
+  draft: when to write casual Hinglish and when clear English, what never to write, and a few
+  example messages. Keep it under 6,000 characters. It stays on the host and out of this repo,
+  because its examples are real workplace messages. Without it, drafts are professional and warm.
+  The rules to keep every fact, date and deadline and to invent nothing are always added in code,
+  so a style file cannot remove them.
 
 ## Tested
 

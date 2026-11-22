@@ -184,6 +184,17 @@ class SlackSend(Base):
         self.assertEqual(self.posts(), [{"channel": "D-U2", "text": "Hi Rahul, could you share the Q3 numbers by Friday?"}])
         self.assertIn("Nothing is waiting", self.slack("yes"))
 
+    def test_drafts_are_written_in_the_style_file_and_keep_the_facts_rule(self):
+        (self.state / "outreach").mkdir(exist_ok=True)
+        (self.state / "outreach/style.md").write_text("Hinglish with teammates. Example: {bhai} update?",
+                                                      encoding="utf-8")
+        self.model({"messages": [{"to": "p1", "text": "Priya, Q3 numbers Friday tak bhej dena?"}]})
+        self.slack("draft @priya: ask for Q3 numbers by Friday")
+        prompt = json.dumps([c.json_body for c in self.http.calls if c.url.startswith(GEMINI)])
+        self.assertIn("Hinglish with teammates. Example: {bhai} update?", prompt)
+        self.assertIn("invent nothing", prompt)
+        self.assertNotIn("Greet the person by first name", prompt, "the default style is replaced")
+
     def test_edit_replaces_a_draft_before_sending(self):
         self.model({"messages": [{"to": "p1", "text": "Hi Priya, draft one."}]})
         self.slack("draft @priya: say hi")

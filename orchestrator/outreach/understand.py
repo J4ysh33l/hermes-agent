@@ -27,9 +27,14 @@ from .people import Person
 from .settings import Settings
 
 RequestKind = Literal["messages", "meetings", "allhands"]
-STYLE = ("Write as the sender, in a professional, warm and concise tone (at most 70 words). Greet "
-         "the person by first name. Say exactly what was asked, with the same facts, dates and "
-         "deadlines; invent nothing. No emojis, no sign-off, no placeholders like [Name].")
+FACTS = ("Write as the sender, one message per person, at most 90 words. Say exactly what was asked, "
+         "with the same facts, dates and deadlines; invent nothing. No placeholders like [Name]. "
+         "The style notes and examples below show only how the sender writes; never copy their facts.")
+
+
+def style(settings: Settings) -> str:
+    """The facts-only rules, then the sender's style (``Settings.style``, from style.md)."""
+    return f"{FACTS}\nHow the sender writes:\n<<<{settings.style}>>>"
 
 READ = """You read one request from a busy founder (time zone {tz}; now is {now}, {weekday}) for a script
 that sends Slack messages as them and books Outlook meetings. The script does all time arithmetic.
@@ -145,7 +150,7 @@ def guess_people(text: str) -> int:
 
 def read_request(http: Http, key: str, text: str, settings: Settings, now: datetime) -> Request:
     prompt = READ.format(tz=settings.timezone, now=now.strftime("%Y-%m-%d %H:%M"), weekday=now.strftime("%A"),
-                         style=STYLE, text=text.strip()[:4000])
+                         style=style(settings), text=text.strip()[:4000])
     raw = _ask(http, key, prompt, settings.models_for(guess_people(text)), "read", 4000)
     kind = raw.get("kind")
     if kind not in ("messages", "meetings", "allhands"):
@@ -167,7 +172,7 @@ def write_messages(http: Http, key: str, people: list[Person], text: str, settin
     """slack_id → message. Everyone named must get one, or the whole draft fails."""
     ids = {f"p{n}": p for n, p in enumerate(people, start=1)}
     rows = "\n".join(f"{k} = {p.name} (first name {p.first})" for k, p in ids.items())
-    raw = _ask(http, key, WRITE.format(style=STYLE, people=rows, text=text.strip()[:3000]),
+    raw = _ask(http, key, WRITE.format(style=style(settings), people=rows, text=text.strip()[:3000]),
                settings.models_for(len(people)), "write", 300 + 150 * len(people))
     out = {ids[k].slack_id: str(m.get("text") or "").strip()[:1500]
            for m in raw.get("messages") or [] if isinstance(m, dict) and (k := str(m.get("to"))) in ids}
