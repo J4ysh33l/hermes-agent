@@ -49,6 +49,7 @@ class Settings:
                       "Regards,<br>{sender}")
     interview: InterviewTexts = InterviewTexts()
     max_interviews: int = 30  # candidates in one /hr interview batch
+    interview_minutes: int = 30  # a candidate's slot when the End is left out
 
 
 def parse(raw: dict[str, Any]) -> Settings:
@@ -67,6 +68,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         interview=InterviewTexts(**{k: str(v) for k, v in (hr.get("interview") or {}).items()
                                     if k in InterviewTexts.__dataclass_fields__}),
         max_interviews=int(hr.get("max_interviews", base.max_interviews)),
+        interview_minutes=int(hr.get("interview_minutes", base.interview_minutes)),
     )
 
 

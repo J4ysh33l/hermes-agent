@@ -7,14 +7,16 @@ author: orchestrator (fork-only)
 
 # Payslips from a salary sheet (prepare only)
 
-Use this when the user sends a salary sheet (.xlsx or .csv) and asks for payslips. You need the
-file's path, the pay period and the pay date. Ask for any you don't have; dates are dd/mm/yyyy.
+Use this when the user sends a salary sheet FILE (.xlsx or .csv) and asks for payslips. You need
+the file's path, the month and the pay date. Ask for any you don't have; the pay date is dd/mm/yyyy.
 
 ```bash
-python3 "${HERMES_HOME:-$HOME/.hermes}/scripts/hr_payslips.py" "<sheet path>" <from> <to> <pay date>
+python3 "${HERMES_HOME:-$HOME/.hermes}/scripts/hr_payslips.py" "<sheet path>" <month> <pay date>
 ```
 
-Example: `... hr_payslips.py /path/nov.xlsx 01/11/2026 30/11/2026 02/12/2026`
+Example: `... hr_payslips.py /path/nov.xlsx November 02/12/2026` (or two dates instead of the month:
+`01/11/2026 30/11/2026`). If the user wants to paste the table instead, tell them to paste it after
+`/hr payslip November <pay date>` so it goes to the script, not to you.
 
 It first checks the whole sheet (template, missing columns, every row) and, if anything is
 wrong, makes nothing and lists every problem at once; otherwise it makes one PDF per employee.

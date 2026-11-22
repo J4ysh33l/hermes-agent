@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from orchestrator.brief.creds import Secrets
@@ -34,7 +34,7 @@ from orchestrator.outreach.errors import OutreachError
 from .payroll import EMAIL
 from .settings import Settings
 
-ROW_HELP = "Name, Position, Start, End, Email"
+ROW_HELP = "Name, Position, Start, End, Email (End is optional)"
 
 
 @dataclass(frozen=True)
@@ -69,54 +69,97 @@ def _day(word: str, today: date) -> date | None:
         return times.day(word, today)
 
 
-def _row(n: int, line: str) -> tuple[tuple[str, str, time | None, time | None, str] | None, list[str]]:
+HEADERS = {"name": "name", "candidate": "name", "candidate name": "name", "position": "position", "role": "position",
+           "email": "email", "email id": "email", "date": "date", "interview date": "date", "day": "date",
+           "start": "start", "start time": "start", "from": "start", "end": "end", "end time": "end", "to": "end"}
+TIMEISH = re.compile(r"\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?", re.IGNORECASE)
+TABLE_NEEDS = ("name", "position", "email", "start")  # date may be a 'Date:' line instead; end defaults
+
+
+def _comma_row(line: str) -> dict[str, str] | None:
+    """Name, Position, Start[, End], Email; the position may contain commas."""
     fields = [f.strip() for f in line.split(",")]
-    if len(fields) < 5:
-        return None, [f"Line {n}: needs {ROW_HELP} ({len(fields)} found)"]
-    name, email, start, end = fields[0], fields[-1], times.clock(fields[-3]), times.clock(fields[-2])
-    who = f"Line {n} ({name or 'no name'})"
-    problems = [f"{who}: {label} '{raw}' is not a time like 11:00 or 3:30pm"
-                for label, raw, parsed in (("start", fields[-3], start), ("end", fields[-2], end)) if parsed is None]
-    if not name:
-        problems.append(f"Line {n}: name is missing")
-    if not ", ".join(fields[1:-3]).strip():
-        problems.append(f"{who}: position is missing")
-    if not EMAIL.match(email):
-        problems.append(f"{who}: '{email}' is not an email address")
-    return (name, ", ".join(fields[1:-3]).strip(), start, end, email.lower()), problems
+    if len(fields) < 4:
+        return None
+    has_end = len(fields) >= 5 and TIMEISH.fullmatch(fields[-3]) is not None  # '25:00' is a bad time, not a role
+    cut = -3 if has_end else -2
+    return {"name": fields[0], "position": ", ".join(fields[1:cut]).strip(), "start": fields[cut],
+            "end": fields[-2] if has_end else "", "email": fields[-1], "date": ""}
 
 
-def parse(text: str, now: datetime, max_candidates: int) -> Parsed:
-    """Every problem at once, so the list is fixed in one pass. ``now`` is aware, in your time zone."""
-    day, panel, rows, problems = None, [], [], []
-    for n, line in enumerate((l.strip() for l in re.split(r"[\n;]+", text) if l.strip()), start=1):
-        head, sep, rest = line.partition(":")
-        key = head.strip().lower() if sep else ""
-        if key == "date":
+def _check_row(who: str, row: dict[str, str]) -> list[str]:
+    problems = [f"{who}: {label} '{row[label]}' is not a time like 11:00 or 3:30pm"
+                for label in ("start", "end") if row[label] and times.clock(row[label]) is None]
+    problems += [f"{who}: {field} is missing" for field in ("name", "position", "start") if not row[field]]
+    if not EMAIL.match(row["email"]):
+        problems.append(f"{who}: '{row['email']}' is not an email address")
+    return problems
+
+
+def _lines(text: str) -> tuple[list[str], list[tuple[int, dict[str, str]]], list[str]]:
+    """(the Date:/Panel: lines, candidate rows with their line number, problems)."""
+    settings_lines, rows, problems, header = [], [], [], None
+    split = [part for line in text.split("\n") for part in ([line] if "\t" in line else line.split(";"))]
+    for n, line in enumerate((l.rstrip() for l in split if l.strip()), start=1):
+        key = line.partition(":")[0].strip().lower()
+        if "\t" not in line and key in ("date", "panel") and ":" in line:
+            settings_lines.append(line)
+        elif "\t" in line and header is None:
+            header = [HEADERS.get(" ".join(h.lower().split()), "") for h in line.split("\t")]
+            problems += [f"The table needs a column '{c.title()}'" for c in TABLE_NEEDS if c not in header]
+        elif "\t" in line:
+            cells = [c.strip() for c in line.split("\t")]
+            rows.append((n, {k: cells[i] if i < len(cells) else "" for i, k in enumerate(header) if k}))
+        elif (row := _comma_row(line)) is not None:
+            rows.append((n, row))
+        else:
+            problems.append(f"Line {n}: needs {ROW_HELP}")
+    return settings_lines, [(n, {f: r.get(f, "") for f in ("name", "position", "email", "date", "start", "end")})
+                            for n, r in rows], problems
+
+
+def parse(text: str, now: datetime, max_candidates: int, default_minutes: int = 30) -> Parsed:
+    """Every problem at once, so the list is fixed in one pass. ``now`` is aware, in your time zone.
+    Rows come as 'Name, Position, Start[, End], Email' lines or a pasted table (tabs) with a header."""
+    settings_lines, rows, problems = _lines(text)
+    day, panel = None, []
+    for line in settings_lines:
+        key, _, rest = line.partition(":")
+        if key.strip().lower() == "date":
             day = _day(rest, now.date())
             if day is None:
-                problems.append(f"Line {n}: '{rest.strip()}' is not a date (use dd/mm/yyyy)")
-        elif key == "panel":
-            for email in (e.lower() for e in re.split(r"[,\s]+", rest) if e):
-                if EMAIL.match(email):
-                    panel.append(email)
-                else:
-                    problems.append(f"Panel: '{email}' is not an email")
-        else:
-            row, found = _row(n, line)
-            problems += found
-            if row and not found:
-                rows.append(row)
-    if day is None and not any(p.endswith("(use dd/mm/yyyy)") for p in problems):
-        problems.append("Add a line 'Date: dd/mm/yyyy' for the day of the interviews")
+                problems.append(f"'{rest.strip()}' is not a date (use dd/mm/yyyy)")
+            continue
+        for email in (e.lower() for e in re.split(r"[,\s]+", rest) if e):
+            if EMAIL.match(email):
+                panel.append(email)
+            else:
+                problems.append(f"Panel: '{email}' is not an email")
+    people, days = [], set()
+    for n, row in rows:
+        who = f"Line {n} ({row['name'] or 'no name'})"
+        found = _check_row(who, row)
+        row_day = _day(row["date"], now.date()) if row["date"] else day
+        if row["date"] and row_day is None:
+            found.append(f"{who}: date '{row['date']}' is not a date (use dd/mm/yyyy)")
+        problems += found
+        if found or row_day is None:
+            continue
+        days.add(row_day)
+        start = datetime.combine(row_day, times.clock(row["start"]), now.tzinfo)
+        end = (datetime.combine(row_day, times.clock(row["end"]), now.tzinfo) if row["end"]
+               else start + timedelta(minutes=default_minutes))
+        people.append(Candidate(row["name"], row["position"], start, end, row["email"].lower()))
+    if day is None and not any(r["date"] for _, r in rows) and rows:
+        problems.append("Add a line 'Date: dd/mm/yyyy', or a Date column, for the day of the interviews")
+    if len(days) > 1:
+        problems.append("One day per batch (one Teams link): found " + ", ".join(f"{d:%d/%m}" for d in sorted(days))
+                        + ". Send one message per day.")
     if not rows and not problems:
         problems.append(f"Add one line per candidate: {ROW_HELP}")
-    if day is None:
-        return Parsed(None, tuple(panel), (), tuple(problems))
-    people = sorted((Candidate(name, position, datetime.combine(day, a, now.tzinfo), datetime.combine(day, b, now.tzinfo),
-                               email) for name, position, a, b, email in rows), key=lambda c: c.start)
+    people.sort(key=lambda c: c.start)
     problems += _clashes(people, now, max_candidates)
-    return Parsed(day, tuple(panel), tuple(people), tuple(problems))
+    return Parsed(min(days) if days else day, tuple(panel), tuple(people), tuple(problems))
 
 
 def _clashes(people: list[Candidate], now: datetime, max_candidates: int) -> list[str]:

@@ -66,6 +66,14 @@ class Rules(unittest.TestCase):
         self.assertEqual((asha.lop_amount, asha.net, asha.paid_days), (1600, 18400, 23))
         self.assertEqual(batch.skipped, ("Row 4 (Kabir): compensation is 0, no slip",))
 
+    def test_without_an_hra_column_hra_is_the_rest_of_compensation(self):
+        rows = self.rows("Employee Name,Position,Email,DOJ,Compensation,Basic\n"
+                         "Asha,SWE,asha@example.com,1/1/2026,20000,15000\n"
+                         "Ravi,SWE,ravi@example.com,1/1/2026,20000,25000\n")
+        batch = payroll.build(rows, NOV, Settings())
+        self.assertEqual((batch.slips[0].basic, batch.slips[0].hra, batch.slips[0].gross), (15000, 5000, 20000))
+        self.assertIn("Row 3 (Ravi): Basic 25000 must be between 0 and Compensation (20000)", batch.problems)
+
     def test_every_bad_row_is_listed_and_stops_the_run(self):
         bad = HEADER + ("Meera,0,C,17/08/2026,0,0,17000,12000,5000,,\n"
                         "Ravi,SWE,FT,1/1/2026,0,0,30000,20000,5000,,ravi@example.com\n"
@@ -194,6 +202,24 @@ class Run(unittest.TestCase):
         self.assertFalse((self.home / "hr/payslips").exists(), "the agent could not take up the skip offer")
         self.assertEqual(self.mails, [])
 
+    def test_a_pasted_table_with_a_month_name_makes_slips_and_hra_defaults_to_the_rest(self):
+        table = ("Employee Name\tPosition\tEmail\tDOJ\tCompensation\tBasic\n"
+                 "Asha Verma\tDirector, Operations\tasha@example.com\t17/08/2026\t20000\t15000\n")
+        reply = self.hr("payslip Nov 02/12/2026\n" + table)
+        self.assertIn("1 payslips for November 2026 are ready", reply)
+        pasted = list((self.home / "hr/inbox").glob("pasted-*.tsv"))
+        self.assertEqual(len(pasted), 1)
+        self.assertEqual(oct(pasted[0].stat().st_mode & 0o777), "0o600", "salary data stays private")
+        self.hr("payslip Nov 02/12/2026\n" + table)
+        self.assertEqual(len(list((self.home / "hr/inbox").glob("pasted-*.tsv"))), 1, "only the latest paste is kept")
+
+    def test_a_paste_that_lost_its_tabs_or_a_bad_month_is_refused_with_what_to_send(self):
+        self.assertIn("lost its columns", self.hr("payslip November 02/12/2026\nAsha Verma SWE asha@example.com"))
+        self.assertIn("'Novembr' is not a month", self.hr("payslip Novembr 02/12/2026\nA\tB"))
+        self.assertIn("Put the month and pay date on the first line", self.hr("payslip\nA\tB"))
+        self.assertIn("Add the pay date", self.hr("payslip November\nA\tB"))
+        self.assertFalse((self.home / "hr/payslips").exists())
+
     def test_hr_is_a_menu_and_payslip_steps_live_under_it(self):
         self.assertIn("/hr payslip", self.hr("show"))
         self.assertNotIn("No payslips are waiting", self.hr("show"))
@@ -206,7 +232,7 @@ class Run(unittest.TestCase):
                               "Ravi,SWE,1/1/2026,TEST0000003,123,30000,abc\n"
                               "Kabir,SWE,1/1/2026,TEST0000004,456,0,\n", encoding="utf-8")
         reply = self.hr(f"payslip check {self.sheet} 01/11/2026 30/11/2026")
-        self.assertIn("Add these columns: Email, Basic, HRA", reply)
+        self.assertIn("Add these columns: Email, Basic\n", reply)
         self.assertIn("Meera): designation is missing", reply)
         self.assertIn("Ravi): LOP Days 'abc' is not a number", reply)
         self.assertIn("Meera): bank details are blank or 0", reply)
@@ -296,6 +322,23 @@ class Interviews(unittest.TestCase):
         self.assertIn("Nothing was saved", self.hr("interview Date: 18/11/2026; Asha, SWE, 09:00, 09:30, a@example.com"))
         self.assertIn("Add a line 'Date: dd/mm/yyyy'", self.hr("interview Asha, SWE, 11:00, 11:30, a@example.com"))
         self.assertIn("No interviews are waiting", self.hr("interview show"))
+
+    def test_a_pasted_table_with_a_date_column_and_no_end_uses_the_default_length(self):
+        table = ("Panel: rishabh@co.com\n"
+                 "Name\tPosition\tEmail\tDate\tStart\n"
+                 "Asha Verma\tDirector, Operations\tasha@example.com\t19/11/2026\t11:00\n"
+                 "Rohan Das\tData Analyst\trohan@example.com\t19/11/2026\t11:30\n")
+        preview = self.hr("interview\n" + table)
+        self.assertIn("1. 11:00–11:30 Asha Verma, Director, Operations, asha@example.com", preview)
+        self.assertIn("2. 11:30–12:00 Rohan Das", preview)
+        self.assertIn("Panel: rishabh@co.com", preview)
+
+    def test_a_comma_line_without_an_end_and_a_two_day_table_are_handled(self):
+        self.assertIn("1. 11:00–11:30 Asha, SWE", self.hr("interview Date: 19/11/2026; Asha, SWE, 11:00, asha@example.com"))
+        reply = self.hr("interview\nName\tPosition\tEmail\tDate\tStart\n"
+                        "Asha\tSWE\tasha@example.com\t19/11/2026\t11:00\n"
+                        "Ravi\tSWE\travi@example.com\t20/11/2026\t11:00\n")
+        self.assertIn("One day per batch (one Teams link): found 19/11, 20/11", reply)
 
     def test_your_busy_time_is_a_warning_and_no_cancels(self):
         self.busy = [{"start": {"dateTime": "2026-11-19T05:45:00.0000000"}, "end": {"dateTime": "2026-11-19T06:00:00.0000000"},

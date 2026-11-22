@@ -173,6 +173,7 @@ hr:
   mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"
   # /hr interview: one Teams link for the block, each candidate invited to their own slot.
   max_interviews: 30          # candidates in one batch
+  interview_minutes: 30       # a slot when the End is left out
   interview:                  # leave a key out to keep the default wording (orchestrator/hr/settings.py)
     company: "Medoc Health"
     # Placeholders: {first} {name} {position} {day} {start} {end} {length} {join} {sender} {company}

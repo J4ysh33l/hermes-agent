@@ -25,7 +25,7 @@ COLUMNS = {
 }
 LABELS = {"name": "Employee Name", "designation": "Position", "doj": "DOJ", "email": "Email",
           "compensation": "Compensation", "basic": "Basic", "hra": "HRA"}
-REQUIRED = ("name", "designation", "doj", "email", "compensation", "basic", "hra")
+REQUIRED = ("name", "designation", "doj", "email", "compensation", "basic")  # no HRA column: Compensation − Basic
 
 
 def _text(value: object) -> str:

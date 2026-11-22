@@ -5,10 +5,16 @@ everything. **No AI model sees pay or bank details.**
 
 ## Each month
 
-1. Send Hermes the sheet (.xlsx or .csv) and say the period and the pay date: "payslips for
-   1–30 Nov, paid 2 Dec". The agent passes only the file path to
-   `$HERMES_HOME/scripts/hr_payslips.py` (skill `orchestrator:hr-payslips`).
-   On the host you can also run `python -m orchestrator.hr payslip <sheet> 01/11/2026 30/11/2026 02/12/2026`.
+1. Either way works:
+   - **Paste the table:** `/hr payslip November 02/12/2026`, then the cells copied from Google
+     Sheets or Excel on the next lines. The paste must keep its tabs; if they're lost, it says so.
+     Always paste after `/hr payslip`: a table sent as a plain chat message would reach the model.
+   - **Send the file** (.xlsx or .csv) and say the month and the pay date: "payslips for November,
+     paid 2 Dec". The agent passes only the file path to `$HERMES_HOME/scripts/hr_payslips.py`
+     (skill `orchestrator:hr-payslips`).
+   - **Month:** `November`, `Nov`, `Nov 2026`, `11/2026` (without a year, the latest November that
+     has started), or two dates `01/11/2026 30/11/2026`. The pay date is always dd/mm/yyyy.
+   - On the host: `python -m orchestrator.hr payslip ~/nov.xlsx November 02/12/2026`.
 2. Before making anything, the script checks the template, the columns and every row. It lists
    **every** problem in one reply: missing columns, missing or `0` values, bad dates and numbers,
    Basic + HRA ≠ Compensation, LOP over the working days, and duplicate emails, one line per
@@ -30,8 +36,9 @@ everything. **No AI model sees pay or bank details.**
 
 | Column | Needed | Notes |
 |---|---|---|
-| Employee Name, Position, DOJ, Email | yes | DOJ as dd/mm/yyyy. A designation of `0` counts as missing |
-| Compensation, Basic, HRA | yes | Basic + HRA must equal Compensation |
+| Employee Name, Position, Email, DOJ | yes | DOJ as dd/mm/yyyy. A designation of `0` counts as missing |
+| Compensation, Basic | yes | Basic between 0 and Compensation |
+| HRA | no | Default: Compensation − Basic. If given, Basic + HRA must equal Compensation |
 | LOP Days | no | Half days allowed (0.5) |
 | Reimbursement, Other Deductions | no | Default 0 |
 | IFSC, Bank Account, Employment Type | ignored | Never copied anywhere |
@@ -70,7 +77,12 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
 ```
 
 - **Each line:** Name, Position, Start, End, Email. The position may contain commas
-  ("Director, Operations"). Times: `11:00`, `3:30pm`. `Panel:` is optional.
+  ("Director, Operations"). Times: `11:00`, `3:30pm`. End is optional: Start + `hr.interview_minutes`
+  (30). `Panel:` is optional.
+- **Or paste a table** (tabs kept) with a header row: Name, Position, Email, Date, Start, End
+  (End optional; Date may be a `Date:` line instead). One day per batch, since it's one link.
+- **Candidates get only their own invite.** The Teams meeting itself invites only the panel, so no
+  candidate gets the main meeting email or sees anyone else.
 - **The check:** every problem is listed at once (bad times or emails, missing fields, overlapping
   slots, past times, the same email twice), and nothing is saved until it's clean. Slots can't
   overlap because everyone shares the link. If your own calendar is busy during a slot, it warns.
