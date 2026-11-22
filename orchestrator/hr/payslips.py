@@ -35,6 +35,11 @@ class Paths:
         return self.home / "pending.json"
 
     @property
+    def blocked(self) -> Path:
+        """The last run stopped only by bad rows: what ``/hr skip`` re-runs without them."""
+        return self.home / "blocked.json"
+
+    @property
     def sent(self) -> Path:
         return self.home / "sent.jsonl"
 
@@ -79,10 +84,22 @@ def _private_dir(path: Path) -> Path:
     return path
 
 
-def _report(batch: Batch) -> list[str]:
+def _by_row(problems: tuple[str, ...]) -> list[str]:
+    """One line per employee: 'Row 7 (Ayush Singh): designation is missing; email is missing'."""
+    rows: dict[str, list[str]] = {}
+    for problem in problems:
+        who, sep, what = problem.partition("): ")
+        key, text = (who + ")", what) if sep and who.startswith("Row ") else (problem, "")
+        rows.setdefault(key, []).append(text)
+    return [f"• {who}: {'; '.join(t for t in texts if t)}" if any(texts) else f"• {who}" for who, texts in rows.items()]
+
+
+def _report(batch: Batch, leave_out: bool = False) -> list[str]:
     out = []
-    if batch.problems:
-        out += [f"❌ {len(batch.problems)} problem(s) in the rows:"] + [f"• {p}" for p in batch.problems]
+    if batch.problems and leave_out:
+        out += [f"Left out, no slip until fixed ({len(batch.left_out)}):", *_by_row(batch.problems)]
+    elif batch.problems:
+        out += [f"❌ {len(batch.left_out)} employee(s) with problems:", *_by_row(batch.problems)]
     if batch.skipped:
         out += ["Skipped:"] + [f"• {s}" for s in batch.skipped]
     if batch.warnings:
@@ -90,33 +107,70 @@ def _report(batch: Batch) -> list[str]:
     return out
 
 
-def check(sheet_path: Path, period: Period, settings: Settings, paths: Paths) -> tuple[Batch | None, list[str]]:
+@dataclass(frozen=True)
+class Checked:
+    batch: Batch | None  # None: the sheet could not be read
+    sheet_errors: tuple[str, ...]  # template, columns, size: no slip can be made until these are fixed
+
+    def ready(self, leave_out: bool = False) -> bool:
+        b = self.batch
+        return b is not None and not self.sheet_errors and bool(b.slips) and (leave_out or not b.problems)
+
+    def can_leave_out(self) -> bool:
+        """Only rows are wrong, and at least one other row is fine: /hr skip can go ahead."""
+        return not self.ready() and self.ready(leave_out=True)
+
+    def report(self, leave_out: bool = False) -> list[str]:
+        return [*self.sheet_errors, *(_report(self.batch, leave_out) if self.batch else [])]
+
+
+def check(sheet_path: Path, period: Period, settings: Settings, paths: Paths) -> Checked:
     """Everything that could stop a run, found before anything is made: the template, missing
     columns, and every problem in every row, all in one list so the sheet is fixed in one pass."""
-    out: list[str] = []
+    errors: list[str] = []
     template = paths.templates / settings.payslip_template
     if not template.is_file():
-        out.append(f"❌ No payslip template at {template}. Copy your Word template there.")
+        errors.append(f"❌ No payslip template at {template}. Copy your Word template there.")
     try:
         rows, missing = sheet.read(sheet_path)
     except (OSError, ValueError) as exc:
-        return None, [*out, f"❌ Can't read the sheet: {exc}"]
+        return Checked(None, (*errors, f"❌ Can't read the sheet: {exc}"))
     if missing:
-        out.append("❌ Add these columns: " + ", ".join(sheet.LABELS[m] for m in missing))
+        errors.append("❌ Add these columns: " + ", ".join(sheet.LABELS[m] for m in missing))
     batch = build(rows, period, settings, frozenset(missing))
-    out += _report(batch)
-    if not batch.problems and not missing and not batch.slips:
-        out.append("❌ No rows with pay in the sheet.")
+    if not missing and not batch.slips and not batch.problems:
+        errors.append("❌ No rows with pay in the sheet.")
     if len(batch.slips) > settings.max_per_run:
-        out.append(f"❌ {len(batch.slips)} slips is over hr.max_per_run ({settings.max_per_run}).")
-    blocked = any(line.startswith("❌") for line in out)
-    return (None if blocked else batch), out
+        errors.append(f"❌ {len(batch.slips)} slips is over hr.max_per_run ({settings.max_per_run}).")
+    return Checked(batch, tuple(errors))
 
 
-def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, now: float | None = None) -> str:
-    batch, report = check(sheet_path, period, settings, paths)
-    if batch is None:
-        return "\n".join(["Nothing was made. Fix all of this, then send the sheet again:", *report])
+def _offer(checked: Checked) -> list[str]:
+    b = checked.batch
+    names = ", ".join(w.split("(", 1)[1].rstrip(")") for w in b.left_out)
+    return ["", f"Leave out {len(b.left_out)} ({names}) and make the other {len(b.slips)} slips? /hr skip"]
+
+
+def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, now: float | None = None,
+            leave_out: tuple[str, ...] | None = None) -> str:
+    """``leave_out``: the rows you agreed to leave out (from ``/hr skip``). If the sheet now has a
+    different set of bad rows, nothing is made and the new list is offered instead."""
+    now = time.time() if now is None else now
+    checked = check(sheet_path, period, settings, paths)
+    agreed = leave_out is not None and checked.batch is not None and checked.batch.left_out == leave_out
+    if not checked.ready(leave_out=agreed):
+        paths.blocked.unlink(missing_ok=True)
+        head = ("The sheet changed since you said skip. Nothing was made:" if leave_out is not None
+                else "Nothing was made. Fix all of this, then send the sheet again:")
+        lines = [head, *checked.report()]
+        if checked.can_leave_out():
+            _save(paths.blocked, {"created": now, "sheet": str(sheet_path), "start": period.start.isoformat(),
+                                  "end": period.end.isoformat(), "pay_date": period.pay_date.isoformat(),
+                                  "left_out": list(checked.batch.left_out)})
+            lines += _offer(checked)
+        return "\n".join(lines)
+    paths.blocked.unlink(missing_ok=True)
+    batch, report = checked.batch, checked.report(leave_out=agreed)
     template = paths.templates / settings.payslip_template
     out = _private_dir(paths.run_dir(period))
     docs = []
@@ -129,9 +183,12 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
         doc.unlink()
     items = [{"name": s.name, "first": s.first, "email": s.email, "file": str(p), "net": str(s.net)}
              for s, p in zip(batch.slips, pdfs)]
-    plan = {"created": time.time() if now is None else now, "month": period.month, "items": items,
-            "notes": list(_report(batch))}
-    paths.pending.write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.chmod(paths.pending, 0o600)
+    _save(paths.pending, {"created": now, "month": period.month, "items": items, "notes": report})
     return "\n".join([f"✅ {len(items)} payslips for {period.month} are ready. Nothing is sent yet.", *report,
                       "", "Next: /hr show (list with net pay) · /hr test (2 samples to you) · /hr yes · /hr no"])
+
+
+def _save(path: Path, data: dict) -> None:
+    _private_dir(path.parent)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.chmod(path, 0o600)

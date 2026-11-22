@@ -26,5 +26,7 @@ samples with `/hr test` and sends with `/hr yes`.
 
 - Never open, read, summarise or repeat the sheet's contents yourself: salary and bank details
   must not pass through you. Only pass the file path to the script.
-- If it lists problems, tell the user to fix those rows and send the sheet again.
+- If it lists problems, show them as printed. If it offers `/hr skip`, the user decides: they can
+  type `/hr skip` to leave those employees out, or fix the rows and send the sheet again. Never
+  run skip for them.
 - Never compute pay, LOP or totals yourself, and never try to send the slips another way.

@@ -152,6 +152,40 @@ class Run(unittest.TestCase):
         self.assertFalse((self.home / "hr/payslips").exists())
         self.assertFalse((self.home / "hr/pending.json").exists())
 
+    def with_bad_rows(self) -> None:
+        self.sheet.write_text(GOOD + "Meera,0,C,17/08/2026,0,0,17000,12000,5000,,0\n"
+                              "Dup One,SWE,IN,1/1/2026,T1,1,30000,25000,5000,,asha@example.com\n", encoding="utf-8")
+
+    def test_skip_makes_only_the_good_rows_and_keeps_the_left_out_names_in_view(self):
+        self.with_bad_rows()
+        reply = self.hr(f"payslips {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
+        self.assertIn("Nothing was made", reply)
+        self.assertIn("Row 5 (Meera): designation is missing; email is missing", reply, "one line per employee")
+        self.assertIn("Leave out 3 (Meera, Asha Verma, Dup One) and make the other 1 slips? /hr skip", reply)
+        self.assertFalse((self.home / "hr/payslips").exists())
+        reply = self.hr("skip")
+        self.assertIn("1 payslips for November 2026 are ready", reply)
+        self.assertEqual([p.name for p in (self.home / "hr/payslips/2026-11").glob("*.pdf")],
+                         ["Payslip_Nov-2026_Rohan_Kumar_Das.pdf"], "a shared email leaves out both rows")
+        self.assertIn("Left out, no slip until fixed (3):", self.hr("show"))
+        self.assertIn("Nothing to skip", self.hr("skip"))
+
+    def test_skip_after_the_sheet_changed_makes_nothing_and_offers_the_new_list(self):
+        self.with_bad_rows()
+        self.hr(f"payslips {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
+        self.sheet.write_text(GOOD.replace("Data Analyst ", "0"), encoding="utf-8")
+        reply = self.hr("skip")
+        self.assertIn("The sheet changed since you said skip", reply)
+        self.assertIn("Leave out 1 (Rohan Kumar Das) and make the other 1 slips? /hr skip", reply)
+        self.assertFalse((self.home / "hr/pending.json").exists())
+
+    def test_a_missing_column_is_never_offered_as_skippable(self):
+        self.sheet.write_text(GOOD.replace(",Email\n", ",Mailbox\n"), encoding="utf-8")
+        reply = self.hr(f"payslips {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
+        self.assertIn("Add these columns: Email", reply)
+        self.assertNotIn("/hr skip", reply)
+        self.assertIn("Nothing to skip", self.hr("skip"))
+
     def test_check_lists_missing_columns_and_every_row_problem_in_one_pass(self):
         self.sheet.write_text("Employee Name,Position,DOJ,IFSC Code,Bank Account,Compensation,LOP Days\n"
                               "Meera,0,17/08/2026,0,0,17000,\n"

@@ -4,6 +4,7 @@
 /hr test — emails 2 sample slips to YOU (``test all``: every slip, still only to you)
 /hr yes · /hr yes 1-10 — emails each person their own slip, from your Outlook
 /hr no — cancels the waiting batch (the PDFs stay in $HERMES_HOME/hr/payslips/)
+/hr skip — after a run stopped only by bad rows: makes the other slips, leaving those rows out
 """
 
 from __future__ import annotations
@@ -32,11 +33,13 @@ from .payslips import Paths, rupees
 HR_HELP = """**/hr** — payslips from your salary sheet, emailed from your Outlook (no AI model touches pay)
 Send Hermes the month's sheet (.xlsx/.csv) and say the period, e.g. "payslips for 1–30 Nov, paid 2 Dec".
 Columns: Employee Name, Position, DOJ, Email, Compensation, Basic, HRA, LOP Days
-(optional: Reimbursement, Other Deductions). Any bad row stops the run and is listed.
+(optional: Reimbursement, Other Deductions). Any bad row stops the run; every employee with a
+problem is listed, and /hr skip makes everyone else's slips, leaving those rows out.
 /hr show — slips waiting: name, email, net pay
 /hr test — 2 sample slips emailed to you · /hr test all — every slip, to you only
 /hr yes — email everyone their own slip · /hr yes 1-10 — only those
 /hr no — cancel
+/hr skip — make the good rows' slips and leave the listed employees out (offered when only rows are wrong)
 /hr check <sheet path> <from> <to> — only checks the sheet and lists every problem; makes nothing
 /hr payslips <sheet path> <from> <to> <pay date> — same as sending the sheet (dates dd/mm/yyyy)
 /menu — all your commands"""
@@ -162,10 +165,27 @@ def _check(ctx: Context, arg: str) -> str:
         period = Period(_date(parts[1]), _date(parts[2]), _date(parts[2]))
     except ValueError as exc:
         return str(exc)
-    batch, report = payslips.check(Path(parts[0]).expanduser(), period, ctx.settings, ctx.paths)
-    head = (f"✅ The sheet is ready: {len(batch.slips)} payslips for {period.month}." if batch
-            else "The sheet is not ready yet. Fix all of this:")
-    return "\n".join([head, *report])
+    checked = payslips.check(Path(parts[0]).expanduser(), period, ctx.settings, ctx.paths)
+    if checked.ready():
+        return "\n".join([f"✅ The sheet is ready: {len(checked.batch.slips)} payslips for {period.month}.",
+                          *checked.report()])
+    tail = (["", f"{len(checked.batch.slips)} rows are fine. When you send it with the pay date, you can "
+             f"leave the {len(checked.batch.left_out)} above out with /hr skip."] if checked.can_leave_out() else [])
+    return "\n".join(["The sheet is not ready yet. Fix all of this:", *checked.report(), *tail])
+
+
+def _skip(ctx: Context, _arg: str) -> str:
+    path = ctx.paths.blocked
+    if not path.is_file():
+        return "Nothing to skip. /hr skip works right after a run that stopped only because of bad rows."
+    held = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - held["created"] > ctx.settings.preview_minutes * 60:
+        path.unlink()
+        return "That run is too old. Send the sheet again."
+    period = Period(date.fromisoformat(held["start"]), date.fromisoformat(held["end"]),
+                    date.fromisoformat(held["pay_date"]))
+    return payslips.prepare(Path(held["sheet"]), period, ctx.settings, ctx.paths, ctx.now,
+                            leave_out=tuple(held["left_out"]))
 
 
 def _payslips(ctx: Context, arg: str) -> str:
@@ -175,7 +195,8 @@ def _payslips(ctx: Context, arg: str) -> str:
     return run_payslips(ctx, *parts)
 
 
-COMMANDS = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "payslips": _payslips}
+COMMANDS = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "payslips": _payslips,
+            "skip": _skip}
 
 
 def handle(raw: str, state_dir: Path | None = None, http: Http | None = None, now: float | None = None) -> str:

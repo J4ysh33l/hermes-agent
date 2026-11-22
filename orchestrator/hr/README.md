@@ -11,9 +11,14 @@ everything. **No AI model sees pay or bank details.**
    On the host you can also run `python -m orchestrator.hr payslips <sheet> 01/11/2026 30/11/2026 02/12/2026`.
 2. Before making anything, the script checks the template, the columns and every row. It lists
    **every** problem in one reply: missing columns, missing or `0` values, bad dates and numbers,
-   Basic + HRA ≠ Compensation, LOP over the working days, and duplicate emails. Nothing is made
-   until all of them are fixed. It also warns about blank bank details and mid-period joiners.
+   Basic + HRA ≠ Compensation, LOP over the working days, and duplicate emails, one line per
+   employee. Nothing is made yet. It also warns about blank bank details and mid-period joiners.
    `/hr check <sheet> <from> <to>` runs only this check.
+   - **Only some rows wrong?** The reply offers `/hr skip`: it makes everyone else's slips and
+     leaves those employees out. Their names stay listed in `/hr show` until you send a fixed sheet.
+     Both rows that share an email are left out. If the sheet changes before `/hr skip`, nothing
+     is made and the new list is offered instead. The offer expires with the batch (2 hours).
+   - Missing columns or a missing template can't be skipped: fix them and send the sheet again.
 3. It makes one PDF per person in `$HERMES_HOME/hr/payslips/<YYYY-MM>/`.
 4. It replies with counts only.
 5. `/hr show`: name, email and net pay for each person, plus the total.
@@ -60,14 +65,15 @@ total_deductions reimbursement net_pay`.
 
 ## Tested
 
-- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 7 tests):
+- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 13 tests):
   - working-day LOP
   - every bad row listed, and nothing made
+  - `/hr skip` makes only the good rows; a changed sheet or a missing column makes nothing
   - placeholders split across runs
   - PDFs made, and the agent's reply carries no figures
   - `test` emails only you, `yes` emails each person their own PDF
   - no pay or bank numbers in the log
   - expiry
 - Breaking the LOP rule or the test-mail target turns tests red.
-- **Live, 2026-11-22:** your template, converted, rendered correctly with 3 sample rows. Mail.Send
-  is not granted yet, so nothing has been emailed.
+- **Live, 2026-11-22:** your template, converted, rendered correctly with 3 sample rows. After
+  Mail.Send was granted, `/hr test` emailed two sample slips to you from Outlook.
