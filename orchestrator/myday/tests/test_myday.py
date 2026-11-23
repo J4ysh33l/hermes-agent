@@ -202,7 +202,8 @@ class Streak(Base):
         self.assertEqual(len(self.fake.animations), 1)
         self.assertIn("/bot123:abc/sendAnimation", self.fake.animations[0]["url"])
         self.assertIn(b'name="chat_id"\r\n\r\n42', self.fake.animations[0]["body"])
-        self.assertIn(b"GIF89a", self.fake.animations[0]["body"])
+        body = self.fake.animations[0]["body"]
+        self.assertTrue(b"ftypisom" in body or b"GIF89a" in body)  # MP4 with ffmpeg, else GIF
 
     def test_a_task_ticked_in_the_to_do_app_scores_on_the_next_tick(self):
         task = self.fake.add("Review contract", date(2026, 11, 23))

@@ -11,8 +11,8 @@ animations. **No model call anywhere**: every command is read by script.
 | 07:30 | The card: streak and level, today's tasks (overdue first), top-3 prompt, later and next 7 days, today's Outlook meetings, bills due within a week, nearest goals |
 | Every 15 min | Tasks ticked in the To Do app score; bill reminders; health nudges (sends nothing when nothing is due) |
 | 21:30 | Wrap-up: points today and what is still open, before the day closes at midnight |
-| Last task done | 🎉 animation: the flame grows, the streak counts up |
-| A day closes with tasks open | 🧊 animation at the next morning card: the streak resets |
+| Last task done | 🎉 animation: a gold ring closes, the flame ignites with a glow, confetti bursts, the streak counts up under an "ALL CLEAR" pill |
+| A day closes with tasks open | 🧊 animation at the next morning card: frost creeps in, the flame turns blue and dies into smoke and embers, the number cracks and falls, a calm 0 rises |
 | Every reply on Telegram | A badge: `🔥 5 · Lv 3 Doer · 340 pts` |
 
 Commands (each answers `help`): `/day`, `/bills`, `/goals`, `/health`. Examples:
@@ -50,7 +50,7 @@ No bank access: amounts are what you type.
 | `$HERMES_HOME/myday/state.json` | Points, streak, top picks, what was last shown (0600) |
 | `$HERMES_HOME/myday/bills.json` | Your bills |
 | `$HERMES_HOME/myday/health.jsonl` | Health log: on the host only, never sent to To Do or a model |
-| `$HERMES_HOME/myday/anim/` | Cached animations |
+| `$HERMES_HOME/myday/anim/` | Cached animations (MP4 with ffmpeg, else GIF) |
 
 ## Setup
 
