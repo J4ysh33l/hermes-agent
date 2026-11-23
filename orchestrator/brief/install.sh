@@ -23,6 +23,8 @@ echo "wrote   $HOME_DIR/scripts/outreach_draft.py (Hermes' agent drafts Slack me
 sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/hr/launcher.py.template" > "$HOME_DIR/scripts/hr_payslips.py"
 mkdir -p "$HOME_DIR/hr/templates" && chmod 700 "$HOME_DIR/hr"
 echo "wrote   $HOME_DIR/scripts/hr_payslips.py (put your payslip.docx in $HOME_DIR/hr/templates/)"
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/hr/inbox_launcher.py.template" > "$HOME_DIR/scripts/hr_inbox.py"
+echo "wrote   $HOME_DIR/scripts/hr_inbox.py (HR inbox sweep; needs hr.mailbox in brief.yaml)"
 
 mkdir -p "$HOME_DIR/myday" && chmod 700 "$HOME_DIR/myday"
 if [ ! -f "$HOME_DIR/myday/myday.yaml" ]; then
@@ -50,5 +52,7 @@ Next (run these yourself):
       --script myday_morning.py --deliver telegram --name myday-morning
   hermes cron create "*/15 * * * *" --timezone Asia/Kolkata --no-agent \\
       --script myday_tick.py --deliver telegram --name myday-tick
+  hermes cron create "0 10,17 * * *" --timezone Asia/Kolkata --no-agent \\
+      --script hr_inbox.py --deliver telegram --name hr-inbox
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

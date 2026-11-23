@@ -1,4 +1,4 @@
-"""``/hr`` in Telegram: HR jobs, each under its own word. Today: ``/hr payslip``.
+"""``/hr`` in Telegram: HR jobs, each under its own word: ``payslip``, ``interview``, ``inbox``.
 
 /hr payslip <sheet> <from> <to> <pay date> — make the slips (what Hermes' agent runs with your sheet)
 /hr payslip check · show · test · yes · no · skip — check a sheet, review, sample to you, send, cancel,
@@ -24,7 +24,7 @@ from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
 from orchestrator.outreach.plan import picks
 
-from . import interview, payslips, request, settings
+from . import inbox, interview, payslips, request, settings
 from .payroll import Period
 from .payslips import Paths, rupees
 
@@ -58,7 +58,15 @@ End is optional (Start + 30 min). Or paste a table with columns Name, Position, 
 HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only after you approve
 /hr payslip — monthly payslips from the salary sheet (/hr payslip help for every step)
 /hr interview — one Teams link, each candidate invited to their own slot (/hr interview help)
+/hr inbox — mail to the HR mailbox sorted: urgent, people, campus, applications (/hr inbox help)
 /menu — all your commands"""
+
+INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules (no AI model reads HR mail)
+/hr inbox show — new HR mail by kind, and every urgent or people mail still waiting for a reply
+/hr inbox list applications — the last 14 days of one kind (urgent · people · campus · applications · other)
+/hr inbox done 2 — mark a waiting mail handled (one answered in its thread clears on its own)
+Swept at 10:00 and 17:00 (cron); it messages you only when there is new HR mail, and the first sweep
+of the day also reminds you of urgent mail still unanswered. /menu — all your commands"""
 
 TZ = ZoneInfo("Asia/Kolkata")
 TEST_SAMPLES = 2
@@ -270,10 +278,54 @@ def _interview_no(ctx: Context, _arg: str) -> str:
     return "Nothing was waiting."
 
 
+def _inbox_store(ctx: Context) -> inbox.Store:
+    return inbox.Store(ctx.paths.home / "inbox.json")
+
+
+def _inbox_sweep(ctx: Context, *, always: bool) -> str:
+    if not ctx.settings.mailbox:
+        return "Set hr.mailbox in brief.yaml (e.g. hr@medochealth.in) first: the sweep reads mail sent to it."
+    store, now = _inbox_store(ctx), datetime.fromtimestamp(ctx.now, TZ)
+    result = inbox.sweep(ctx.http, ctx.secrets, store, ctx.settings.mailbox, now)
+    remind = store.data.get("reminded") != now.date().isoformat()
+    text = inbox.digest(result, store, now, always=always, remind=remind)
+    if text:
+        store.data["reminded"] = now.date().isoformat()
+    store.save()
+    return text
+
+
+def _inbox_list(ctx: Context, arg: str) -> str:
+    key = arg.strip().lower()
+    if key not in inbox.BY_KEY:
+        return "Which kind? /hr inbox list " + " · ".join(inbox.BY_KEY)
+    return inbox.listing(_inbox_store(ctx), key, datetime.fromtimestamp(ctx.now, TZ))
+
+
+def _inbox_done(ctx: Context, arg: str) -> str:
+    store = _inbox_store(ctx)
+    shown = store.data.get("listing") or []
+    chosen = picks(arg, len(shown)) if arg.strip() else None
+    if chosen is None:
+        return f"Give numbers from the last /hr inbox show (1 to {len(shown)}), e.g. /hr inbox done 2"
+    keys = [shown[i] for i in chosen]
+    names = []
+    for key in keys:
+        if key in store.items:
+            store.items[key]["done"] = "marked"
+            names.append(store.items[key]["subject"])
+    store.save()
+    return "✅ Handled: " + "; ".join(names) if names else "Nothing to mark. Show /hr inbox show again."
+
+
 PAYSLIP = {"check": _check, "show": _show, "test": _test, "yes": _yes, "no": _no, "cancel": _no, "skip": _skip}
 INTERVIEW = {"show": _interview_show, "yes": _interview_yes, "no": _interview_no, "cancel": _interview_no}
+INBOX = {"show": lambda ctx, _a: _inbox_sweep(ctx, always=True),
+         "sweep": lambda ctx, _a: _inbox_sweep(ctx, always=False),  # the cron's word: silent when nothing new
+         "list": _inbox_list, "done": _inbox_done}
 TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
-          "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP)}  # next: "letter" (offer, termination)
+          "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP),
+          "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP)}  # next: "letter" (offer, termination)
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 
