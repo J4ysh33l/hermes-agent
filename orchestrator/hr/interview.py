@@ -12,6 +12,9 @@ calls no model and sends nothing. ``/hr interview yes`` then creates:
 1. one Teams event on your calendar for the whole block, with the panel invited: that is the link;
 2. one Outlook event per candidate for their slot only, carrying that link. Outlook emails each
    invite from your mailbox, with Accept/Decline. Candidates never see each other's names or emails.
+   With ``hr.mailbox`` set, the slot stays on your calendar with no guest, and the candidate gets
+   an email From that mailbox instead, with an ``interview.ics`` to add it to their calendar. Their
+   reply goes to the mailbox; the meeting and the calendar stay yours.
 
 Every slot shares the link, so candidates must not overlap: the check refuses overlapping slots.
 External guests wait in the Teams lobby until someone on the panel admits them.
@@ -22,12 +25,13 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from typing import Any
 
 from orchestrator.brief.creds import Secrets
 from orchestrator.brief.net import Http
+from orchestrator.brief.sources import outlook
 from orchestrator.outreach import graph, times
 from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
@@ -218,11 +222,53 @@ def _values(c: Candidate, settings: Settings, join: str) -> dict[str, str]:
             "sender": settings.sender_name or t.company, "company": t.company}
 
 
+def _ics_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def ics(c: Candidate, subject: str, join: str, uid: str) -> bytes:
+    """An add-to-calendar file (METHOD:PUBLISH: no organizer, so no RSVP goes anywhere)."""
+    stamp = "%Y%m%dT%H%M%SZ"
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//hermes//hr interview//EN", "METHOD:PUBLISH",
+             "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{c.start.astimezone(UTC):{stamp}}",
+             f"DTSTART:{c.start.astimezone(UTC):{stamp}}", f"DTEND:{c.end.astimezone(UTC):{stamp}}",
+             f"SUMMARY:{_ics_text(subject)}", "LOCATION:Microsoft Teams Meeting", f"URL:{join}",
+             f"DESCRIPTION:{_ics_text('Join: ' + join)}", "END:VEVENT", "END:VCALENDAR"]
+    return "".join(_fold(line) + "\r\n" for line in lines).encode()
+
+
+def _fold(line: str) -> str:
+    """RFC 5545: content lines over 75 octets continue on the next line after a space."""
+    raw, parts = line.encode(), []
+    while len(raw) > 75:
+        cut = 75 if not parts else 74
+        while raw[cut] & 0xC0 == 0x80:  # never split a UTF-8 character
+            cut -= 1
+        parts.append(raw[:cut].decode())
+        raw = raw[cut:]
+    return "\r\n ".join([*parts, raw.decode()])
+
+
+def _invite(http: Http, token: str, c: Candidate, v: dict[str, str], settings: Settings, tag: str) -> None:
+    """Your calendar always holds the slot; the candidate's invite comes from it, or by mail From
+    ``hr.mailbox`` when that is set."""
+    t, mailbox = settings.interview, settings.mailbox
+    subject = fill(t.candidate_subject, **v)
+    body = fill(t.candidate_body, **v)
+    guests = [] if mailbox else [{"email": c.email, "name": c.name}]
+    graph.create_event(http, token, subject=subject + ("" if guests else f" ({c.name})"), body_html=body,
+                       start=c.start, end=c.end, attendees=guests, teams=False, transaction_id=tag,
+                       location="Microsoft Teams Meeting")
+    if mailbox:
+        graph.send_mail(http, token, to=(c.name, c.email), subject=subject, body_html=body, sender=mailbox,
+                        attachments=(("interview.ics", ics(c, subject, v["join"], f"{tag}@hermes")),))
+
+
 def send(http: Http, secrets: Secrets, saved: dict[str, Any], settings: Settings,
          log: Callable[[str, bool, str], None]) -> str:
     """The panel event first (it makes the link); then one invite per candidate. ``log(to, ok, note)``."""
     people, t = _people(saved), settings.interview
-    token = graph.access(http, secrets)
+    token = graph.access(http, secrets, outlook.MEETING_SCOPES + (" Mail.Send" if settings.mailbox else ""))
     stamp = int(saved["created"])
     schedule = "<br>".join(f"{c.start:%H:%M}–{c.end:%H:%M} {c.name}, {c.position}" for c in people)
     shared = {"day": f"{people[0].start:%a %d %b}", "sender": settings.sender_name or t.company, "company": t.company,
@@ -236,16 +282,13 @@ def send(http: Http, secrets: Secrets, saved: dict[str, Any], settings: Settings
                             "calendar; delete it and try again.")
     failed = []
     for n, c in enumerate(people, 1):
-        v = _values(c, settings, join)
         try:
-            graph.create_event(http, token, subject=fill(t.candidate_subject, **v),
-                               body_html=fill(t.candidate_body, **v), start=c.start, end=c.end,
-                               attendees=[{"email": c.email, "name": c.name}], teams=False,
-                               transaction_id=f"hr-interview-{stamp}-{n}", location="Microsoft Teams Meeting")
+            _invite(http, token, c, _values(c, settings, join), settings, f"hr-interview-{stamp}-{n}")
             log(c.email, True, "")
         except OutreachError as exc:
             log(c.email, False, str(exc))
             failed.append(f"{c.name}: {exc}")
-    head = f"Invited {len(people) - len(failed)} of {len(people)} candidates to their slot, all on one Teams link."
+    via = f", by mail from {settings.mailbox}" if settings.mailbox else ""
+    head = f"Invited {len(people) - len(failed)} of {len(people)} candidates to their slot{via}, all on one Teams link."
     return "\n".join([head, *failed, f"Panel: {', '.join(saved['panel']) or 'only you'} got the whole schedule."])
 

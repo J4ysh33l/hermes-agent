@@ -13,6 +13,7 @@ body. ``transactionId`` makes a retried create return the same event instead of 
 from __future__ import annotations
 
 import base64
+import mimetypes
 from datetime import datetime, timezone, UTC
 
 from orchestrator.brief.creds import Secrets
@@ -77,7 +78,8 @@ def find_people(http: Http, token: str, word: str) -> list[dict[str, str]]:
 def create_event(http: Http, token: str, *, subject: str, body_html: str, start: datetime, end: datetime,
                  attendees: list[dict[str, str]], teams: bool, transaction_id: str = "",
                  location: str = "") -> tuple[str, str]:
-    """Returns (event id, Teams join link or ''). Outlook emails the invite immediately."""
+    """Returns (event id, Teams join link or ''). Outlook emails the invite immediately (none
+    when ``attendees`` is empty: the event only holds the time on your calendar)."""
     body = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
             "start": {"dateTime": _iso(start), "timeZone": "UTC"},
             "end": {"dateTime": _iso(end), "timeZone": "UTC"},
@@ -107,12 +109,13 @@ def me(http: Http, token: str) -> str:
 def send_mail(http: Http, token: str, *, to: tuple[str, str], subject: str, body_html: str,
               attachments: tuple[tuple[str, bytes], ...] = (), sender: str = "") -> None:
     """One email from your mailbox (kept in Sent Items). ``to``: (name, address). Attachments:
-    (file name, PDF bytes); Graph takes up to 3 MB per message this way, far above a payslip.
+    (file name, bytes), typed by extension; Graph takes up to 3 MB per message this way.
     ``sender``: another address it goes out From, e.g. a group you have Send As on."""
     message = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
                "toRecipients": [{"emailAddress": {"name": to[0], "address": to[1]}}],
                "attachments": [{"@odata.type": "#microsoft.graph.fileAttachment", "name": name,
-                                "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode()}
+                                "contentType": mimetypes.guess_type(name)[0] or "application/octet-stream",
+                                "contentBytes": base64.b64encode(data).decode()}
                                for name, data in attachments]}
     if sender:
         message["from"] = {"emailAddress": {"address": sender}}
