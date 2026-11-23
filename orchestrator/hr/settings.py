@@ -44,6 +44,7 @@ class Settings:
     max_per_run: int = 200
     preview_minutes: int = 120
     sender_name: str = ""
+    mailbox: str = ""  # HR mail goes out From this address (needs Send As on it); "" = your own
     mail_subject: str = "Payslip for {month}"
     mail_body: str = ("Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>"
                       "Regards,<br>{sender}")
@@ -63,6 +64,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         max_per_run=int(hr.get("max_per_run", base.max_per_run)),
         preview_minutes=int(hr.get("preview_minutes", base.preview_minutes)),
         sender_name=str(hr.get("sender_name", base.sender_name)),
+        mailbox=str(hr.get("mailbox", base.mailbox)),
         mail_subject=str(hr.get("mail_subject", base.mail_subject)),
         mail_body=str(hr.get("mail_body", base.mail_body)),
         interview=InterviewTexts(**{k: str(v) for k, v in (hr.get("interview") or {}).items()

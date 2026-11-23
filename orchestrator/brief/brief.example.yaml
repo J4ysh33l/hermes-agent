@@ -167,7 +167,8 @@ hr:
   payslip_template: payslip.docx   # in $HERMES_HOME/hr/templates/, with {{fields}}
   max_per_run: 200
   preview_minutes: 120        # a batch waiting for /hr payslip yes expires after this
-  sender_name: "Jaysheel Bhatt, Medoc Health"   # signs the payslip email
+  sender_name: "hr@medochealth.in, Medoc Health"   # signs the payslip email
+  mailbox: hr@medochealth.in  # payslips go out From this address (Send As); leave out for your own
   # Saturdays are working days; only Sunday is off.
   mail_subject: "Payslip for {month}"
   mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"

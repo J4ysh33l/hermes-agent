@@ -131,7 +131,8 @@ def _mail(ctx: Context, token: str, plan: dict, item: dict, to: tuple[str, str],
     body = fill(s.mail_body, first=item["first"], name=item["name"], month=plan["month"], sender=sender)
     try:
         graph.send_mail(ctx.http, token, to=to, subject=subject, body_html=body,
-                        attachments=((Path(item["file"]).name, Path(item["file"]).read_bytes()),))
+                        attachments=((Path(item["file"]).name, Path(item["file"]).read_bytes()),),
+                        sender=s.mailbox)
     except (OutreachError, HttpError, OSError) as exc:
         ctx.log(to[1], item["file"], False, str(exc), test)
         return f"{item['name']}: {exc}"
@@ -151,7 +152,8 @@ def _test(ctx: Context, arg: str) -> str:
     me = graph.me(ctx.http, token)
     items = plan["items"] if arg.strip().lower() == "all" else plan["items"][:TEST_SAMPLES]
     failed = [f for i in items if (f := _mail(ctx, token, plan, i, ("", me), test=True))]
-    return "\n".join([f"Sent {len(items) - len(failed)} test slip(s) to {me} only. Check them, then /hr payslip yes.",
+    sender = f" from {ctx.settings.mailbox}" if ctx.settings.mailbox else ""
+    return "\n".join([f"Sent {len(items) - len(failed)} test slip(s){sender} to {me} only. Check them, then /hr payslip yes.",
                       *failed])
 
 

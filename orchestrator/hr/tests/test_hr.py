@@ -148,6 +148,14 @@ class Run(unittest.TestCase):
         self.assertNotIn("11112222333", log, "bank details are never copied")
         self.assertIn("No payslips are waiting", self.hr("payslip yes"))
 
+    def test_slips_go_out_from_the_hr_mailbox(self):
+        (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n", encoding="utf-8")
+        self.hr(f"payslip {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
+        self.assertIn("from hr@co.com to jay@co.com", self.hr("payslip test"))
+        self.hr("payslip yes")
+        self.assertEqual({m["from"]["emailAddress"]["address"] for m in self.mails}, {"hr@co.com"})
+        self.assertEqual(len(self.mails), 4)
+
     def test_a_batch_expires(self):
         self.hr(f"payslip {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
         self.assertIn("No payslips are waiting", self.hr("payslip yes", at=NOW + 3 * 3600))
@@ -277,6 +285,9 @@ class Interviews(unittest.TestCase):
                      {"access_token": "a", "refresh_token": "r1"})
         self.http.on("GET", GRAPH + "/me/calendarView", lambda _c: {"value": self.busy})
         self.http.on("POST", GRAPH + "/me/events", self._event)
+        self.mails: list[dict] = []
+        self.http.on("POST", GRAPH + "/me/sendMail", lambda c: self.mails.append(c.json_body["message"]) or {})
+        (self.state / "brief.yaml").write_text("hr: {}\n", encoding="utf-8")  # no hr.mailbox
         self.home = home
 
     def tearDown(self):
@@ -310,6 +321,25 @@ class Interviews(unittest.TestCase):
             self.assertEqual(event["start"]["dateTime"], f"2026-11-19T{start}:00")
         self.assertNotIn("Rohan", candidates[0]["body"]["content"])
         self.assertIn("No interviews are waiting", self.hr("interview yes"), "a second yes invites nobody")
+
+    def test_with_an_hr_mailbox_the_slot_stays_yours_and_the_candidate_is_mailed_from_it(self):
+        (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n", encoding="utf-8")
+        self.hr("interview\n" + INTERVIEWS)
+        self.assertIn("Invited 2 of 2 candidates to their slot, by mail from hr@co.com", self.hr("interview yes"))
+        panel, *slots = self.events
+        self.assertEqual(len(panel["attendees"]), 2, "the panel meeting is still yours, with the panel invited")
+        self.assertEqual([s["attendees"] for s in slots], [[], []], "your calendar sends the candidates nothing")
+        self.assertEqual([m["from"]["emailAddress"]["address"] for m in self.mails], ["hr@co.com"] * 2)
+        asha = self.mails[0]
+        self.assertEqual([r["emailAddress"]["address"] for r in asha["toRecipients"]], ["asha@example.com"])
+        self.assertIn("https://teams.example/j/1", asha["body"]["content"])
+        self.assertNotIn("Rohan", asha["body"]["content"])
+        cal = asha["attachments"][0]
+        self.assertEqual((cal["name"], cal["contentType"]), ("interview.ics", "text/calendar"))
+        ics = base64.b64decode(cal["contentBytes"]).decode()
+        self.assertIn("DTSTART:20261119T053000Z\r\nDTEND:20261119T060000Z", ics)
+        self.assertNotIn("ORGANIZER", ics, "no RSVP goes anywhere")
+        self.assertTrue(all(len(line.encode()) <= 75 for line in ics.split("\r\n")))
 
     def test_overlaps_past_times_and_bad_rows_are_all_listed_and_nothing_is_saved(self):
         reply = self.hr("interview Date: 19/11/2026; Asha, SWE, 11:00, 11:30, asha@example.com;"

@@ -89,31 +89,40 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
 - **`/hr interview yes`:**
   1. A Teams event on your calendar spans the whole block; the panel is invited and gets the full
      schedule. This makes the one link.
-  2. Each candidate gets their own Outlook invite for their slot only, with that link, from your
-     mailbox. They never see each other's names or emails.
+  2. Each candidate's slot goes on your calendar with that link. With `hr.mailbox` set, the
+     candidate gets an email **From that mailbox** (e.g. hr@medochealth.in) with the link and an
+     `interview.ics` to add it to their calendar; their reply goes to the mailbox, while the meeting
+     and the calendar stay yours. Without it, Outlook sends them the invite from your mailbox.
+     Either way they never see each other's names or emails.
 - **The lobby:** candidates are outside your company, so Teams holds them in the lobby until
   someone on the panel admits them. An early joiner can't walk into the previous interview.
 - `/hr interview show` · `/hr interview no`. A plan expires after `hr.preview_minutes`.
 - **Wording:** `hr.interview` in `brief.yaml` (company, subjects, HTML bodies); the defaults are in
-  `settings.py`. Uses the Outlook login's Calendars.ReadWrite, already granted.
+  `settings.py`. Uses the Outlook login's Calendars.ReadWrite (and Mail.Send for `hr.mailbox`), already granted.
 
 ## Setup
 
 - **Outlook:** the Entra app needs delegated **Mail.Send** with admin consent. Then sign in once
   more: `python -m orchestrator.brief auth microsoft`.
+- **HR mailbox:** `hr.mailbox` in `brief.yaml` (e.g. `hr@medochealth.in`) sends payslips From that
+  address instead of yours; your account needs **Send As** on it (an Exchange admin grants it). A
+  refused send says so. `hr.sender_name` is the sign-off. Interview mails to candidates use it too;
+  the Teams meeting and the slots stay on your calendar.
 - **Install:** `orchestrator/brief/install.sh` writes the launcher and creates `$HERMES_HOME/hr/templates/`.
 - **Libraries:** python-docx and openpyxl, from the `documents` extra.
 
 ## Tested
 
-- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 18 tests):
+- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 25 tests):
   - working-day LOP
   - every bad row listed, and nothing made
   - `/hr payslip skip` makes only the good rows; a changed sheet or a missing column makes nothing
   - interviews: one Teams link, each candidate only on their own slot, overlaps and past times refused
+  - with `hr.mailbox`, candidates are mailed From it with an .ics; the slots stay on your calendar
   - placeholders split across runs
   - PDFs made, and the agent's reply carries no figures
   - `test` emails only you, `yes` emails each person their own PDF
+  - with `hr.mailbox` set, every slip goes out From it
   - no pay or bank numbers in the log
   - expiry
 - Breaking the LOP rule or the test-mail target turns tests red.
