@@ -148,6 +148,14 @@ class Run(unittest.TestCase):
         self.assertNotIn("11112222333", log, "bank details are never copied")
         self.assertIn("No payslips are waiting", self.hr("payslip yes"))
 
+    def test_slips_go_out_from_the_hr_mailbox(self):
+        (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n", encoding="utf-8")
+        self.hr(f"payslip {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
+        self.assertIn("from hr@co.com to jay@co.com", self.hr("payslip test"))
+        self.hr("payslip yes")
+        self.assertEqual({m["from"]["emailAddress"]["address"] for m in self.mails}, {"hr@co.com"})
+        self.assertEqual(len(self.mails), 4)
+
     def test_a_batch_expires(self):
         self.hr(f"payslip {self.sheet} 01/11/2026 30/11/2026 02/12/2026")
         self.assertIn("No payslips are waiting", self.hr("payslip yes", at=NOW + 3 * 3600))

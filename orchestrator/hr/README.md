@@ -101,12 +101,15 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
 
 - **Outlook:** the Entra app needs delegated **Mail.Send** with admin consent. Then sign in once
   more: `python -m orchestrator.brief auth microsoft`.
+- **HR mailbox:** `hr.mailbox` in `brief.yaml` (e.g. `hr@medochealth.in`) sends payslips From that
+  address instead of yours; your account needs **Send As** on it (an Exchange admin grants it). A
+  refused send says so. `hr.sender_name` is the sign-off. Interview invites stay on your calendar.
 - **Install:** `orchestrator/brief/install.sh` writes the launcher and creates `$HERMES_HOME/hr/templates/`.
 - **Libraries:** python-docx and openpyxl, from the `documents` extra.
 
 ## Tested
 
-- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 18 tests):
+- **Fakes plus real LibreOffice** (`tests/test_hr.py`, 24 tests):
   - working-day LOP
   - every bad row listed, and nothing made
   - `/hr payslip skip` makes only the good rows; a changed sheet or a missing column makes nothing
@@ -114,6 +117,7 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
   - placeholders split across runs
   - PDFs made, and the agent's reply carries no figures
   - `test` emails only you, `yes` emails each person their own PDF
+  - with `hr.mailbox` set, every slip goes out From it
   - no pay or bank numbers in the log
   - expiry
 - Breaking the LOP rule or the test-mail target turns tests red.

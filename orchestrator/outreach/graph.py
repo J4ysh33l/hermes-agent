@@ -105,18 +105,23 @@ def me(http: Http, token: str) -> str:
 
 
 def send_mail(http: Http, token: str, *, to: tuple[str, str], subject: str, body_html: str,
-              attachments: tuple[tuple[str, bytes], ...] = ()) -> None:
+              attachments: tuple[tuple[str, bytes], ...] = (), sender: str = "") -> None:
     """One email from your mailbox (kept in Sent Items). ``to``: (name, address). Attachments:
-    (file name, PDF bytes); Graph takes up to 3 MB per message this way, far above a payslip."""
+    (file name, PDF bytes); Graph takes up to 3 MB per message this way, far above a payslip.
+    ``sender``: another address it goes out From, e.g. a group you have Send As on."""
     message = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
                "toRecipients": [{"emailAddress": {"name": to[0], "address": to[1]}}],
                "attachments": [{"@odata.type": "#microsoft.graph.fileAttachment", "name": name,
                                 "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode()}
                                for name, data in attachments]}
+    if sender:
+        message["from"] = {"emailAddress": {"address": sender}}
     headers = {"Authorization": f"Bearer {token}"}
     try:  # 202 Accepted with an empty body
         http.request("POST", GRAPH + "/me/sendMail", headers=headers,
                      json_body={"message": message, "saveToSentItems": True})
     except HttpError as exc:
         hint = " (Mail.Send not granted, or the login predates it)" if exc.status == 403 else ""
+        if exc.status == 403 and "ErrorSendAsDenied" in str(exc):
+            hint = f" (no Send As right on {sender}: an Exchange admin grants it)"
         raise OutreachError(f"Outlook sendMail to {to[1]}: HTTP {exc.status}{hint}") from None
