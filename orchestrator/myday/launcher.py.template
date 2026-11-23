@@ -1,0 +1,10 @@
+"""My day cron entry point (@COMMAND@). Written by orchestrator/brief/install.sh into
+$HERMES_HOME/scripts/ (Hermes only runs scheduled scripts from there)."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.myday.cli import main  # noqa: E402
+
+sys.exit(main(["@COMMAND@"]))

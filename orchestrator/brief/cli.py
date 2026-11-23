@@ -9,6 +9,8 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from orchestrator.myday.game import with_badge
+
 from . import auth, pipeline, render, settings
 from .creds import Secrets
 from .net import HttpError, UrllibHttp
@@ -132,7 +134,7 @@ def handle_chat_command(raw_args: str, state_dir: Path | None = None, http=None)
 # ------------------------------------------------------------------ host commands
 def cmd_run(ctx: Context, dry_run: bool) -> int:
     result = pipeline.run(ctx.http, ctx.settings(), ctx.secrets(), ctx.store, now(), dry_run=dry_run)
-    print(result.text)
+    print(with_badge(result.text))
     return 0
 
 

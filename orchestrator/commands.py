@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from orchestrator.myday.game import with_badge
+
 HELP_WORDS = frozenset({"help", "-help", "--help", "-h", "?"})
 
 
@@ -76,6 +78,21 @@ def _hr_help() -> str:
     return HR_HELP
 
 
+def _myday(name: str) -> Callable[[str], str]:
+    def run(args: str) -> str:
+        from orchestrator.myday import chat
+
+        return getattr(chat, f"handle_{name}")(args)
+
+    return run
+
+
+def _myday_help(name: str) -> str:
+    from orchestrator.myday import chat
+
+    return getattr(chat, f"{name.upper()}_HELP")
+
+
 def table() -> tuple[ChatCommand, ...]:
     return (
         ChatCommand("brief", "Morning brief: full list, topics, watchlist, mutes", _brief_help(), _brief),
@@ -86,6 +103,14 @@ def table() -> tuple[ChatCommand, ...]:
         ChatCommand("meet", "Book Outlook meetings + Slack notes: 1:1s, all-hands, approve", _outreach_help("meet"),
                     _meet),
         ChatCommand("hr", "Payslips from the salary sheet; interviews on one Teams link", _hr_help(), _hr),
+        ChatCommand("day", "Today's tasks from To Do: done, top 3, snooze, points, streak", _myday_help("day"),
+                    _myday("day")),
+        ChatCommand("bills", "Bills: generated → due timeline, reminders, mark paid", _myday_help("bills"),
+                    _myday("bills")),
+        ChatCommand("goals", "Work and personal goals with milestones and progress", _myday_help("goals"),
+                    _myday("goals")),
+        ChatCommand("health", "Log weight, food, water, workouts; weekly summary", _myday_help("health"),
+                    _myday("health")),
     )
 
 
@@ -106,4 +131,4 @@ def dispatch(name: str, raw_args: str) -> str:
     first = (raw_args or "").strip().split(" ", 1)[0].lower()
     if not first or first in HELP_WORDS:
         return command.help_text
-    return command.run(raw_args)
+    return with_badge(command.run(raw_args))

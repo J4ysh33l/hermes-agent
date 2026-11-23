@@ -24,6 +24,17 @@ sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/hr/launcher.py.template
 mkdir -p "$HOME_DIR/hr/templates" && chmod 700 "$HOME_DIR/hr"
 echo "wrote   $HOME_DIR/scripts/hr_payslips.py (put your payslip.docx in $HOME_DIR/hr/templates/)"
 
+mkdir -p "$HOME_DIR/myday" && chmod 700 "$HOME_DIR/myday"
+if [ ! -f "$HOME_DIR/myday/myday.yaml" ]; then
+    cp "$REPO_ROOT/orchestrator/myday/myday.example.yaml" "$HOME_DIR/myday/myday.yaml"
+    echo "created $HOME_DIR/myday/myday.yaml (times, points, nudges)"
+fi
+for job in morning tick; do
+    sed -e "s|@REPO_ROOT@|$REPO_ROOT|" -e "s|@COMMAND@|$job|" "$REPO_ROOT/orchestrator/myday/launcher.py.template" \
+        > "$HOME_DIR/scripts/myday_$job.py"
+done
+echo "wrote   $HOME_DIR/scripts/myday_morning.py and myday_tick.py (My day: card, reminders, nudges)"
+
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
 ln -sfn "$REPO_ROOT/orchestrator/plugin" "$HOME_DIR/plugins/orchestrator"
@@ -35,5 +46,9 @@ Next (run these yourself):
   hermes plugins enable orchestrator
   hermes cron create "15 8 * * *" --timezone Asia/Kolkata --no-agent \\
       --script morning_brief.py --deliver telegram --name morning-brief
+  hermes cron create "30 7 * * *" --timezone Asia/Kolkata --no-agent \\
+      --script myday_morning.py --deliver telegram --name myday-morning
+  hermes cron create "*/15 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script myday_tick.py --deliver telegram --name myday-tick
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

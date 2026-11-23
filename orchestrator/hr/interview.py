@@ -23,6 +23,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from itertools import pairwise
 from typing import Any
 
 from orchestrator.brief.creds import Secrets
@@ -166,7 +167,7 @@ def _clashes(people: list[Candidate], now: datetime, max_candidates: int) -> lis
     out = [f"{c.name}: ends {c.end:%H:%M}, not after the start {c.start:%H:%M}" for c in people if c.end <= c.start]
     out += [f"{c.name}: {c.start:%d/%m %H:%M} has already passed" for c in people if c.start <= now]
     out += [f"{a.name} ({a.start:%H:%M}–{a.end:%H:%M}) overlaps {b.name} ({b.start:%H:%M}–{b.end:%H:%M}): "
-            "one link, so slots can't overlap" for a, b in zip(people, people[1:]) if a.end > b.start]
+            "one link, so slots can't overlap" for a, b in pairwise(people) if a.end > b.start]
     seen: dict[str, str] = {}
     for c in people:
         if c.email in seen:
