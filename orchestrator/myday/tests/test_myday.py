@@ -5,6 +5,7 @@ Run: python3 orchestrator/myday/tests/test_myday.py   (or orchestrator/run_check
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 import tempfile
@@ -20,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from orchestrator import commands
 from orchestrator.brief.net import HttpError, Response
-from orchestrator.myday import bills, card, chat, dates, game, health
+from orchestrator.myday import billmail, bills, card, chat, dates, game
 from orchestrator.myday.session import Session
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -41,6 +42,9 @@ class FakeMicrosoft:
         self.events: list[dict] = []
         self.calendar_fails = False
         self.animations: list[dict] = []
+        self.mails: list[dict] = []  # Gmail: {"id", "subject", "from", "html"}
+        self.mail_reads: list[str] = []
+        self.todo_add_fails = False
         self.n = 0
 
     def _id(self, prefix: str) -> str:
@@ -66,6 +70,10 @@ class FakeMicrosoft:
 
     def request(self, method, url, *, params=None, headers=None, form=None, json_body=None, data=None):
         path = urllib.parse.urlsplit(url).path
+        if url.startswith("https://oauth2.googleapis.com/"):
+            return self._json({"access_token": "GAT"})
+        if url.startswith("https://gmail.googleapis.com/"):
+            return self._json(self._gmail(path))
         if url.startswith("https://login.microsoftonline.com/"):
             return self._json({"access_token": "AT", "refresh_token": "RT2"})
         if "api.telegram.org" in url:
@@ -76,6 +84,17 @@ class FakeMicrosoft:
                 raise HttpError(500, url)
             return self._json({"value": self.events})
         return self._json(self._todo(method, path.removeprefix("/v1.0/me/todo/"), params or {}, json_body))
+
+    def _gmail(self, path: str) -> dict:
+        if path.endswith("/messages"):
+            return {"messages": [{"id": m["id"]} for m in self.mails]}
+        mail = next(m for m in self.mails if m["id"] == path.rsplit("/", 1)[1])
+        self.mail_reads.append(mail["id"])
+        body = base64.urlsafe_b64encode(mail["html"].encode()).decode().rstrip("=")
+        return {"id": mail["id"], "payload": {
+            "mimeType": "multipart/alternative",
+            "headers": [{"name": "Subject", "value": mail["subject"]}, {"name": "From", "value": mail["from"]}],
+            "parts": [{"mimeType": "text/html", "body": {"data": body}}]}}
 
     @staticmethod
     def _json(body) -> Response:
@@ -93,6 +112,8 @@ class FakeMicrosoft:
         list_id = parts[1]
         rows = self.tasks[list_id]
         if len(parts) == 3:  # lists/{id}/tasks
+            if method == "POST" and self.todo_add_fails:
+                raise HttpError(503, GRAPH)
             if method == "POST":
                 row = {"id": self._id("T"), "status": "notStarted", **body}
                 rows[row["id"]] = row
@@ -335,27 +356,6 @@ class Goals(Base):
         self.assertIn("🏆 Goal reached: Run 10k +100", self.cmd(chat.GOALS, "done 2", at(23, 9)))
 
 
-class Health(Base):
-    def test_logs_score_once_per_slot_and_stay_local(self):
-        first = self.cmd(chat.HEALTH, "weight 82.4", at(23, 9))
-        self.assertIn("+5", first)
-        self.assertNotIn("+5", self.cmd(chat.HEALTH, "weight 82.1", at(23, 9, 5)))
-        for _ in range(4):
-            self.cmd(chat.HEALTH, "food dal rice", at(23, 14))
-        self.assertEqual(self.state()["points"], 5 + 3 * 5)
-        rows = (self.dir / "health.jsonl").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(len(rows), 6)
-        self.assertNotIn("graph.microsoft.com", json.dumps([a["url"] for a in self.fake.animations]))
-        self.assertIn("⚖️ 82.1 kg (-0.3 since 11-23)", self.cmd(chat.HEALTH, "show", at(23, 15)))
-
-    def test_nudges_fire_once_in_their_window_and_never_late(self):
-        on_time = self.session(at(23, 9, 10))  # Monday
-        self.assertEqual(health.nudges(on_time), ["⚖️ Monday weigh-in. Reply /health weight 82.4"])
-        self.assertEqual(health.nudges(on_time), [])
-        self.assertEqual(health.nudges(self.session(at(23, 14, 50))), [])  # lunch at 14:00 missed by 50 min
-        self.assertEqual(health.nudges(self.session(at(24, 9, 0))), [])  # weigh-in is Monday only
-
-
 class Card(Base):
     def test_morning_card_survives_a_calendar_failure(self):
         self.fake.add("Call Apollo", date(2026, 11, 23))
@@ -374,6 +374,98 @@ class Card(Base):
         session.save()
         self.assertIn("🌙 Wrap-up: +0 pts today. 1 still open:\n· Call Apollo", text)
         self.assertNotIn("Wrap-up", card.tick(self.session(at(23, 21, 45))).text)
+
+
+STATEMENT_MAIL = ("Your Example Bank Rewards credit card statement for November, 2026", "Example Bank <cards@bank.example>",
+          "<p>Due Date: 09 Dec 2026</p><td>Total Amount Due</td><td>&#8377;123,456.78</td>"
+          "<td>Minimum Amount Due</td><td>&#8377;6,172.84</td>")
+CRED = ("Important : New bill for your Example Bank card XXXX-1234 is here", "CRED <protect@cred.club>",
+        "bill summary total amount due ₹1,23,456.78 minimum due ₹6,172.84 due date December 09, 2026")
+NOTHING_DUE = ("Your Other Bank Classic Credit Card Statement ending XX00 - November 2026",
+                    "statements@other.example",
+                    "Total Amount Due INR Minimum Amount Due (INR) Payment Due Date (DD-MM-YYYY) 0 0 10/12/2026")
+POWER = ("CITYPOWER City Power Distribution Limited Bill of INR 450.00",
+         "Other Bank Alerts <alerts@other.example>",
+         "Bill Amount: INR 450.00 Biller Name: CITYPOWER City Power Distribution Due on: 10-12-2026")
+
+
+class BillMail(Base):
+    def setUp(self):
+        super().setUp()
+        with (self.home / ".env").open("a", encoding="utf-8") as fh:
+            fh.write("GOOGLE_CLIENT_ID=g\nGOOGLE_CLIENT_SECRET=s\n")
+        (self.home / "brief" / "tokens" / "google.json").write_text(json.dumps({"refresh_token": "GRT"}),
+                                                                     encoding="utf-8")
+
+    def mail(self, subject: str, sender: str, html: str) -> None:
+        self.fake.mails.append({"id": f"m{len(self.fake.mails) + 1}", "subject": subject, "from": sender, "html": html})
+
+    @staticmethod
+    def parse(subject: str, sender: str, html: str, today: date):
+        text = billmail.message_text({"mimeType": "text/html",
+                                      "body": {"data": base64.urlsafe_b64encode(html.encode()).decode()}})
+        return billmail.parse(subject, sender, text, today)
+
+    def test_reads_amount_due_and_due_date_from_statement_and_bill_mails(self):
+        today, parse = date(2026, 11, 23), self.parse
+        self.assertEqual(parse(*STATEMENT_MAIL, today), billmail.Found("Example Bank Rewards card", 123456.78, date(2026, 12, 9)))
+        self.assertEqual(parse(*CRED, today), billmail.Found("Example Bank card XXXX-1234", 123456.78, date(2026, 12, 9)))
+        self.assertEqual(parse(*POWER, today), billmail.Found("CITYPOWER bill", 450.0, date(2026, 12, 10)))
+        self.assertIsNone(parse(*NOTHING_DUE, today))  # ₹0 due
+        self.assertIsNone(parse(*STATEMENT_MAIL, date(2026, 12, 10)))  # already past its due date
+
+    def morning(self, now: float) -> str:
+        session = self.session(now)
+        text = card.morning(session).text
+        session.save()
+        return text
+
+    def test_one_bill_mailed_twice_becomes_one_to_do_task_with_reminders_and_points(self):
+        for mail in (STATEMENT_MAIL, CRED, NOTHING_DUE):
+            self.mail(*mail)
+        text = self.morning(at(23, 7, 30))
+        self.assertEqual(text.count("📬 New bill in Gmail"), 1)
+        self.assertIn("Example Bank Rewards card ₹123,456.78 due 9 Dec", text)
+        self.assertEqual(self.fake.open_titles("Bills"), ["💳 Pay Example Bank Rewards card ₹123,456.78"])
+        task = next(iter(self.fake.tasks["L1"].values()))
+        self.assertEqual(task["reminderDateTime"]["dateTime"], "2026-12-06T04:30:00")  # 3 days before, 10:00 IST
+
+        self.mail(*POWER)
+        reads = len(self.fake.mail_reads)
+        self.assertNotIn("📬", self.morning(at(23, 9)))  # Gmail is asked once a day
+        self.assertNotIn("📬", card.tick(self.session(at(23, 10))).text)
+        self.assertEqual(len(self.fake.mail_reads), reads)
+        self.assertIn("📬 New bill in Gmail: CITYPOWER bill ₹450 due 10 Dec", self.morning(at(24, 7, 30)))
+        self.assertEqual(len(self.fake.mail_reads), reads + 1)  # each mail is read once
+
+        three_before = self.session(at(6, 9, month=12))
+        self.assertIn("💳 Example Bank Rewards card ₹123,456.78 due in 3 days (9 Dec)", "\n".join(bills.reminders(three_before)))
+        three_before.save()
+        listing = self.cmd(chat.BILLS, "show", at(6, 9, 5, month=12))
+        self.assertIn("1. 📬 Example Bank Rewards card ₹123,456.78 — due 9 Dec · ⏳ due in 3d", listing)
+        self.assertIn("✅ Example Bank Rewards card paid (on time) +15", self.cmd(chat.BILLS, "paid 1", at(6, 9, 6, month=12)))
+        self.assertEqual(self.fake.open_titles("Bills"), ["💳 Pay CITYPOWER bill ₹450"])
+        self.assertNotIn("Example Bank", self.cmd(chat.BILLS, "show", at(6, 9, 7, month=12)))
+
+    def test_a_bill_is_not_lost_when_to_do_fails_it_is_added_the_next_morning(self):
+        self.mail(*POWER)
+        self.fake.todo_add_fails = True
+        self.assertIn("⚠️ bills from Gmail", self.morning(at(23, 7, 30)))
+        self.fake.todo_add_fails = False
+        self.assertIn("📬 New bill in Gmail: CITYPOWER bill ₹450", self.morning(at(24, 7, 30)))
+        self.assertEqual(self.fake.open_titles("Bills"), ["💳 Pay CITYPOWER bill ₹450"])
+
+class GoalsReview(Base):
+    def test_goals_come_weekly_with_the_sunday_wrap_up_not_on_the_daily_card(self):
+        self.cmd(chat.GOALS, "add work Sign 3 hospitals by 31 dec", at(23, 9))
+        self.assertNotIn("Sign 3 hospitals", card.morning(self.session(at(24, 7, 30))).text)
+        self.assertNotIn("goals review", card.tick(self.session(at(28, 21, 30))).text)  # Saturday
+        sunday = self.session(at(29, 21, 30))
+        text = card.tick(sunday).text
+        sunday.save()
+        self.assertIn("🎯 **Weekly goals review**", text)
+        self.assertIn("1. Sign 3 hospitals — ", text)
+        self.assertNotIn("goals review", card.tick(self.session(at(29, 21, 45))).text)
 
 
 class Badge(Base):

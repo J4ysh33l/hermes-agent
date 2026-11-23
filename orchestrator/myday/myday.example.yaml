@@ -4,6 +4,7 @@
 timezone: Asia/Kolkata
 morning: "07:30"        # the morning card (also the cron time in install.sh's next steps)
 wrap: "21:30"           # evening wrap-up: what is left before the day closes at midnight
+goals_review: sun       # the weekly goals review comes with this day's wrap-up
 top_count: 3            # how many tasks you pick as today's top
 bill_remind_days: [3, 0]   # Telegram + To Do reminders this many days before the due date
 bill_reminder_hour: 10     # hour of the To Do phone reminder on those days
@@ -16,7 +17,6 @@ points:
   bill_on_time: 15
   bill_late: 5
   snooze: -5
-  health_log: 5
   goal_step: 25
   goal_done: 100
 
@@ -26,10 +26,5 @@ lists:                  # Microsoft To Do list names (created if missing; tasks 
   work_goals: "Goals · Work"
   personal_goals: "Goals · Personal"
 
-nudges:                 # health nudges; days: daily, or a list like [mon, thu]
-  - {name: weigh-in, at: "09:00", days: [mon], text: "⚖️ Monday weigh-in. Reply /health weight 82.4"}
-  - {name: lunch, at: "14:00", days: daily, text: "🍽 What did you eat? /health food dal, rice, salad"}
-  - {name: snack, at: "18:00", days: daily, text: "🍎 Evening check-in. /health food … or /health water 2"}
-  - {name: dinner, at: "22:00", days: daily, text: "🌙 Dinner and workout? /health food … · /health workout 30m walk"}
 
 level_names: [Starter, Mover, Doer, Finisher, Closer, Machine, Legend]

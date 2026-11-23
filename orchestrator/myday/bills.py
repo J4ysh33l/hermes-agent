@@ -9,6 +9,9 @@ On the generation day each cycle gets a To Do task in your Bills list ("💳 Pay
 date with a phone reminder ``bill_remind_days[0]`` days before. Ticking it off — in To Do or with
 ``/bills paid`` — marks it paid and scores (on time or late). Telegram reminds you on each of
 ``bill_remind_days`` before the due date until it is paid. No bank access, no model.
+
+Bills found in Gmail (``billmail``) are one-off "statements" with an exact amount and due date,
+kept in state.json; they get the same To Do task, reminders and points.
 """
 
 from __future__ import annotations
@@ -19,11 +22,17 @@ import re
 from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .errors import MyDayError
 from .game import Reply
 from .session import Session
 from .todo import reminder_at, split_key
+
+if TYPE_CHECKING:
+    from .billmail import Found
+
+STATEMENT = "mail:"  # listing prefix for a bill found in Gmail
 
 
 @dataclass(frozen=True)
@@ -162,19 +171,93 @@ def _status(session: Session, cyc: Cycle) -> str:
 
 
 def timeline(session: Session) -> Reply:
-    bills = load(session.state_dir)
-    if not bills:
+    bills, mailed = load(session.state_dir), statements(session)
+    if not bills and not mailed:
         return Reply("No bills yet. Add one: /bills add HDFC card 5 25 4500\n"
-                     "(name, generated day, due day, amount optional)")
+                     "(name, generated day, due day, amount optional). Bills mailed to your Gmail are added "
+                     "on their own.")
     sync(session, bills)
     rows = open_cycles(session, bills)
-    session.state.remember("bills", [c.bill.id for c in rows])
+    session.state.remember("bills", [c.bill.id for c in rows] + [STATEMENT + st.key for st in mailed])
     lines = ["**Bills**"]
     for n, cyc in enumerate(rows, 1):
         lines.append(f"{n}. {cyc.bill.name}{money(cyc.bill.amount)} — gen {cyc.generated:%-d %b} → due "
                      f"{cyc.due:%-d %b} · {_status(session, cyc)}")
+    for n, st in enumerate(mailed, len(rows) + 1):
+        lines.append(f"{n}. 📬 {st.name}{money(st.amount)} — due {st.due:%-d %b} · "
+                     f"{_statement_status(session.today, st)}")
     lines.append("/bills paid 1 · /bills amount 1 4500 · /bills add … · /bills remove 1")
     return Reply("\n".join(lines))
+
+
+# ---- statements: bills found in Gmail -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Statement:
+    key: str  # "<due date>:<amount>": the bank's mail and CRED's about one bill share it
+    name: str
+    amount: float
+    due: date
+    task: str  # To Do task key
+
+
+def _statements(session: Session) -> dict[str, dict]:
+    return session.state.data.setdefault("statements", {})
+
+
+def add_statement(session: Session, found: Found, subject: str) -> str:
+    """Add a bill found in Gmail unless already known; the Telegram line, or ""."""
+    key = f"{found.due.isoformat()}:{found.amount:.2f}"
+    rows = _statements(session)
+    if key in rows:
+        return ""
+    first = max(session.settings.bill_remind_days, default=0)
+    remind = reminder_at(max(session.today, found.due - timedelta(days=first)), session.settings.bill_reminder_hour,
+                         session.tz)
+    task = session.todo.add(session.todo.list_id(session.settings.lists.bills),
+                            f"💳 Pay {found.name}{money(found.amount)}", found.due, remind=remind,
+                            note=f"Found in Gmail: {subject[:150]}. Tick when paid.")
+    rows[key] = {"name": found.name, "amount": found.amount, "due": found.due.isoformat(), "task": task.key}
+    return f"📬 New bill in Gmail: {found.name}{money(found.amount)} due {found.due:%-d %b} · added to To Do"
+
+
+def statements(session: Session) -> list[Statement]:
+    """Unpaid bills found in Gmail, soonest first. One ticked in To Do (or deleted) is paid; paid
+    ones are forgotten 60 days after their due date."""
+    rows, today, found = _statements(session), session.today, []
+    for key, row in list(rows.items()):
+        due = date.fromisoformat(row["due"])
+        if row.get("paid"):
+            if due < today - timedelta(days=60):
+                del rows[key]
+            continue
+        task = session.todo.get(*split_key(row["task"]))
+        if task is None or task.done:
+            row["paid"] = today.isoformat()
+            continue
+        found.append(Statement(key, row["name"], row["amount"], due, row["task"]))
+    return sorted(found, key=lambda st: (st.due, st.name.lower()))
+
+
+def _statement_status(today: date, st: Statement) -> str:
+    days = (st.due - today).days
+    if days < 0:
+        return f"⚠️ {-days}d overdue"
+    return "⏰ due today" if days == 0 else f"⏳ due in {days}d"
+
+
+def _pay_statement(session: Session, key: str) -> Reply:
+    row = _statements(session).get(key)
+    if row is None or row.get("paid"):
+        return Reply("That bill is already paid. Show /bills again.")
+    on_time = date.fromisoformat(row["due"]) >= session.today
+    session.todo.complete(*split_key(row["task"]))
+    row["paid"] = session.today.isoformat()
+    pts = session.settings.points
+    got = session.state.award(f"task:{split_key(row['task'])[1]}", pts.bill_on_time if on_time else pts.bill_late,
+                              session.today)
+    return Reply(f"✅ {row['name']} paid ({'on time' if on_time else 'late'}) +{got}")
 
 
 # ---- commands -------------------------------------------------------------------------------------
@@ -201,13 +284,19 @@ def add(session: Session, words: list[str]) -> Reply:
                  f"Next due {cyc.due:%-d %b}.\n" + timeline(session).text)
 
 
-def _chosen(session: Session, words: list[str]) -> tuple[Bill, list[Bill]]:
+def _picked(session: Session, words: list[str]) -> str:
     if not words or not words[0].isdigit():
         raise MyDayError("Give the bill's number from /bills, e.g. /bills paid 2")
     try:
-        bill_id = session.state.pick("bills", [int(words[0])])[0]
+        return session.state.pick("bills", [int(words[0])])[0]
     except ValueError as exc:
         raise MyDayError(str(exc)) from None
+
+
+def _chosen(session: Session, words: list[str]) -> tuple[Bill, list[Bill]]:
+    bill_id = _picked(session, words)
+    if bill_id.startswith(STATEMENT):
+        raise MyDayError("That bill came from Gmail: change or delete its task in To Do instead.")
     bills = load(session.state_dir)
     bill = next((b for b in bills if b.id == bill_id), None)
     if bill is None:
@@ -216,6 +305,8 @@ def _chosen(session: Session, words: list[str]) -> tuple[Bill, list[Bill]]:
 
 
 def paid(session: Session, words: list[str]) -> Reply:
+    if (picked := _picked(session, words)).startswith(STATEMENT):
+        return _pay_statement(session, picked.removeprefix(STATEMENT))
     bill, bills = _chosen(session, words)
     cyc = next((c for c in open_cycles(session, bills) if c.bill.id == bill.id), None)
     if cyc is None or cyc.generated > session.today:
@@ -252,10 +343,15 @@ def remove(session: Session, words: list[str]) -> Reply:
 def reminders(session: Session) -> list[str]:
     """Telegram lines due now: a bill generated today, and each reminder day before the due date."""
     bills = load(session.state_dir)
-    if not bills:
-        return []
-    sync(session, bills)
     today, lines = session.today, []
+    for st in statements(session):
+        days = (st.due - today).days
+        if days in session.settings.bill_remind_days and session.state.once(f"bill-due:{st.key}:{today.isoformat()}"):
+            when = "today" if days == 0 else f"in {days} days ({st.due:%-d %b})"
+            lines.append(f"💳 {st.name}{money(st.amount)} due {when} · /bills to mark it paid")
+    if not bills:
+        return lines
+    sync(session, bills)
     for cyc in open_cycles(session, bills):
         days = (cyc.due - today).days
         if cyc.generated == today and session.state.once(f"bill-gen:{cyc.key}:{today.isoformat()}"):

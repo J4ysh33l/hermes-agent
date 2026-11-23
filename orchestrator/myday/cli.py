@@ -1,9 +1,9 @@
 """``python -m orchestrator.myday <command>``.
 
 morning — the 07:30 card (Hermes cron, no agent): prints it, sends any streak animation.
-tick    — every 15 minutes: To Do completions, bill reminders, health nudges, the wrap-up.
+tick    — every 15 minutes: To Do completions, bill reminders, the wrap-up, the Sunday goals review.
           Prints nothing when nothing is due, so Hermes sends nothing.
-day, bills, goals, health — the same as the Telegram commands (for testing on the host).
+day, bills, goals — the same as the Telegram commands (for testing on the host).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .errors import MyDayError
 from .game import with_badge
 from .session import Session
 
-CHAT = {"day": chat.handle_day, "bills": chat.handle_bills, "goals": chat.handle_goals, "health": chat.handle_health}
+CHAT = {"day": chat.handle_day, "bills": chat.handle_bills, "goals": chat.handle_goals}
 SCHEDULED = {"morning": card.morning, "tick": card.tick}
 
 

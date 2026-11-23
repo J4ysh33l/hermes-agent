@@ -127,7 +127,7 @@ class State:
         self.data["top"] = {day.isoformat(): ids}
 
     def once(self, key: str) -> bool:
-        """True the first time ``key`` is seen (a nudge slot, a reminder); then False."""
+        """True the first time ``key`` is seen (a reminder, a wrap-up); then False."""
         if key in self.data["sent"]:
             return False
         self.data["sent"][key] = True

@@ -22,7 +22,6 @@ class Points:
     bill_on_time: int = 15
     bill_late: int = 5
     snooze: int = -5
-    health_log: int = 5  # at most once per nudge slot
     goal_step: int = 25
     goal_done: int = 100
 
@@ -37,21 +36,6 @@ class Lists:
     personal_goals: str = "Goals · Personal"
 
 
-@dataclass(frozen=True)
-class Nudge:
-    name: str
-    at: time
-    days: tuple[str, ...]  # subset of DAYS
-    text: str
-
-
-DEFAULT_NUDGES = (
-    Nudge("weigh-in", time(9, 0), ("mon",), "⚖️ Monday weigh-in. Reply /health weight 82.4"),
-    Nudge("lunch", time(14, 0), DAYS, "🍽 What did you eat? /health food dal, rice, salad"),
-    Nudge("snack", time(18, 0), DAYS, "🍎 Evening check-in. /health food … or /health water 2"),
-    Nudge("dinner", time(22, 0), DAYS, "🌙 Dinner and workout? /health food … · /health workout 30m walk"),
-)
-
 LEVEL_NAMES = ("Starter", "Mover", "Doer", "Finisher", "Closer", "Machine", "Legend")
 
 
@@ -60,13 +44,13 @@ class Settings:
     timezone: str = "Asia/Kolkata"
     morning: time = time(7, 30)
     wrap: time = time(21, 30)  # evening wrap-up: what is left, before the day closes at midnight
+    goals_review: str = "sun"  # the weekly goals review comes with this day's wrap-up
     top_count: int = 3
     bill_remind_days: tuple[int, ...] = (3, 0)  # days before the due date
     bill_reminder_hour: int = 10  # To Do phone reminder time on those days
     calendar: bool = True  # today's Outlook meetings on the morning card
     points: Points = field(default_factory=Points)
     lists: Lists = field(default_factory=Lists)
-    nudges: tuple[Nudge, ...] = DEFAULT_NUDGES
     level_names: tuple[str, ...] = LEVEL_NAMES
 
 
@@ -77,18 +61,11 @@ def _clock(value: Any) -> time:
     return time(int(hour), int(minute))
 
 
-def _days(value: Any) -> tuple[str, ...]:
-    if value in (None, "daily", "every day"):
-        return DAYS
-    words = [str(w).strip().lower()[:3] for w in (value if isinstance(value, list) else str(value).split(","))]
-    bad = [w for w in words if w not in DAYS]
-    if bad:
-        raise ValueError(f"myday.yaml: unknown day {bad[0]!r} (use mon … sun or daily)")
-    return tuple(words)
-
-
-def _nudges(raw: list[dict[str, Any]]) -> tuple[Nudge, ...]:
-    return tuple(Nudge(str(n["name"]), _clock(n["at"]), _days(n.get("days")), str(n["text"])) for n in raw)
+def _day(value: Any) -> str:
+    day = str(value).strip().lower()[:3]
+    if day not in DAYS:
+        raise ValueError(f"myday.yaml: unknown day {value!r} (use mon … sun)")
+    return day
 
 
 def _sub(cls, raw: dict[str, Any] | None):
@@ -105,13 +82,13 @@ def from_dict(raw: dict[str, Any]) -> Settings:
         timezone=raw.get("timezone", base.timezone),
         morning=_clock(raw.get("morning", "07:30")),
         wrap=_clock(raw.get("wrap", "21:30")),
+        goals_review=_day(raw.get("goals_review", base.goals_review)),
         top_count=int(raw.get("top_count", base.top_count)),
         bill_remind_days=tuple(int(d) for d in raw.get("bill_remind_days", base.bill_remind_days)),
         bill_reminder_hour=int(raw.get("bill_reminder_hour", base.bill_reminder_hour)),
         calendar=bool(raw.get("calendar", base.calendar)),
         points=_sub(Points, raw.get("points")),
         lists=_sub(Lists, raw.get("lists")),
-        nudges=_nudges(raw["nudges"]) if "nudges" in raw else base.nudges,
         level_names=tuple(raw.get("level_names", base.level_names)),
     )
 

@@ -105,12 +105,10 @@ def table() -> tuple[ChatCommand, ...]:
         ChatCommand("hr", "Payslips from the salary sheet; interviews on one Teams link", _hr_help(), _hr),
         ChatCommand("day", "Today's tasks from To Do: done, top 3, snooze, points, streak", _myday_help("day"),
                     _myday("day")),
-        ChatCommand("bills", "Bills: generated → due timeline, reminders, mark paid", _myday_help("bills"),
+        ChatCommand("bills", "Bills (incl. found in Gmail): due timeline, reminders, mark paid", _myday_help("bills"),
                     _myday("bills")),
-        ChatCommand("goals", "Work and personal goals with milestones and progress", _myday_help("goals"),
+        ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),
-        ChatCommand("health", "Log weight, food, water, workouts; weekly summary", _myday_help("health"),
-                    _myday("health")),
     )
 
 
