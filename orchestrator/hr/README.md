@@ -1,7 +1,8 @@
-# HR: payslips
+# HR: payslips, interviews, the HR inbox
 
-Payslips from your monthly salary sheet, emailed from your Outlook after you approve. Scripts do
-everything. **No AI model sees pay or bank details.**
+Payslips from your monthly salary sheet, emailed from your Outlook after you approve; interviews on
+one Teams link; mail to the HR mailbox sorted. Scripts do everything. **No AI model sees pay, bank
+details or HR mail.**
 
 ## Each month
 
@@ -100,6 +101,34 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
 - **Wording:** `hr.interview` in `brief.yaml` (company, subjects, HTML bodies); the defaults are in
   `settings.py`. Uses the Outlook login's Calendars.ReadWrite (and Mail.Send for `hr.mailbox`), already granted.
 
+## HR inbox
+
+Mail sent to `hr.mailbox` (a Microsoft 365 group, so it lands in your own Outlook) is read with your
+Outlook login (Mail.Read, already granted) and sorted by fixed rules on the subject and sender:
+
+| Kind | Rule (first match wins) |
+|---|---|
+| 🚨 Urgent | legal, court, advocate, police, labour, harassment, POSH, complaint, grievance, final notice, pending salary/dues/payment, unpaid, urgent; or a `.nic.in` / `.gov.in` sender |
+| 👥 People | resignation, relieving, experience certificate, full & final, salary, payslip, leave, notice period, appraisal, reimbursement, offer letter, joining, PF/ESI, form 16, bonus; or anyone at your domain |
+| 🎓 Campus | campus, placement, recruitment drive, graduating batch, T&P |
+| 📄 Applications | application, resume, CV, opportunity, role, position, job, internship, developer, engineer, fresher, hiring … |
+| 📢 Other | everything else (vendors, webinars, newsletters) |
+
+Urgent and people mails wait for a reply until someone else at your domain answers in the same
+thread (a colleague's "Re:" counts, the sender's own follow-up does not) or you `/hr inbox done 2`.
+Mails you sent yourself are left out.
+
+```
+/hr inbox show                 new mail by kind + everything waiting for a reply
+/hr inbox list applications    the last 14 days of one kind
+/hr inbox done 2               handled outside the thread
+```
+
+The `hr-inbox` cron sweeps at 10:00 and 17:00. It messages you only when there is new HR mail; the
+day's first sweep also reminds you of urgent mail still unanswered. One Outlook search per sweep,
+plus one lookup per mail waiting for a reply. State: `$HERMES_HOME/hr/inbox.json` (subject, sender,
+kind; no bodies; forgotten after 30 days unless still waiting).
+
 ## Setup
 
 - **Outlook:** the Entra app needs delegated **Mail.Send** with admin consent. Then sign in once
@@ -108,7 +137,8 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
   address instead of yours; your account needs **Send As** on it (an Exchange admin grants it). A
   refused send says so. `hr.sender_name` is the sign-off. Interview mails to candidates use it too;
   the Teams meeting and the slots stay on your calendar.
-- **Install:** `orchestrator/brief/install.sh` writes the launcher and creates `$HERMES_HOME/hr/templates/`.
+- **Install:** `orchestrator/brief/install.sh` writes the launchers (`hr_payslips.py`, `hr_inbox.py`)
+  and creates `$HERMES_HOME/hr/templates/`; add the `hr-inbox` cron it prints.
 - **Libraries:** python-docx and openpyxl, from the `documents` extra.
 
 ## Tested
@@ -126,5 +156,11 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
   - no pay or bank numbers in the log
   - expiry
 - Breaking the LOP rule or the test-mail target turns tests red.
+- **HR inbox** (fakes): sorting rules, a colleague's reply clears a waiting mail but the sender's
+  follow-up does not, your own sent mail left out, a quiet sweep says nothing, the morning reminder
+  once a day, `done` and `list`.
+- **Live, 2026-11-23:** `/hr inbox show` on your mailbox: 21 HR mails of the last 14 days sorted
+  (1 urgent, 4 people, 3 campus, 10 applications, 3 other); 2 waiting for a reply; a second sweep
+  printed nothing.
 - **Live, 2026-11-22:** your template, converted, rendered correctly with 3 sample rows. After
   Mail.Send was granted, `/hr payslip test` emailed two sample slips to you from Outlook.

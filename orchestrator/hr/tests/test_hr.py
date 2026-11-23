@@ -19,10 +19,10 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
-from fakes import FakeHttp
+from fakes import FakeHttp, query
 
 from hermes_platform.resolver import locate_command
-from orchestrator.hr import chat, docfill, payroll
+from orchestrator.hr import chat, docfill, inbox, payroll
 from orchestrator.hr.settings import Settings
 
 NOW = 1_795_000_000.0
@@ -376,6 +376,99 @@ class Interviews(unittest.TestCase):
         self.assertIn("⚠️ Asha Verma 11:00–11:30: you have something else then", self.hr("interview\n" + INTERVIEWS))
         self.assertIn("Nobody was invited", self.hr("interview no"))
         self.assertEqual(self.events, [])
+
+
+class InboxRules(unittest.TestCase):
+    def test_first_matching_rule_sorts_each_mail(self):
+        cases = {
+            ("Urgent: Pending Salary and Full & Final Settlement", "x@gmail.com"): "urgent",
+            ("Case status update", "noreply@court.nic.in"): "urgent",
+            ("Re: FORMAL LEGAL NOTICE & STATUTORY DEMAND", "someone@co.com"): "urgent",
+            ("Formal resignation", "dev@co.com"): "people",
+            ("Request for Internship Completion and Experience Certificate", "x@gmail.com"): "people",
+            ("Lunch plan", "ops@co.com"): "people",  # anyone at your domain
+            ("Campus Hiring Invitation – 2027 Graduating Batch", "tpo@college.ac.in"): "campus",
+            ("Application for Backend Developer at Medoc Health", "x@gmail.com"): "applications",
+            ("Exploring AI engineering opportunities", "x@iiit.ac.in"): "applications",
+            ("Undangan Webinar: Will AI Replace HR?", "news@vendor.com"): "other",
+        }
+        for (subject, sender), want in cases.items():
+            with self.subTest(subject=subject):
+                self.assertEqual(inbox.classify(subject, sender, "co.com"), want)
+
+
+class InboxSweep(unittest.TestCase):
+    """/hr inbox against a fake Outlook: one search per sweep, thread lookups for waiting mail."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        home = Path(self.tmp.name)
+        self.state = home / "brief"
+        (self.state / "tokens").mkdir(parents=True)
+        (home / ".env").write_text("MS_CLIENT_ID=ms\nMS_TENANT_ID=t\n", encoding="utf-8")
+        (self.state / "tokens/microsoft.json").write_text('{"refresh_token": "r0"}', encoding="utf-8")
+        (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n", encoding="utf-8")
+        self.mails: list[dict] = []
+        self.http = FakeHttp()
+        self.http.on("POST", "https://login.microsoftonline.com/t/oauth2/v2.0/token",
+                     {"access_token": "a", "refresh_token": "r1"})
+        self.http.on("GET", GRAPH + "/me/mailFolders/sentitems", {"id": "SENT"})
+        self.http.on("GET", GRAPH + "/me/messages", self._messages)
+        self.n = 0
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _messages(self, call):
+        q = query(call)
+        if "$filter" in q:
+            conv = q["$filter"][0].split("'")[1]
+            return {"value": [m for m in self.mails if m["conversationId"] == conv]}
+        return {"value": [m for m in self.mails if m["to_hr"]]}
+
+    def mail(self, subject: str, sender: str, when: str, *, conv: str = "", to_hr: bool = True,
+             folder: str = "INBOX") -> None:
+        self.n += 1
+        self.mails.append({"id": f"m{self.n}", "subject": subject, "receivedDateTime": when + "Z",
+                           "from": {"emailAddress": {"name": sender.split("@")[0], "address": sender}},
+                           "conversationId": conv or f"c{self.n}", "webLink": "", "parentFolderId": folder,
+                           "to_hr": to_hr})
+
+    def hr(self, words: str, at: float = NOW) -> str:
+        return chat.handle(words, self.state, self.http, at)
+
+    def test_sorted_and_waiting_mail_clears_only_when_someone_else_answers(self):
+        self.mail("Formal resignation", "dev@co.com", "2026-11-18T05:00:00", conv="R")
+        self.mail("Pending salary dues", "ex@gmail.com", "2026-11-18T06:00:00", conv="S")
+        self.mail("Application for SDE role", "a@gmail.com", "2026-11-19T06:00:00")
+        self.mail("Campus placement drive", "tpo@uni.ac.in", "2026-11-19T07:00:00")
+        self.mail("Re: Formal resignation", "boss@co.com", "2026-11-18T05:30:00", conv="R")  # a colleague's reply
+        self.mail("Cc to HR from me", "me@co.com", "2026-11-19T08:00:00", folder="SENT")  # your own sent mail
+        shown = self.hr("inbox show")
+        self.assertIn("📥 **HR inbox** — 5 new", shown)
+        self.assertIn("🚨 Urgent 1 · 👥 People 2 · 🎓 Campus 1 · 📄 Applications 1", shown)
+        self.assertNotIn("Cc to HR from me", shown)
+        self.assertIn("**Waiting for a reply (1)**\n1. 🚨 ex — Pending salary dues", shown)  # resignation answered
+
+        self.mail("Re: Pending salary dues", "ex@gmail.com", "2026-11-19T09:00:00", conv="S", to_hr=False)
+        self.assertIn("Waiting for a reply (1)", self.hr("inbox show"))  # the sender's own follow-up
+        self.mail("Re: Pending salary dues", "hr@co.com", "2026-11-19T10:00:00", conv="S", to_hr=False)
+        self.assertIn("1 answered", self.hr("inbox show"))
+
+    def test_quiet_sweep_says_nothing_but_reminds_of_urgent_mail_once_a_day(self):
+        self.mail("Legal notice", "lawyer@firm.com", "2026-11-18T05:00:00")
+        self.assertIn("Legal notice", self.hr("inbox sweep", NOW))
+        self.assertEqual(self.hr("inbox sweep", NOW + 7 * 3600), "")  # same day, nothing new
+        next_day = self.hr("inbox sweep", NOW + 24 * 3600)
+        self.assertIn("1. 🚨 lawyer — Legal notice", next_day)
+        self.assertIn("✅ Handled: Legal notice", self.hr("inbox done 1", NOW + 24 * 3600))
+        self.assertEqual(self.hr("inbox sweep", NOW + 48 * 3600), "")
+        self.assertIn("Legal notice ✓", self.hr("inbox list urgent", NOW + 48 * 3600))
+        self.assertEqual(self.http.count(GRAPH + "/me/mailFolders/sentitems"), 1)  # asked once, then kept
+
+    def test_without_a_mailbox_it_says_what_to_set(self):
+        (self.state / "brief.yaml").write_text("hr: {}\n", encoding="utf-8")
+        self.assertIn("Set hr.mailbox", self.hr("inbox show"))
 
 
 if __name__ == "__main__":

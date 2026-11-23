@@ -1,0 +1,10 @@
+"""HR inbox sweep cron entry point. Written by orchestrator/brief/install.sh into $HERMES_HOME/scripts/
+(Hermes only runs scheduled scripts from there). Prints nothing when there is no new HR mail."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.hr.cli import main  # noqa: E402
+
+sys.exit(main(["inbox", "sweep"]))

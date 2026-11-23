@@ -9,7 +9,9 @@ from . import chat
 
 
 def main(argv: list[str] | None = None) -> int:
-    print(chat.handle(" ".join(sys.argv[1:] if argv is None else argv)))
+    text = chat.handle(" ".join(sys.argv[1:] if argv is None else argv))
+    if text:  # "inbox sweep" says nothing when there is no new HR mail, so cron sends nothing
+        print(text)
     return 0
 
 
