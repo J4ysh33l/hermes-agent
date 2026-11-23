@@ -1,4 +1,4 @@
-"""``/day``, ``/bills``, ``/goals`` and ``/health`` in Telegram. Every form is read by script: no
+"""``/day``, ``/bills`` and ``/goals`` in Telegram. Every form is read by script: no
 model call. Numbers refer to the last list shown (``/day now``, ``/bills``, ``/goals``)."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from . import bills, card, celebrate, day, goals, health
+from . import bills, card, celebrate, day, goals
 from .errors import MyDayError
 from .game import Reply
 from .session import Session
@@ -29,20 +29,17 @@ BILLS_HELP = """**/bills** — monthly bills: generated date → due date, remin
 /bills paid 2 — mark this cycle paid (+15 on time, +5 late); ticking it in To Do counts too
 /bills amount 2 5200 · /bills remove 2
 Each generated bill becomes a To Do task in your Bills list with a phone reminder; Telegram
-reminds you 3 days before and on the day (bill_remind_days in myday.yaml). /menu — all your commands"""
+reminds you 3 days before and on the day (bill_remind_days in myday.yaml).
+📬 Card statements and bills mailed to your Gmail are added on their own (amount and due date
+read from the mail each morning). /menu — all your commands"""
 
 GOALS_HELP = """**/goals** — work and personal goals (To Do lists "Goals · Work" and "Goals · Personal")
 /goals show — every goal with its progress, numbered · /goals show 2 — its steps
 /goals add work Sign 3 hospitals by 31 dec · /goals add personal Run 10k by 15 jan
 /goals step 2 Call Apollo's procurement head — add a milestone
 /goals tick 2.1 — milestone done (+25) · /goals done 2 — goal reached (+100)
-/menu — all your commands"""
+Weekly review with Sunday's 21:30 wrap-up (goals_review in myday.yaml). /menu — all your commands"""
 
-HEALTH_HELP = """**/health** — your health log (kept on the host only, never sent to a model)
-/health show — today and the last 7 days
-/health weight 82.4 · /health food dal, rice, salad · /health water 2
-/health workout 30m walk · /health sleep 7.5 — each +5 (food: first 3 a day)
-Nudges (times in myday.yaml): Monday 09:00 weigh-in; food 14:00, 18:00, 22:00. /menu — all your commands"""
 
 Handler = Callable[[Session, list[str]], Reply]
 
@@ -75,11 +72,6 @@ GOALS: dict[str, Handler] = {
     "done": goals.complete,
 }
 
-def _health_log(kind: str) -> Handler:
-    return lambda s, w: health.log(s, kind, w)
-
-
-HEALTH: dict[str, Handler] = {"show": lambda s, w: health.summary(s)} | {kind: _health_log(kind) for kind in health.KINDS}
 
 
 def run(table: dict[str, Handler], help_text: str, raw_args: str, state_dir: Path | None = None,
@@ -108,7 +100,3 @@ def handle_bills(raw_args: str, state_dir: Path | None = None) -> str:
 
 def handle_goals(raw_args: str, state_dir: Path | None = None) -> str:
     return run(GOALS, GOALS_HELP, raw_args, state_dir)
-
-
-def handle_health(raw_args: str, state_dir: Path | None = None) -> str:
-    return run(HEALTH, HEALTH_HELP, raw_args, state_dir)

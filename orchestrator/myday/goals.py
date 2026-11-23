@@ -108,12 +108,10 @@ def complete(session: Session, words: list[str]) -> Reply:
     return Reply(f"🏆 Goal reached: {task.title} +{got}")
 
 
-def glance(session: Session, limit: int = 3) -> list[str]:
-    """The nearest goals for the morning card."""
-    lines = []
-    for _, task in _goals(session)[:limit]:
-        steps = session.todo.steps(task.list_id, task.id)
-        done = sum(s.done for s in steps)
-        bar = f" {progress_bar(done, len(steps), 6)}" if steps else ""
-        lines.append(f"🎯 {task.title} — {label(task.due, session.today)}{bar}")
-    return lines
+def review(session: Session) -> str:
+    """The weekly review (with the wrap-up on ``goals_review`` day): every goal with its progress."""
+    listing = show(session).text
+    if not _goals(session):
+        return "🎯 Weekly goals review: no goals yet.\n" + listing
+    return (f"🎯 **Weekly goals review**\n{listing}\n"
+            "Plan a step for next week: /goals step 1 … · done one? /goals tick 1.1")

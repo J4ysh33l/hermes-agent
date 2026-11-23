@@ -11,13 +11,14 @@ from datetime import datetime, time, timedelta
 from orchestrator.brief.net import HttpError
 from orchestrator.brief.sources import outlook
 
-from . import bills, dates, goals, health
+from . import billmail, bills, dates, goals
 from .day import Board, scan
 from .errors import MyDayError
 from .game import Event, Reply, level_for, progress_bar
 from .session import Session
 
 GRAPH = "https://graph.microsoft.com/v1.0"
+WINDOW = timedelta(minutes=45)  # a wrap-up missed by more than this (host was off) is skipped, not sent late
 
 
 def meetings(session: Session) -> list[str]:
@@ -100,22 +101,23 @@ def morning(session: Session) -> Reply:
     extra: list[str] = []
     if session.settings.calendar:
         extra += _section("calendar", lambda: meetings(session))
+    extra += _section("bills from Gmail", lambda: billmail.scan(session))
     extra += _section("bills", lambda: _bill_glance(session))
-    extra += _section("goals", lambda: goals.glance(session))
     if extra:
         parts.append("\n".join(extra))
-    parts.append("/day now · /day done 2 · /day add … · /bills · /goals · /health")
+    parts.append("/day now · /day done 2 · /day add … · /bills · /goals")
     return Reply("\n\n".join(parts), tuple(events))
 
 
 def _bill_glance(session: Session) -> list[str]:
-    rows = bills.load(session.state_dir)
-    if not rows:
-        return []
-    bills.sync(session, rows)
-    soon = [c for c in bills.open_cycles(session, rows)
-            if c.generated <= session.today and (c.due - session.today).days <= 7]
-    return [f"💳 {c.bill.name}{bills.money(c.bill.amount)} due {dates.label(c.due, session.today)}" for c in soon]
+    rows, today = bills.load(session.state_dir), session.today
+    due = [(st.name, st.amount, st.due) for st in bills.statements(session) if (st.due - today).days <= 7]
+    if rows:
+        bills.sync(session, rows)
+        due += [(c.bill.name, c.bill.amount, c.due) for c in bills.open_cycles(session, rows)
+                if c.generated <= today and (c.due - today).days <= 7]
+    return [f"💳 {name}{bills.money(amount)} due {dates.label(when, today)}"
+            for name, amount, when in sorted(due, key=lambda row: row[2])]
 
 
 def wrap(session: Session, shown: Board) -> str:
@@ -132,7 +134,8 @@ def wrap(session: Session, shown: Board) -> str:
 
 
 def tick(session: Session) -> Reply:
-    """Every 15 minutes: credit To Do completions, then bills, nudges and the wrap-up when due.
+    """Every 15 minutes: credit To Do completions, then bill reminders, the wrap-up
+    and, on ``goals_review`` day, the weekly goals review.
     Days are closed only by the morning card or a command, so a broken streak is never announced
     at midnight."""
     now = session.local_now
@@ -145,9 +148,11 @@ def tick(session: Session) -> Reply:
         if session.state.once(f"todo-error:{session.today.isoformat()}"):
             lines.append(f"⚠️ My day: {exc}")
     lines += _section("bills", lambda: bills.reminders(session))
-    lines += health.nudges(session)
     wrap_at = datetime.combine(now.date(), session.settings.wrap, tzinfo=session.tz)
-    if shown is not None and wrap_at <= now < wrap_at + health.WINDOW and \
-            session.state.once(f"wrap:{now.date().isoformat()}"):
-        lines.append(wrap(session, shown))
+    if wrap_at <= now < wrap_at + WINDOW:
+        if shown is not None and session.state.once(f"wrap:{now.date().isoformat()}"):
+            lines.append(wrap(session, shown))
+        if now.strftime("%a").lower() == session.settings.goals_review and \
+                session.state.once(f"goals-review:{now.date().isoformat()}"):
+            lines += _section("goals", lambda: [goals.review(session)])
     return Reply("\n\n".join(lines), tuple(events))
