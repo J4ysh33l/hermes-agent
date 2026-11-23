@@ -153,7 +153,7 @@ class HermesHooks(UsageCase):
                 pass
 
         self.plugin().register(Ctx())
-        self.assertEqual(set(hooks), {"post_api_request", "api_request_error", "post_auxiliary_call"})
+        self.assertLessEqual({"post_api_request", "api_request_error", "post_auxiliary_call"}, set(hooks))
         self.assertIn("usage", cmds)
 
 

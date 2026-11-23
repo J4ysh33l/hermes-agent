@@ -3,6 +3,8 @@
 - registers every command in orchestrator/commands.py plus /menu;
 - registers the ``outreach`` and ``hr-payslips`` skills, so Hermes' agent can draft Slack messages and meetings (it
   cannot send them: only /slack yes and /meet yes, typed by you, do);
+- adds the My day badge (streak · level · points) under every Hermes reply on Telegram
+  (``transform_llm_output``: only the reply being finished is touched, never earlier turns);
 - logs one usage line per Hermes model call: agent turns (``post_api_request``), failed turn
   requests (``api_request_error``) and side calls such as titles or compression
   (``post_auxiliary_call``), using the token counts Hermes already has. No extra model call.
@@ -23,8 +25,9 @@ def _modules():
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from orchestrator import commands, usage
+    from orchestrator.myday import game
 
-    return commands, usage
+    return commands, usage, game
 
 
 def _handler(name: str):
@@ -62,8 +65,16 @@ def on_aux_call(**kw: Any) -> None:
          note=str(kw.get("error") or "")[:200])
 
 
+def on_llm_output(response_text: str = "", platform: str = "", **_kw: Any) -> str | None:
+    """Badge under Telegram replies. None leaves the text unchanged (no badge before My day is set up)."""
+    if platform != "telegram" or not response_text:
+        return None
+    text = _modules()[2].with_badge(response_text)
+    return text if text != response_text else None
+
+
 def register(ctx) -> None:
-    commands, _usage = _modules()
+    commands = _modules()[0]
     ctx.register_command("menu", _handler("menu"), description="List your commands (no model call)")
     for command in commands.table():
         ctx.register_command(command.name, _handler(command.name),
@@ -73,6 +84,7 @@ def register(ctx) -> None:
                        description="Draft Slack messages and Outlook meetings; the user approves in Telegram")
     ctx.register_skill("hr-payslips", REPO_ROOT / "orchestrator/hr/SKILL.md",
                        description="Make payslips from a salary sheet; the user sends them with /hr")
+    ctx.register_hook("transform_llm_output", on_llm_output)
     ctx.register_hook("post_api_request", on_api_request)
     ctx.register_hook("api_request_error", on_api_error)
     ctx.register_hook("post_auxiliary_call", on_aux_call)

@@ -1,0 +1,35 @@
+# My day: copy to $HERMES_HOME/myday/myday.yaml (install.sh does it once) and edit.
+# Every key is optional; these are the defaults.
+
+timezone: Asia/Kolkata
+morning: "07:30"        # the morning card (also the cron time in install.sh's next steps)
+wrap: "21:30"           # evening wrap-up: what is left before the day closes at midnight
+top_count: 3            # how many tasks you pick as today's top
+bill_remind_days: [3, 0]   # Telegram + To Do reminders this many days before the due date
+bill_reminder_hour: 10     # hour of the To Do phone reminder on those days
+calendar: true          # today's Outlook meetings on the morning card
+
+points:
+  task: 10
+  top: 20               # a top-3 task (instead of task)
+  all_clear: 50         # every task due today done
+  bill_on_time: 15
+  bill_late: 5
+  snooze: -5
+  health_log: 5
+  goal_step: 25
+  goal_done: 100
+
+lists:                  # Microsoft To Do list names (created if missing; tasks "" = your default list)
+  tasks: ""
+  bills: Bills
+  work_goals: "Goals · Work"
+  personal_goals: "Goals · Personal"
+
+nudges:                 # health nudges; days: daily, or a list like [mon, thu]
+  - {name: weigh-in, at: "09:00", days: [mon], text: "⚖️ Monday weigh-in. Reply /health weight 82.4"}
+  - {name: lunch, at: "14:00", days: daily, text: "🍽 What did you eat? /health food dal, rice, salad"}
+  - {name: snack, at: "18:00", days: daily, text: "🍎 Evening check-in. /health food … or /health water 2"}
+  - {name: dinner, at: "22:00", days: daily, text: "🌙 Dinner and workout? /health food … · /health workout 30m walk"}
+
+level_names: [Starter, Mover, Doer, Finisher, Closer, Machine, Legend]
