@@ -78,6 +78,18 @@ def _hr_help() -> str:
     return HR_HELP
 
 
+def _recap(args: str) -> str:
+    from orchestrator.recap.cli import handle
+
+    return handle(args)
+
+
+def _recap_help() -> str:
+    from orchestrator.recap.cli import HELP
+
+    return HELP
+
+
 def _myday(name: str) -> Callable[[str], str]:
     def run(args: str) -> str:
         from orchestrator.myday import chat
@@ -107,6 +119,8 @@ def table() -> tuple[ChatCommand, ...]:
                     _myday("day")),
         ChatCommand("bills", "Bills (incl. found in Gmail): due timeline, reminders, mark paid", _myday_help("bills"),
                     _myday("bills")),
+        ChatCommand("recap", "What is waiting on you: approvals, HR mail, due tasks, deadlines", _recap_help(),
+                    _recap),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),
     )

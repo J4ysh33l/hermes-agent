@@ -38,6 +38,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
 | `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes`; no model sees pay. `hr/README.md`. |
+| `recap/` | The 20:00 deadline recap (`/recap now`): approvals waiting or missed today, HR mail with no reply, To Do tasks and bills due, calendar deadlines. No model. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 

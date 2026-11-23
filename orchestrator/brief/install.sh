@@ -37,6 +37,9 @@ for job in morning tick; do
 done
 echo "wrote   $HOME_DIR/scripts/myday_morning.py and myday_tick.py (My day: card, reminders, bills from Gmail)"
 
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/recap/launcher.py.template" > "$HOME_DIR/scripts/deadline_recap.py"
+echo "wrote   $HOME_DIR/scripts/deadline_recap.py (the 20:00 deadline recap)"
+
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
 ln -sfn "$REPO_ROOT/orchestrator/plugin" "$HOME_DIR/plugins/orchestrator"
@@ -54,5 +57,7 @@ Next (run these yourself):
       --script myday_tick.py --deliver telegram --name myday-tick
   hermes cron create "0 10,17 * * *" --timezone Asia/Kolkata --no-agent \\
       --script hr_inbox.py --deliver telegram --name hr-inbox
+  hermes cron create "0 20 * * *" --timezone Asia/Kolkata --no-agent \\
+      --script deadline_recap.py --deliver telegram --name deadline-recap
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

@@ -1,0 +1,10 @@
+"""Deadline recap cron entry point. Written by orchestrator/brief/install.sh into $HERMES_HOME/scripts/
+(Hermes only runs scheduled scripts from there). Prints nothing when nothing is waiting."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.recap.cli import main  # noqa: E402
+
+sys.exit(main(["now"]))
