@@ -1,8 +1,9 @@
 # Studio (`/studio`): video, audio, b-roll and images
 
-Made on your server; posting them is another workflow's job. Built so far: **voice** (Kokoro, Edge TTS).
-Next: automated videos (faceless, Fireship-style), b-roll from images, cards and motion graphics, and
-edits of your own raw clips. Plan and decisions: the checkpoint notes and the conversation log.
+Made on your server; posting them is another workflow's job. Built so far: **voice** (Kokoro, Edge TTS)
+and **video from a storyboard** (Remotion, 6 scene types, word captions). Next: the scene library,
+script → storyboard, music/SFX, stock b-roll, thumbnails, edits of your own raw clips. Style reference:
+`PLAYBOOK.md`. Plan and decisions: the checkpoint notes and the conversation log.
 
 ## Voice: Kokoro (default) or Edge TTS
 
@@ -48,6 +49,37 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
 Bigger open voices (Chatterbox, Orpheus, Indic Parler-TTS, VibeVoice) need a GPU to be usable; see the
 options in the conversation log before adding one. ElevenLabs can be added later as a paid engine.
 
+## Video: storyboard → vertical short (Remotion)
+
+```
+python -m orchestrator.studio video storyboard.json --out short.mp4
+```
+
+A storyboard is a list of scenes; each has `say` (the narration) and what is on screen. The format is
+at the top of `storyboard.py`. Types: **title** (punch line landing word by word), **bullets** (a list,
+each item appearing when its sentence starts), **code** (an editor typing itself out), **stat** (a big
+number counting up), **image** (a full-screen image or clip with a slow push and a caption card),
+**compare** (two cards with VS). Every scene punches in (scale + blur) and keeps a slow push; captions
+are 2–3 words at a time, the word being said in yellow; a progress bar runs along the top.
+
+- **Timing comes from the voice.** All narration goes to the voice in one job; each scene starts when its
+  first sentence starts. Captions are the script as written, its time split over the words by length
+  (not Whisper, which drops Hindi in mixed clips).
+- **Quality** (all under `studio:` in brief.yaml): 1080×1920 at 30 fps, H.264 `crf 17` with x264 `slow`,
+  JPEG frames at 95, yuv420p, AAC 320k. One frame at a time (`video_concurrency: 1`) for the 4 GB host.
+- **Each job keeps its folder** in `$HERMES_HOME/studio/video/<time>/`: voice.wav, props.json, assets,
+  render.log. To preview templates live: `cd orchestrator/studio/remotion && npx remotion studio`.
+- **Versions:** Remotion 4.0.542, React 19.2.9 (exact pins in `remotion/package.json`). Remotion is free
+  for individuals and companies of up to 3 people; above that it needs a company licence.
+
+### Measured (2026-11-24, x86 container, 4 cores, defaults above)
+
+| Job | Voice | Render | Peak memory | File |
+|---|---|---|---|---|
+| 6 scenes, 29.8 s (`crf 17`, `slow`) | 13 s (Kokoro fp16) | 138 s (4.6 s per s of video) | ~1.9 GB over idle | 11.4 MB, 2.7 Mb/s video |
+
+On the 2-core host expect roughly twice the render time; renders are meant for the overnight queue.
+
 ## Setup
 
 1. `orchestrator/studio/install.sh` (once): a separate environment `$HERMES_HOME/venvs/studio`
@@ -55,8 +87,16 @@ options in the conversation log before adding one. ElevenLabs can be added later
    `$HERMES_HOME/studio/models` (~200 MB, SHA-256 checked). Hermes' own environment is not touched.
 2. `studio:` in `brief.yaml` (see `brief.example.yaml`): engine, voices, speed, pause, threads.
 3. `ffmpeg` on the host: Edge's audio is decoded with it, and clips go to Telegram as voice messages.
+4. Videos: Node 18+ on the host, then `install.sh` again (it installs `remotion/` and Chrome's headless
+   shell, ~100 MB). Chrome also needs the usual shared libraries (`npx remotion browser ensure` names any missing).
 
 ## Tested
+
+- **Video** (`tests/test_video.py`): bad storyboards refused before anything runs; scenes start with
+  their first sentence; captions show the script as written (Hinglish stays Latin) in order; list items
+  get their sentences' times; assets travel with the job; the configured quality reaches the render;
+  and a **live render** (real Kokoro + Remotion, opt-in like the voice test) checked as 1080×1920, 30 fps,
+  with audio.
 
 - **Fakes** (`tests/test_studio.py`): Hinglish told apart from English and Devanagari; each sentence
   routed to its engine's voice (Kokoro or Edge, per message or by default); Gemini's Devanagari rewrite used, and a rewrite with missing lines or Latin

@@ -39,4 +39,14 @@ if [ "${KOKORO_FP32:-0}" = 1 ]; then   # optional: studio.kokoro_model: kokoro-v
 fi
 fetch voices-v1.0.bin bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 command -v ffmpeg >/dev/null || echo "note    install ffmpeg (Edge TTS audio and Telegram voice messages need it)"
+
+# Video: the Remotion project next to this script (exact versions in package.json) and Chrome's headless
+# shell, which Remotion downloads for itself (~100 MB). Needs Node 18+; skipped without it.
+PROJECT="$(cd "$(dirname "$0")" && pwd)/remotion"
+if command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 18 ]; then
+    (cd "$PROJECT" && npm install --no-audit --no-fund --loglevel=error && npx remotion browser ensure)
+    echo "ready   $PROJECT (Remotion $(node -p "require('$PROJECT/package.json').dependencies.remotion"))"
+else
+    echo "note    install Node 18+ and re-run for videos (sudo apt install nodejs npm, or nodesource)"
+fi
 echo "Try it: python -m orchestrator.studio voice \"Hello from Kokoro\" --out ~/hello.wav"

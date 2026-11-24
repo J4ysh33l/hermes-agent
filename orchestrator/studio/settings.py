@@ -16,6 +16,13 @@ TEXT_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-fla
 
 
 ENGINES = ("kokoro", "edge")
+PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
+
+
+def _preset(value: str) -> str:
+    if value not in PRESETS:
+        raise ValueError(f"brief.yaml: studio.video_preset must be one of {', '.join(PRESETS)}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,13 @@ class Settings:
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
     models_dir: str = ""  # "" = $HERMES_HOME/studio/models
     max_chars: int = 6000  # text spoken in one job
+    # Video (1080×1920, 30 fps). Lower crf = sharper, bigger file (17 ≈ visually lossless; 23 is ffmpeg's default).
+    video_crf: int = 17
+    video_preset: str = "slow"  # x264: ultrafast … medium … slow … veryslow (slower = smaller file, same quality)
+    video_jpeg_quality: int = 95  # frames as Chrome draws them, before encoding
+    video_audio_bitrate: str = "320k"  # AAC
+    video_concurrency: int = 1  # frames drawn at once; each Chrome tab needs ~0.5–1 GB
+    video_browser: str = ""  # Chrome headless shell to use; "" = the one Remotion downloaded (install.sh)
     text_models: tuple[ModelChoice, ...] = TEXT_MODELS  # small text jobs (Hinglish → Devanagari)
 
 
@@ -58,6 +72,12 @@ def parse(raw: dict[str, Any]) -> Settings:
         studio_python=str(studio.get("studio_python", base.studio_python)),
         models_dir=str(studio.get("models_dir", base.models_dir)),
         max_chars=int(studio.get("max_chars", base.max_chars)),
+        video_crf=min(51, max(0, int(studio.get("video_crf", base.video_crf)))),
+        video_preset=_preset(str(studio.get("video_preset", base.video_preset))),
+        video_jpeg_quality=min(100, max(1, int(studio.get("video_jpeg_quality", base.video_jpeg_quality)))),
+        video_audio_bitrate=str(studio.get("video_audio_bitrate", base.video_audio_bitrate)),
+        video_concurrency=max(1, int(studio.get("video_concurrency", base.video_concurrency))),
+        video_browser=str(studio.get("video_browser", base.video_browser)),
         text_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in models)
         if models else base.text_models,
     )

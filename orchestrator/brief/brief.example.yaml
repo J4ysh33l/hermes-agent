@@ -223,3 +223,10 @@ studio:
   pause: 0.25                 # seconds after each sentence
   threads: 2                  # CPU threads Kokoro may use (the host has 2)
   kokoro_model: kokoro-v1.0.fp16.onnx  # or kokoro-v1.0.int8.onnx (KOKORO_INT8=1 install.sh) if RAM is tight
+  # Videos are 1080×1920 at 30 fps. Quality of the render:
+  video_crf: 17               # lower = sharper and bigger (17 ≈ visually lossless; 23 is ffmpeg's default)
+  video_preset: slow          # x264 speed: ultrafast … medium … slow … veryslow (slower = smaller file)
+  video_jpeg_quality: 95      # frames as Chrome draws them, before encoding
+  video_audio_bitrate: 320k   # AAC
+  video_concurrency: 1        # frames drawn at once; each needs ~0.5–1 GB (the host has 4 GB)
+  video_browser: ""           # a Chrome headless shell to use; "" = the one install.sh downloaded
