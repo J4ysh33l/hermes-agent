@@ -43,7 +43,9 @@ MAX_SENTENCE = 24
 SCENE_WORDS = 20  # ~6 s at the default ~196 wpm
 CUSTOM_WORDS = 40  # a custom scene animates through its own sentences
 PART_WORDS = 16  # per list item / bar / box / event
-HOOK_WORDS = 12  # the hook's first sentence
+HOOK_WORDS = 9  # the hook's first sentence (PLAYBOOK § 3: 6–9 words, the topic or claim first)
+HOOK_SCENE_WORDS = 16  # the whole hook scene: about 5 s at ~196 wpm (a 3-second opening, then the turn)
+HOOK_SENTENCES = 2
 FORMATS = {"explainer": "A", "news": "B", "how-it-works": "C", "business-case": "D", "hindi-explainer": "E"}
 HOOKS = {
     "definition-twist": "<Name>, a <category> that <does X> <joke twist>.",
@@ -153,8 +155,9 @@ Never say: {avoid}.
 # Hooks
 Write exactly 3 hooks, each from a DIFFERENT family, in this order of preference: {families}.
 Families: {hook_bank}
-A hook is the whole first scene: the first sentence is at most {hook_words} words, says the topic or the
-claim at once, and never greets. Each hook must lead naturally into the same second scene.
+A hook is the whole first scene and a 3-second opening, not an intro: the first sentence is at most
+{hook_words} words (6–9 is best), says the topic or the claim at once, has no pause or [direction], and
+never greets; the whole hook scene is at most {hook_sentences} sentences and {hook_scene_words} words. Each hook must lead naturally into the same second scene.
 
 # Scenes: a fast track, not a menu
 The library types ({scenes}) are ready-made, tested and quick to render: use one when it is genuinely the
@@ -231,7 +234,7 @@ def prompt(look: Profile, notes: str, seconds: float, words: int) -> str:
         humour=w["humour"] or "none", avoid=", ".join(f'"{a}"' for a in (*w["avoid"], *ALWAYS_AVOID)),
         examples=examples, rules=_rules(), beats=_format_beats(w["format"]), families=", ".join(families[:3]),
         hook_bank="\n".join(f"- {name}: {template}" for name, template in HOOKS.items()),
-        hook_words=HOOK_WORDS, scenes=", ".join(s for s in allowed_scenes(look) if s != "custom"), scene_help=SCENE_HELP,
+        hook_words=HOOK_WORDS, hook_sentences=HOOK_SENTENCES, hook_scene_words=HOOK_SCENE_WORDS, scenes=", ".join(s for s in allowed_scenes(look) if s != "custom"), scene_help=SCENE_HELP,
         media=MEDIA[_footage(look)],
         max_sentence=MAX_SENTENCE, scene_words=SCENE_WORDS, custom_words=CUSTOM_WORDS, words=words,
         notes=notes.strip(), limits=custom.LIMITS)
@@ -310,11 +313,24 @@ def _hooks(hooks: list[dict[str, Any]]) -> list[str]:
     if len(set(families)) != 3:
         problems.append("the 3 hooks must come from 3 different families")
     for n, h in enumerate(hooks, 1):
-        first = (sentences(spoken(h["scene"].get("say", ""))) or [""])[0]
-        if len(first.split()) > HOOK_WORDS:
-            problems.append(f"hook {n}: first sentence has {len(first.split())} words (at most {HOOK_WORDS})")
-        if GREETINGS.match(first):
-            problems.append(f"hook {n}: starts with a greeting; start with the topic or the claim")
+        problems += [f"hook {n}: {p}" for p in _hook(str(h["scene"].get("say", "")))]
+    return problems
+
+
+def _hook(say: str) -> list[str]:
+    """PLAYBOOK § 3: a 3-second opening, not an intro."""
+    said = sentences(spoken(say))
+    first = (said or [""])[0]
+    problems = []
+    if len(first.split()) > HOOK_WORDS:
+        problems.append(f"first sentence has {len(first.split())} words (at most {HOOK_WORDS})")
+    if len(said) > HOOK_SENTENCES or sum(len(s.split()) for s in said) > HOOK_SCENE_WORDS:
+        problems.append(f"the hook scene says {len(said)} sentences, {sum(len(s.split()) for s in said)} words "
+                        f"(at most {HOOK_SENTENCES} and {HOOK_SCENE_WORDS}: a hook is an opening, not an intro)")
+    if direction.TOKEN.search((sentences(say) or [""])[0]):
+        problems.append("no pause or [direction] in the first sentence: the first seconds have no dead air")
+    if GREETINGS.match(first):
+        problems.append("starts with a greeting; start with the topic or the claim")
     return problems
 
 

@@ -200,5 +200,20 @@ class Writing(unittest.TestCase):
         self.assertIn("Not possible: photoreal people", ask)
 
 
+
+class HookTest(unittest.TestCase):
+    """PLAYBOOK § 3: a hook is a 3-second opening, not an intro."""
+
+    def test_an_eight_second_intro_is_not_a_hook(self):
+        # a real job's hook 1: 3 sentences, 26 words, 8.4 s on screen
+        said = writer._hook("Shinkansen, a bullet train so punctual its delays are counted in *seconds*. Your bus counts "
+                            "them in moods. [beat] It's not luck. It's a *system*.")
+        self.assertTrue(any("first sentence has 12 words" in p for p in said))
+        self.assertTrue(any("not an intro" in p for p in said))
+
+    def test_a_short_claim_with_a_turn_is_one(self):
+        self.assertEqual(writer._hook("Japan's trains apologise for being early. Here's why."), [])
+        self.assertIn("no pause", writer._hook("Japan's trains [beat] apologise.")[0])
+
 if __name__ == "__main__":
     unittest.main()

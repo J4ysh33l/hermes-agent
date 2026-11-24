@@ -120,6 +120,8 @@ with yellow highlight sweeps, tension music with risers. [observed/vendor]
 
 **Rules [ours, from § 1]:** 6–9 words; the topic noun or the claim first; one picture that matches the
 words in frame 1; never a greeting, never "in this video".
+Checked in code (writer.py `_hook`): first sentence ≤ 9 words with no pause or direction; the whole hook
+scene ≤ 2 sentences and 16 words (~5 s). A real job's 26-word, 8.4 s hook read as an intro, not a hook.
 
 **Formula bank** (fill-in templates; examples are in the style, not quotes):
 
