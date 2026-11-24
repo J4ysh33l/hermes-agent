@@ -179,7 +179,7 @@ words; never more than 4 s without something moving.
 | Idle motion | nothing ever fully still: slow background glow, bobbing, drifting particles (`noise2D`) | Kurzgesagt [sourced: loops via expressions] |
 | Transitions | 6–10 frames; whip / slide / zoom-through, with a whoosh 3–6 frames before the cut | ours from tutorials |
 | Motion blur | on whips and fast moves only (it multiplies render cost) | tutorials |
-| "Handmade" feel | step graphics at 12 fps (`Math.floor(frame/2)*2`), cycle 3 paper textures 2–3×/s, multiply paper overlay | Vox [secondary], Harris [tutorial] |
+| "Handmade" feel | paper texture with a multiply overlay, cycling 3 textures 2–3×/s. Vox also steps graphics at 12 fps; we tried it (`motion.step: 12`) and it read as dropped frames next to our 30 fps captions and drift, so it is off by default | Vox [secondary], Harris [tutorial], ours |
 | Film burn / light leak | between sections, Dhruv-style; `@remotion/transitions` has `filmBurn` | Dhruv [vendor] |
 | Sound sync | every visual event gets its sound on the same frame | all |
 

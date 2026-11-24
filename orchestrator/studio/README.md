@@ -68,12 +68,13 @@ are 2–3 words at a time, the word being said in yellow; a progress bar runs al
   (spring feel, default entrance and exit, punch-in strength, drift, optional 12 fps handmade look),
   captions, voice, writing (format, hooks, humour, tone, words to avoid, example scripts) and allowed
   elements (music, sound effects, b-roll, memes: `off`, `auto` = only where it helps, or `always`).
-  Built in: `default` (dev dark), `bold` (black/yellow, Anton, whip cuts), `paper` (warm paper, soft,
-  12 fps). Yours go in `$HERMES_HOME/studio/profiles/<name>.yaml` and state only what differs
+  Built in: `default` (dev dark), `bold` (black/yellow, Anton, whip cuts), `paper` (warm paper, ink
+  colours, soft). Yours go in `$HERMES_HOME/studio/profiles/<name>.yaml` and state only what differs
   (`extends: bold` + two colours is a whole profile). Pick one with `--profile`, the storyboard's
   `"profile"`, or `studio.profile`.
 - **Motion is building blocks, not fixed clips** (`remotion/src/motion.tsx`): 3 spring feels × 6 entrances
-  × 5 exits, a camera punch-in on `*emphasised*` words, slow drift, 12 fps stepping. The profile sets
+  × 5 exits, a camera punch-in on `*emphasised*` words, slow drift, and optional 12 fps stepping
+  (`motion.step: 12`; off everywhere: next to 30 fps captions it reads as dropped frames). The profile sets
   defaults; a storyboard scene can override `enter`/`exit`; scenes compose them for their parts.
 - **Timing comes from the voice.** All narration goes to the voice in one job; each scene starts when its
   first sentence starts. Captions are the script as written, its time split over the words by length

@@ -1,5 +1,5 @@
-# History, geography, news (Vox / Johnny Harris-like): paper tones, soft motion, 12 fps handmade look.
-description: Paper. Warm off-white, ink and one highlighter accent, soft feel, graphics at 12 fps.
+# History, geography, news (Vox / Johnny Harris-like): paper tones, soft motion.
+description: Paper. Warm off-white, ink colours and one burnt-orange accent, soft feel.
 
 theme:
   bg: "#efe6d2"
@@ -21,7 +21,7 @@ motion:
   exit_frames: 8
   punch: 0.05
   drift: 0.05
-  step: 12
+  step: 0                   # smooth: the 12 fps look read as dropped frames next to the 30 fps captions
 
 captions:
   upper: false
