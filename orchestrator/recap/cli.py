@@ -26,6 +26,7 @@ Part = Callable[[Session, Path], list[Line]]
 PARTS: dict[str, Part] = {
     "approvals": parts.approvals,
     "HR mail": parts.hr_mail,
+    "meetings": parts.meetings,
     "To Do": lambda session, _home: parts.tasks(session),
     "calendar": lambda session, _home: parts.calendar(session),
 }

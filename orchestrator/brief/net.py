@@ -6,7 +6,9 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) morning-brief/1.0"
@@ -17,6 +19,7 @@ TIMEOUT = 20
 class Response:
     status: int
     body: bytes
+    headers: dict[str, str] = field(default_factory=dict)  # lower-case names
 
     def json(self) -> Any:
         return json.loads(self.body.decode("utf-8"))
@@ -56,7 +59,11 @@ def build_url(url: str, params: dict[str, Any] | None) -> str:
 
 
 class UrllibHttp:
-    """Real network client. Raises HttpError for any non-2xx status."""
+    """Real network client. Raises HttpError for any non-2xx status. ``timeout``: seconds per request
+    (uploads and long model calls need more than the default)."""
+
+    def __init__(self, timeout: float = TIMEOUT) -> None:
+        self.timeout = timeout
 
     def request(self, method, url, *, params=None, headers=None, form=None, json_body=None, data=None) -> Response:
         hdrs = {"User-Agent": USER_AGENT, "Accept": "*/*", **(headers or {})}
@@ -69,9 +76,21 @@ class UrllibHttp:
         full = build_url(url, params)
         req = urllib.request.Request(full, data=data, headers=hdrs, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                return Response(resp.status, resp.read())
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return Response(resp.status, resp.read(), {k.lower(): v for k, v in resp.headers.items()})
         except urllib.error.HTTPError as exc:
             raise HttpError(exc.code, full, exc.read().decode("utf-8", errors="replace")) from None
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise HttpError(0, full, str(getattr(exc, "reason", exc))) from None
+
+    def save(self, url: str, dest: Path, *, headers: dict[str, str] | None = None) -> Path:
+        """GET ``url`` straight to ``dest`` without holding it in memory (meeting recordings)."""
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp, dest.open("wb") as out:
+                shutil.copyfileobj(resp, out, 1 << 20)
+        except urllib.error.HTTPError as exc:
+            raise HttpError(exc.code, url, exc.read().decode("utf-8", errors="replace")) from None
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise HttpError(0, url, str(getattr(exc, "reason", exc))) from None
+        return dest

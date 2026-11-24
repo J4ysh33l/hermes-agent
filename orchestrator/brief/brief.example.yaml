@@ -181,3 +181,15 @@ hr:
     candidate_subject: "Interview for {position} at {company} | {day}, {start} IST"
     # candidate_body: HTML; must contain {join}. The panel's also take {positions} {schedule}.
     panel_subject: "Interviews: {positions} | {day}"
+
+# ---------------------------------------------------------------- Smriti (/notes): meeting notes
+# Teams meetings you organise (recorded + transcribed). See orchestrator/notes/README.md.
+notes:
+  check_hours: [10, 12, 14, 16, 18, 20]   # find ended meetings and ask what to make
+  chunk_minutes: 45           # audio per Gemini call (an hour ≈ 115k tokens: 32 a second)
+  gap_seconds: 70             # at least this long between two audio calls
+  tokens_per_minute: 250000   # your Gemini limit; a call waits until it fits the last 60 seconds
+  daily_audio_minutes: 180    # beyond this, transcription waits for the next day
+  models: [gemini-3.1-flash-lite, gemini-3.5-flash-lite]   # must take audio (Gemma does not)
+  handoff_repo: ""            # owner/name of your private repo for "claude" (GITHUB_HANDOFF_TOKEN in .env)
+  max_attempts: 3             # a document failing this often is reported instead of retried

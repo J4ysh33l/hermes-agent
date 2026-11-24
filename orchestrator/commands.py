@@ -96,6 +96,18 @@ def _resume_help() -> str:
     return HELP
 
 
+def _notes(args: str) -> str:
+    from orchestrator.notes.chat import handle
+
+    return handle(args)
+
+
+def _notes_help() -> str:
+    from orchestrator.notes.chat import HELP
+
+    return HELP
+
+
 def _recap_help() -> str:
     from orchestrator.recap.cli import HELP
 
@@ -133,6 +145,8 @@ def table() -> tuple[ChatCommand, ...]:
                     _myday("bills")),
         ChatCommand("recap", "What is waiting on you: approvals, HR mail, due tasks, deadlines", _recap_help(),
                     _recap),
+        ChatCommand("notes", "Smriti: summaries, tasks, PRDs and docs from your Teams meetings", _notes_help(),
+                    _notes),
         ChatCommand("resume", "Bring back an approval that expired without your yes", _resume_help(), _resume),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),

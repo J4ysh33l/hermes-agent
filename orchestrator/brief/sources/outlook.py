@@ -24,7 +24,10 @@ SCOPES = "offline_access Mail.Read"
 MEETING_SCOPES = "offline_access Calendars.ReadWrite User.ReadBasic.All"  # orchestrator/outreach
 SEND_SCOPES = "offline_access Mail.Send User.Read"  # orchestrator/hr: mail from your mailbox; /me for tests
 TODO_SCOPES = "offline_access Tasks.ReadWrite"  # orchestrator/myday: Microsoft To Do
-LOGIN_SCOPES = "offline_access User.Read Mail.Read Mail.Send Calendars.ReadWrite User.ReadBasic.All Tasks.ReadWrite"
+NOTES_SCOPES = ("offline_access Calendars.ReadWrite OnlineMeetings.Read OnlineMeetingTranscript.Read.All "
+                "OnlineMeetingRecording.Read.All")  # orchestrator/notes: Teams transcripts and recordings
+LOGIN_SCOPES = ("offline_access User.Read Mail.Read Mail.Send Calendars.ReadWrite User.ReadBasic.All Tasks.ReadWrite "
+                "OnlineMeetings.Read OnlineMeetingTranscript.Read.All OnlineMeetingRecording.Read.All")
 NOT_CONSENTED = "AADSTS65001"
 MESSAGES = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
 SELECT = "id,subject,from,bodyPreview,receivedDateTime,webLink,inferenceClassification,internetMessageHeaders"

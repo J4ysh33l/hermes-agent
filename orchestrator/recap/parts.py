@@ -6,6 +6,7 @@
 - HR mail: urgent and people mails still waiting for a reply, as the last ``/hr inbox`` sweep left them.
 - To Do: tasks and bills overdue or due within ``SOON_DAYS`` (My day's lists).
 - Calendar: Outlook events within ``CALENDAR_DAYS`` whose subject names a deadline.
+- Meetings (Smriti): ended meetings you have not answered yet, and documents asked for but not delivered.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from orchestrator import expiry
 from orchestrator.brief.net import HttpError
 from orchestrator.brief.sources import outlook
 from orchestrator.hr import inbox
+from orchestrator.notes import store as notes_store
+from orchestrator.notes.work import ref
 from orchestrator.hr import settings as hr_settings
 from orchestrator.myday import day
 from orchestrator.myday.dates import label
@@ -172,6 +175,26 @@ def calendar(session: Session) -> list[Line]:
         when = datetime.fromisoformat(row["start"]["dateTime"][:19])
         at = "" if row.get("isAllDay") else f" {when:%H:%M}"
         lines.append(Line(when.date(), f"🗓 {subject} — {label(when.date(), session.today)}{at}"))
+    return lines
+
+
+def meetings(session: Session, home: Path) -> list[Line]:
+    """Read only: Smriti's own cron asks and makes; the recap reminds."""
+    store = notes_store.Store(home)
+    lines = []
+    for key, m in store.recent(session.local_now):
+        when = datetime.fromisoformat(m["start"]).date()
+        if not m["asked"] and not m["skipped"]:
+            lines.append(Line(when, f"🎙 {notes_store.label(m)}: what do you need? /notes {ref(m['subject'])} "
+                                    "summary tasks prd · or skip", waiting=True))
+        for req in m["requests"]:
+            name = req["what"] if req["kind"] == "doc" else req["kind"]
+            if req["status"] in ("queued", "claude"):
+                lines.append(Line(when, f"📝 {name} for {notes_store.label(m)}: {req['note'] or 'in the queue'}",
+                                  waiting=True))
+            elif req["status"] == "failed":
+                lines.append(Line(when, f"⚠️ {name} for {notes_store.label(m)} failed: {req['note']} · ask again "
+                                        f"with /notes {ref(m['subject'])} {req['kind']}", waiting=True))
     return lines
 
 
