@@ -1,5 +1,5 @@
-"""Sending Smriti's results to you on Telegram with Hermes' own bot (``TELEGRAM_BOT_TOKEN``): long
-messages in pieces, documents as files. Plain text, so nothing in a transcript can break formatting."""
+"""Sending results to you on Telegram with Hermes' own bot (``TELEGRAM_BOT_TOKEN``): long messages in
+pieces, documents as files, voice clips as voice messages (Smriti, the studio). Plain text, so nothing in a transcript can break formatting."""
 
 from __future__ import annotations
 
@@ -41,16 +41,20 @@ class Telegram:
                 raise NotesError(f"Telegram: HTTP {exc.status}") from None
 
     def file(self, path: Path, caption: str) -> None:
+        self.upload("sendDocument", "document", path, caption)
+
+    def upload(self, method: str, field: str, path: Path, caption: str) -> None:
+        """One file: ``sendDocument``/``document``, ``sendVoice``/``voice`` (OGG Opus), ``sendAudio``/``audio``."""
         self._check()
         boundary = uuid.uuid4().hex
         fields = {"chat_id": self.chat, "caption": caption[:1000]}
         body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
                         for k, v in fields.items())
-        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{path.name}"\r\n'
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{path.name}"\r\n'
                  "Content-Type: application/octet-stream\r\n\r\n").encode() + path.read_bytes() + b"\r\n"
         body += f"--{boundary}--\r\n".encode()
         try:
-            self.http.request("POST", f"{self.base}/sendDocument", data=body,
+            self.http.request("POST", f"{self.base}/{method}", data=body,
                               headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         except HttpError as exc:
             raise NotesError(f"Telegram: HTTP {exc.status} sending {path.name}") from None

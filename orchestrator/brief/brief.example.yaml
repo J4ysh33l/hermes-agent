@@ -210,3 +210,12 @@ watch:
   about: ""                   # a line on you and what matters, for Gemini's notes (keep private details out)
   fail_after: 3               # failed reads in a row before you're told (once)
   max_lines: 15               # new items listed in one message
+
+# ---------------------------------------------------------------- Studio (/studio): video, audio, b-roll, images
+# See orchestrator/studio/README.md. Kokoro is installed by orchestrator/studio/install_kokoro.sh.
+studio:
+  voice_en: am_michael        # /studio voices lists them (af_/am_ US, bf_/bm_ UK, hf_/hm_ Hindi)
+  voice_hi: hm_omega          # for Hindi in Devanagari (Hinglish in Latin script is converted first)
+  speed: 1.05                 # 0.5 to 2.0
+  pause: 0.25                 # seconds after each sentence
+  threads: 2                  # CPU threads Kokoro may use (the host has 2)

@@ -120,6 +120,18 @@ def _watch_help() -> str:
     return HELP
 
 
+def _studio(args: str) -> str:
+    from orchestrator.studio.chat import handle
+
+    return handle(args)
+
+
+def _studio_help() -> str:
+    from orchestrator.studio.chat import HELP
+
+    return HELP
+
+
 def _recap_help() -> str:
     from orchestrator.recap.cli import HELP
 
@@ -161,6 +173,8 @@ def table() -> tuple[ChatCommand, ...]:
                     _notes),
         ChatCommand("watch", "Tells you when a page adds something: job openings, uploads, posts", _watch_help(),
                     _watch),
+        ChatCommand("studio", "Video, audio, b-roll and images on your server; /studio voice <text> (Kokoro)",
+                    _studio_help(), _studio),
         ChatCommand("resume", "Bring back an approval that expired without your yes", _resume_help(), _resume),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),
