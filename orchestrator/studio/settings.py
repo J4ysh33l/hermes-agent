@@ -63,6 +63,8 @@ class Keys:
     """API keys from $HERMES_HOME/.env (never brief.yaml)."""
     gemini: str = ""
     claude: str = ""
+    pexels: str = ""  # stock b-roll (broll.py)
+    pixabay: str = ""
 
 
 WRITERS = ("claude", "gemini")

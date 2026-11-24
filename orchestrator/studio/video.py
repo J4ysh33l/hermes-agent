@@ -30,7 +30,7 @@ from typing import Any
 from orchestrator.brief.net import Http
 
 from . import profile as profiles
-from . import audio, custom, direction, voice
+from . import audio, broll, custom, direction, sound, voice
 from .profile import Profile
 from .settings import Keys, Settings
 from .storyboard import Storyboard
@@ -183,6 +183,8 @@ def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboa
     job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second
     job.mkdir(parents=True)
     built = custom.prepare(http, keys, settings, home, board, look, job)
+    footage, found = broll.resolve(http, keys, home, built.board, look)  # stock: images → files, credited
+    built = replace(built, board=footage, notes=built.notes + found)
     try:
         return _render(http, keys, settings, home, check_countries(built.board), out, look, job, built)
     finally:
@@ -194,9 +196,11 @@ def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Story
     started = time.monotonic()
     text = "\n".join(scene.say for scene in board.scenes)
     speech = voice.speak(http, keys.gemini, voiced(settings, look), home, text, job / "voice.wav")
-    speech = replace(speech, path=audio.normalize(speech.path, job / "soundtrack.wav"))  # -14 LUFS
+    made = props(board, job, replace(speech, path=job / "soundtrack.wav"), look)
+    chosen = sound.plan(home, look, made, board.title)  # effects on the cuts, music under the voice
+    audio.normalize(sound.mix(home, speech.path, chosen, made["seconds"], job / "mix.wav"), job / "soundtrack.wav")
     voice_took = time.monotonic() - started
-    (job / "props.json").write_text(json.dumps(props(board, job, speech, look), ensure_ascii=False), encoding="utf-8")
+    (job / "props.json").write_text(json.dumps(made, ensure_ascii=False), encoding="utf-8")
     out = out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -209,4 +213,5 @@ def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Story
     if done.returncode != 0 or not out.is_file():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no error text"]
         raise VideoError(f"Remotion failed: {tail[0][:200]} (log: {job / 'render.log'})")
-    return Video(out, speech.seconds + TAIL, job, voice_took, time.monotonic() - started, built.notes)
+    return Video(out, speech.seconds + TAIL, job, voice_took, time.monotonic() - started,
+                 built.notes + chosen.notes)

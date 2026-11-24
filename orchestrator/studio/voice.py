@@ -153,7 +153,9 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
                       "pause": round((settings.pause if ln.last else 0.0) + ln.pause, 3)} for ln in lines]}
     worker = Path(__file__).with_name("voice_worker.py")
     try:
-        done = subprocess.run([str(python), str(worker)], input=json.dumps(job), capture_output=True, text=True,
+        # -I: isolated, so the worker's folder is not on its path (the studio's queue.py and profile.py
+        # would shadow the standard library's there)
+        done = subprocess.run([str(python), "-I", str(worker)], input=json.dumps(job), capture_output=True, text=True,
                               timeout=TIMEOUT, check=False)
     except subprocess.TimeoutExpired:
         raise VoiceError(f"{engine} took over {TIMEOUT // 60} minutes; split the text.") from None

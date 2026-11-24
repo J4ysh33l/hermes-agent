@@ -44,7 +44,7 @@ asterisks). Voice directions go in ``say`` too: ``[beat]`` (a 0.4 s pause), ``[p
 fade), ``exit`` (lift, fade, whip, zoom, cut) and ``transition`` into the next scene (none, cut, fade, push,
 whip, zoom, flash, burn) to override the profile's motion for that scene.
 ``profile`` names the page profile (default: studio.profile). ``src`` is a file next to the storyboard,
-or an https URL. Unknown types or keys are refused, so a typo fails here and not halfway through a render.
+an https URL, or for an image scene ``stock:<what the footage shows>`` (searched on Pexels/Pixabay). Unknown types or keys are refused, so a typo fails here and not halfway through a render.
 """
 
 from __future__ import annotations
@@ -211,6 +211,7 @@ def _fallback(where: str, value: Any) -> Mapping[str, Any]:
 
 SCHEMA["custom"] = {"brief": _text(True), "props": _json_object, "full_bleed": _flag(False), "component": _text(False),
                     "fallback": _fallback}
+STOCK = "stock:"  # an image scene's src searched on Pexels/Pixabay at render time (broll.py)
 COMMON = {"type", "say", "enter", "exit", "transition", "emoji"}  # keys every scene may have
 
 
@@ -302,7 +303,10 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         if component and (not component.endswith(".tsx") or not (folder / component).is_file()):
             raise StoryboardError(f"scene {n + 1}: component {folder / component} not found (a .tsx file)")
         for src in files(scene.fields):
-            if not src.startswith("https://") and not (folder / src).is_file():
+            if src.startswith(STOCK):
+                if scene.type != "image" or not 2 <= len(src) - len(STOCK) <= 80:
+                    raise StoryboardError(f"scene {n + 1}: stock: is for image scenes, 2–80 characters of what to show")
+            elif not src.startswith("https://") and not (folder / src).is_file():
                 raise StoryboardError(f"scene {n + 1}: {folder / src} not found")
     return Storyboard(_text(False)("title", raw.get("title", MISSING)), scenes, folder,
                       _text(False)("profile", raw.get("profile", MISSING)))

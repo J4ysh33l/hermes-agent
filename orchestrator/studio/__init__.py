@@ -14,11 +14,14 @@ Modules:
 - ``video``           storyboard → voice → word captions → Remotion render (1080×1920, 30 fps).
 - ``cover``           a storyboard scene + 2–5 big words → a 1080×1920 cover PNG (Remotion still).
 - ``audio``           the soundtrack at -14 LUFS (gain + limiter, measured with loudnorm).
+- ``sound``           effects made from formulas on the cuts, licensed music ducked under the voice.
+- ``broll``           ``stock:`` image scenes → Pexels/Pixabay footage, downloaded once and credited.
+- ``reference``       a page profile measured from a video you like (cut rate, palette, length, pauses).
 - ``qc``              the finished file checked with ffprobe/ffmpeg (format, length, clipping, loudness, dead air).
 - ``drive``           uploads to the user's Drive folder "Hermes Studio" (scope drive.file).
 - ``handoff``         Claude on the user's plan through the handoff repo (request.md → storyboard.json).
 - ``queue``           jobs: writing → ready → rendered → done; renders in the window, delivers to Telegram/Drive.
 - ``remotion/``       the React templates Remotion renders (its own Node project; ``install.sh``).
 - ``chat``            /studio voice · voices · write · make · run · pick · queue.
-- ``cli``             ``python -m orchestrator.studio voice|write|video|cover|queue|auth|wishes ...`` on the host.
+- ``cli``             ``python -m orchestrator.studio voice|write|video|cover|queue|profile|auth|wishes ...`` on the host.
 """

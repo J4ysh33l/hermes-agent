@@ -16,7 +16,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import audio, chat, cover, drive, profile, queue, storyboard, video, voice, writer
+from . import audio, chat, cover, drive, profile, queue, reference, storyboard, video, voice, writer
 
 
 def _video(home: Path, words: list[str]) -> int:
@@ -129,20 +129,33 @@ QUEUE_ACTIONS = {"run": lambda ctx, args: queue.run(ctx, force=args.now), "add":
                  "list": lambda ctx, _args: queue.status(ctx)}
 
 
+def _profile(home: Path, words: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="python -m orchestrator.studio profile")
+    parser.add_argument("action", choices=["from"])
+    parser.add_argument("video", type=Path, help="a short whose pace and colours you like")
+    parser.add_argument("--name", required=True, help="the new profile's name")
+    parser.add_argument("--force", action="store_true", help="replace a profile of that name")
+    args = parser.parse_args(words)
+    try:
+        path, summary = reference.write(args.video, args.name, home, args.force)
+    except (reference.ReferenceVideoError, profile.ProfileError) as exc:
+        print(f"⚠️ {exc}", file=sys.stderr)
+        return 1
+    print(f"{path}: {summary}\nUse it with --profile {args.name} (or studio.profile: {args.name}).")
+    return 0
+
+
+COMMANDS = {"video": _video, "queue": _queue, "cover": _cover, "write": _write, "profile": _profile}
+
+
 def main(argv: list[str] | None = None) -> int:
     words = sys.argv[1:] if argv is None else argv
     home = default_state_dir().parent
-    if words[:1] == ["video"]:
-        return _video(home, words[1:])
-    if words[:1] == ["queue"]:
-        return _queue(home, words[1:])
+    if words[:1] and words[0] in COMMANDS:
+        return COMMANDS[words[0]](home, words[1:])
     if words[:2] == ["auth", "drive"]:
         drive.login(chat.Context(home).http, chat.Context(home).secrets)
         return 0
-    if words[:1] == ["cover"]:
-        return _cover(home, words[1:])
-    if words[:1] == ["write"]:
-        return _write(home, words[1:])
     if words[:1] == ["wishes"]:
         found = writer.wishlist(home)
         print("\n".join(f"{n:4d}  {w}" for n, w in found) or "No wishes yet (they come from `write`).")

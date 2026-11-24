@@ -48,7 +48,8 @@ class Context:
 
     @property
     def keys(self) -> settings.Keys:
-        return settings.Keys(self.key, self.secrets.get("ANTHROPIC_API_KEY"))
+        return settings.Keys(self.key, self.secrets.get("ANTHROPIC_API_KEY"), self.secrets.get("PEXELS_API_KEY"),
+                             self.secrets.get("PIXABAY_API_KEY"))
 
 
 def _ogg(wav: Path) -> Path:

@@ -203,6 +203,44 @@ camera frames each country on its main landmass (the USA without Alaska and Hawa
 Guiana); labels and route ends sit on its largest piece. Zoomed out, the map draws the coarse 110 m
 outlines and skips countries off screen: the 2-map test went from 53 s to 36 s of render (8.5 s video).
 
+## Sound: effects on the cuts, music under the voice
+
+Profile `elements.sfx` / `elements.music`: `off`, `auto` or `always`.
+
+- **Effects are made, not downloaded** (`sound.py`, ffmpeg `aevalsrc` formulas, so no licence to track): a
+  whoosh on push/whip/zoom transitions, a hit on a flash, a riser into a burn, a pop when an emoji lands,
+  and with `always` a tick as each list item appears. Each peaks where the eye expects it (mid-overlap).
+  Made once into `$HERMES_HOME/studio/sfx/`.
+- **Music is yours, with its licence:** put tracks in `$HERMES_HOME/studio/music/` and list them in
+  `music.yaml` (`file`, `licence`, `credit`, optional `profiles: [paper]`). A file not listed, or listed
+  without a licence, is never used. The same video always gets the same track; it is looped or cut to
+  the video, faded, and ducked under the voice (sidechain: it dips under words and comes back in pauses,
+  measured >6 dB in the test). The credit goes into the job's notes, so it is in the Telegram message.
+  No library: no music (`always` says so in the notes).
+- The mix is brought to -14 LUFS as one track (`audio.py`).
+
+## B-roll: stock footage for image scenes
+
+With `PEXELS_API_KEY` and/or `PIXABAY_API_KEY` in `$HERMES_HOME/.env` (both free) and `elements.broll` not
+`off`, the writer may use image scenes as footage: `"src": "stock:busy mumbai street at night"`. Before the
+render, `broll.py` searches Pexels then Pixabay (portrait clips at least 1280 px tall and 3 s long first,
+then photos), downloads the match once into `$HERMES_HOME/studio/broll/`, and credits it in the notes
+("Video by … on Pexels (link)"). No key, b-roll off, or nothing found: the scene becomes a title card with
+its caption, and the notes say why. Without a key the writer is not offered image scenes at all.
+
+## A profile from a video you like
+
+```
+python -m orchestrator.studio profile from liked.mp4 --name mypage [--force]
+```
+
+Measures the reference with ffmpeg and writes `$HERMES_HOME/studio/profiles/mypage.yaml` (`extends: default`,
+the measurements as comments): the cut rate sets the transition, its speed, punch-ins and drift (a shot
+every <1.2 s → hard cuts; >5 s → fades and a soft feel); the most common dark colour becomes the background
+and the most common vivid one (with 3:1 contrast) the accent, a second hue the "cool" colour; the length
+becomes `writing.seconds` and the typical pause `voice.pause`. Nothing of the video is kept. Captions, fonts
+and the voice stay the default's until you change them.
+
 ## Overnight queue: notes in, a checked video on Telegram and Drive out
 
 ```
@@ -245,6 +283,15 @@ A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering
    shell, ~100 MB). Chrome also needs the usual shared libraries (`npx remotion browser ensure` names any missing).
 
 ## Tested
+
+- **B-roll** (`tests/test_broll.py`, fake Pexels/Pixabay): the right file is fetched once and credited; Pixabay
+  when Pexels is down; a title card (and the reason) without footage; the writer offers footage only with a key.
+- **Reference profiles** (`tests/test_reference.py`, ffmpeg-made videos): fast cutting → hard cuts, slow → fades;
+  the dark background and vivid accent carry over; the written profile loads and is not overwritten.
+
+- **Sound** (`tests/test_sound.py`, real ffmpeg): effects land on the cuts, the emoji and (always) the items;
+  only licensed music for the profile is used and credited; the mix lasts the video, the music is there in
+  pauses, ducked under words and faded at the end.
 
 - **Queue** (`tests/test_queue.py`): a job goes notes → storyboard → render → Telegram/Drive with fake
   tools; a handoff answer is collected and a failing one gets one fix round; pick re-renders; the lock and the
