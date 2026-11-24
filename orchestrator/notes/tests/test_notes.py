@@ -25,7 +25,7 @@ from fakes import FakeHttp
 
 from hermes_platform.resolver import locate_command
 from orchestrator.brief.net import HttpError, Response
-from orchestrator.notes import chat, store, vtt, work
+from orchestrator.notes import chat, store, transcribe, vtt, work
 from orchestrator.notes.transcribe import Clock
 from orchestrator.recap import parts
 
@@ -202,17 +202,19 @@ class Smriti(unittest.TestCase):
         self.assertEqual(asked.count("🎙"), 1, asked)
         self.assertIn("🎙 Product sync ended (13:00–13:50) · recording ✓ · transcript ✓ (2 sessions)", asked)
         self.assertIn("/notes product sync summary tasks prd", asked)
-        self.assertEqual(self.smriti(force=True), "")  # known meetings are not asked again
-        self.assertIn("🎙 Mon 23 Nov 13:00 Product sync: what do you need?", self.recap_text())  # until answered
-
-        self.assertIn("summary, prd by Gemini", self.notes("product sync summary prd"))
-        self.assertEqual(self.smriti(), "")
-        audio = self.audio_calls()
+        audio = self.audio_calls()  # the transcript is stored at once, before anything is asked for
         self.assertEqual(len(audio), 3)  # 9 s of audio in 3 s chunks
         self.assertIn("Latin script", audio[0])
         self.assertIn("Speaker 1: Namaste, shall we start?", audio[1])  # the previous part, for the same numbering
         self.assertEqual(len(self.deleted), 3)  # every upload removed after its call
         self.assertGreaterEqual(self.clock.slept, 2 * 70)  # audio calls at least gap_seconds apart
+        self.assertEqual(self.smriti(force=True), "")  # known meetings are not asked again
+        self.assertIn("🎙 Mon 23 Nov 13:00 Product sync: what do you need?", self.recap_text())  # until answered
+        self.assertIn("transcript ✓ · nothing asked yet", self.notes("list"))
+
+        self.assertIn("summary, prd by Gemini", self.notes("product sync summary prd"))
+        self.assertEqual(self.smriti(), "")
+        self.assertEqual(len(self.audio_calls()), 3)  # documents come from the stored transcript
 
         m = store.Store(self.home).meetings["E1"]
         text = Path(m["transcript"]).read_text(encoding="utf-8")
@@ -230,7 +232,7 @@ class Smriti(unittest.TestCase):
         self.smriti()
         self.assertEqual(len(self.audio_calls()), 3)  # the saved transcript is reused: no audio again
         self.assertIn("📝 Tasks", self.sent[-1][1]["text"])
-        self.assertIn("summary ✓ · prd ✓ · tasks ✓", self.notes("list"))
+        self.assertIn("transcript ✓ · summary ✓ · prd ✓ · tasks ✓", self.notes("list"))
 
     def test_claude_writes_it_through_the_handoff_repo(self):
         self.smriti(force=True)
@@ -246,6 +248,17 @@ class Smriti(unittest.TestCase):
         self.smriti()
         self.assertIn(b'filename="client follow-up email - Product sync.docx"', self.sent[0][1])
         self.assertEqual(store.Store(self.home).meetings["E1"]["requests"][0]["status"], "done")
+
+    def test_skip_means_no_transcript_either(self):
+        recordings, self.recordings, self.transcripts = self.recordings, [], []
+        self.smriti(force=True)  # Teams is still processing: nothing to transcribe yet
+        self.assertIn("Noted: nothing needed", self.notes("product sync skip"))
+        self.recordings = recordings
+        self.clock.t += 2 * 3600
+        self.smriti()  # the 16:00 check: another meeting has ended by now and gets its transcript
+        skipped = store.Store(self.home).meetings["E1"]
+        self.assertEqual((skipped["skipped"], skipped["transcript"]), (True, ""))
+        self.assertIn("Product sync — skipped", self.notes("list"))
 
     def test_over_the_audio_budget_it_waits_without_downloading(self):
         self.config(daily_audio_minutes=0)
@@ -285,7 +298,12 @@ class Parsing(unittest.TestCase):
         doc = chat.parse("onboarding doc client follow-up email")
         self.assertEqual((doc.meeting, doc.kinds, doc.what, doc.model), ("onboarding", ("doc",), "client follow-up email", "gemini"))
         self.assertTrue(chat.parse("last skip").skip)
+        self.assertEqual(chat.parse("product sync summary").model, "gemini")  # claude only when written
         self.assertIsNone(chat.parse("summary"))  # no meeting named
+
+    def test_noise_only_turns_are_dropped(self):
+        turns = transcribe.parse_turns("[00:00] Speaker 1: [unclear]\n[no speech]\n[00:05] Speaker 2: Haan [unclear] theek", 60)
+        self.assertEqual([(t.start, t.speaker, t.text) for t in turns], [(65, "Speaker 2", "Haan [unclear] theek")])
 
     def test_transcript_sessions_join_on_one_clock_in_time_order(self):
         first, second = datetime(2026, 11, 23, 13, 0), datetime(2026, 11, 23, 13, 15)

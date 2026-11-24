@@ -23,8 +23,8 @@ HELP = """**/notes** — Smriti: summaries and documents from your Teams meeting
 /notes product sync summary tasks prd — what to make; name the meeting by words from its subject, or last
 /notes onboarding doc client follow-up email — any document: everything after doc says what
 /notes last transcript — the transcript file · /notes product sync skip — nothing needed
-Add claude to have Claude write it (through your handoff repo); Gemini is the default. Hindi is written
-in Latin script. After each check (10, 12, 14, 16, 18 and the 20:00 recap) you are asked about meetings
+Add claude to have Claude write it (through your handoff repo), each time you want it; Gemini is the
+default. Every meeting's transcript is stored on its own (skip opts out); Hindi is in Latin script. After each check (10, 12, 14, 16, 18 and the 20:00 recap) you are asked about meetings
 that ended. Work starts within 15 minutes and arrives here; nothing you ask for is dropped. /menu — all your commands"""
 
 MODELS = ("gemini", "claude")

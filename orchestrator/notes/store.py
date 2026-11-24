@@ -123,8 +123,8 @@ def label(m: dict) -> str:
 def status_line(m: dict) -> str:
     if m["skipped"]:
         return "skipped"
-    if not m["requests"]:
-        return "not asked yet"
     marks = {"done": "✓", "queued": "…", "claude": "… Claude", "failed": "✗"}
-    return " · ".join(f"{r['kind'] if r['kind'] != 'doc' else r['what'][:24]} {marks[r['status']]}"
-                      for r in m["requests"])
+    made = ["transcript ✓"] if m["transcript"] else []
+    made += [f"{r['kind'] if r['kind'] != 'doc' else r['what'][:24]} {marks[r['status']]}"
+             for r in m["requests"] if not (r["kind"] == "transcript" and m["transcript"])]
+    return " · ".join(made) + ("" if m["requests"] else (" · " if made else "") + "nothing asked yet")

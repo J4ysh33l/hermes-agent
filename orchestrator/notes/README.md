@@ -1,7 +1,8 @@
 # Smriti: meeting notes
 
-Summaries, task lists, PRDs and any other document from the Teams meetings you organise. Nothing is
-transcribed until you ask, and what you ask for is never dropped.
+Summaries, task lists, PRDs and any other document from the Teams meetings you organise. Every
+ended meeting gets its transcript stored by default (`skip` opts one out); documents are made only
+when you ask, and what you ask for is never dropped.
 
 ## How it works
 
@@ -13,10 +14,12 @@ transcribed until you ask, and what you ask for is never dropped.
    Add claude to use Claude (default Gemini). Nothing needed: /notes product sync skip
    ```
    An unanswered meeting stays in the 20:00 recap until you answer or `skip`.
-2. **The transcript is made once.** The recording is downloaded, the video dropped and the audio cut
+2. **The transcript is stored at once, by default.** Right after the check that finds the meeting
+   (after any documents already waiting), unless you say `skip` before it starts. The recording is downloaded, the video dropped and the audio cut
    into 45-minute chunks. Each chunk is one Gemini call, at least 70 s after the last, and only when
    the last 60 s of Gemini use (every workflow) plus this call fits your tokens-per-minute.
-   - Hindi is written in Latin script.
+   - Hindi is written in Latin script. Only spoken words are written: silence or noise is skipped,
+     never filled in (tested live: a tone with no speech came back as `[unclear]`, which is dropped).
    - Speakers get their names from the Teams transcript, matched by time.
    - A stop-and-restart is several sessions, joined in time order with a marker.
    - No recording: the Teams transcript is used as it is.
@@ -81,4 +84,7 @@ Against fake Teams, Gemini, Telegram and GitHub, with real ffmpeg on a generated
 - nothing recorded is reported once after a day
 - two matching meetings are never guessed
 
-**Not yet run** against real Teams (waiting on the permissions), real Gemini audio, or the handoff repo.
+**Live, 2026-11-24:** the real Gemini audio path on a 9 s tone: upload, wait, transcribe, delete, and
+the usage line (345 input tokens: 288 for the audio at 32 a second, the rest the prompt). It caught
+Gemini inventing "Hello." over silence; the prompt now forbids it.
+**Not yet run** against real Teams (waiting on the permissions), real speech, or the handoff repo.

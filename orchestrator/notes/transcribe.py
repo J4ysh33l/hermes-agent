@@ -29,12 +29,15 @@ from .teams import Files, Teams
 GIVE_UP = timedelta(hours=24)  # no recording or transcript by then: there will not be one
 ROOM_WAIT = 5.0  # seconds between checks while waiting for token room
 MAX_WAIT = 600.0  # a call that cannot fit in 10 minutes is left for the next run
+NOISE = {"[unclear]", "[no speech]", "[silence]", "[music]"}  # a whole turn of only this is dropped
 LINE = re.compile(r"^\[?(?:(\d+):)?(\d{1,2}):(\d\d)\]?\s*([^:\]]{1,60}):\s*(.+)$")
 PROMPT = """Transcribe this meeting audio word for word.
 - Hindi is written in Latin script (romanised, e.g. "kal ka plan kya hai"), never in Devanagari. English stays English.
 - One line per speaker turn: [mm:ss] Speaker N: words. Times count from the start of this audio.
 - Name speakers Speaker 1, Speaker 2 … and keep the same number for the same voice throughout.
 - Do not summarise, translate, correct or add anything. Write [unclear] for words you cannot make out.
+- Write only words actually spoken. Silence, music or noise is not speech: skip it. If there is no speech
+  at all, answer exactly: [no speech]
 {context}"""
 CONTEXT = "This audio continues a meeting. Its previous part ended with:\n{tail}\nKeep the same speaker numbers."
 
@@ -87,6 +90,8 @@ def parse_turns(text: str, offset: float) -> list[Turn]:
     turns = []
     for raw in text.splitlines():
         m = LINE.match(raw.strip())
+        if raw.strip().lower() in NOISE or (m and m.group(5).strip().lower() in NOISE):
+            continue
         if m:
             h, mm, ss, who, words = m.groups()
             turns.append(Turn(offset + int(h or 0) * 3600 + int(mm) * 60 + int(ss), who.strip(), words.strip()))

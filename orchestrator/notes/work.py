@@ -5,7 +5,8 @@
 - ``process``: makes what you asked for, oldest first: the transcript once (``transcribe``), then each
   document (``docs`` with Gemini, or ``handoff`` to Claude), delivered on Telegram. A request is never
   dropped: it waits for a recording, for the audio budget or for Claude, and a failure is retried
-  until ``max_attempts``, then reported (and listed in the recap).
+  until ``max_attempts``, then reported (and listed in the recap). Then every other ended meeting gets
+  its transcript stored too, unasked (``skip`` opts a meeting out), so any document later starts from it.
 
 One run at a time: a run that finds another still working leaves at once.
 """
@@ -143,6 +144,8 @@ def _transcript(ctx: Context, key: str) -> str | None:
     if m["transcript"] and Path(m["transcript"]).is_file():
         return Path(m["transcript"]).read_text(encoding="utf-8")
     if m.get("retry_at", "") > ctx.now.isoformat():
+        for req in m["requests"]:  # a request made while the meeting waits says why it waits
+            req["note"] = req["note"] or m.get("wait", "")
         return None
     day = ctx.now.date().isoformat()
     left = ctx.settings.daily_audio_minutes - ctx.store.audio_used(day)
@@ -153,7 +156,7 @@ def _transcript(ctx: Context, key: str) -> str | None:
                 req["status"], req["note"] = "failed", result.note
         raise NotesError(result.note)
     if result.status == "wait":
-        m["retry_at"] = (ctx.now + result.retry).isoformat()
+        m["retry_at"], m["wait"] = (ctx.now + result.retry).isoformat(), result.note
         for req in m["requests"]:
             req["note"] = result.note
         return None
@@ -220,6 +223,24 @@ def process(ctx: Context) -> list[str]:
     return lines
 
 
+def store_transcripts(ctx: Context) -> None:
+    """Every ended meeting not skipped gets its transcript, after the requests (within the audio budget,
+    hourly retries while Teams is processing). A meeting with nothing recorded is given up quietly."""
+    for key, m in ctx.store.recent(ctx.now):
+        if m["skipped"] or m["transcript"] or m.get("gone") or m.get("tries", 0) >= ctx.settings.max_attempts:
+            continue
+        try:
+            _transcript(ctx, key)
+        except NotesError as exc:
+            if "no recording or transcript" in str(exc):
+                m["gone"] = True
+            else:
+                m["tries"] = m.get("tries", 0) + 1
+            m["note"] = str(exc)
+        finally:
+            ctx.store.save()
+
+
 def run(ctx: Context, *, force_check: bool = False) -> str:
     with one_at_a_time(ctx.home) as mine:
         if not mine:
@@ -227,5 +248,6 @@ def run(ctx: Context, *, force_check: bool = False) -> str:
         lines = check(ctx, force=force_check)
         ctx.store.save()
         lines += process(ctx)
+        store_transcripts(ctx)
         ctx.store.save()
         return "\n\n".join(lines)
