@@ -7,6 +7,8 @@ hooks (Gemini). Next: music/SFX, stock b-roll, thumbnails, edits of your own raw
 
 ## Voice: Kokoro (default) or Edge TTS
 
+All the voice rules in one page (pace, directions, writing for the ear): `VOICE.md`.
+
 ```
 /studio voice Here's the thing nobody tells you about AI agents. They are loops.
 /studio voice edge Here's the thing nobody tells you about AI agents.
