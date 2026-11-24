@@ -222,3 +222,4 @@ studio:
   speed: 1.05                 # 0.5 to 2.0
   pause: 0.25                 # seconds after each sentence
   threads: 2                  # CPU threads Kokoro may use (the host has 2)
+  kokoro_model: kokoro-v1.0.fp16.onnx  # or kokoro-v1.0.int8.onnx (KOKORO_INT8=1 install.sh) if RAM is tight

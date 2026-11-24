@@ -28,7 +28,7 @@ class Settings:
     speed: float = 1.05  # 0.5 to 2.0
     pause: float = 0.25  # seconds of silence after each sentence
     threads: int = 2  # CPU threads Kokoro may use
-    kokoro_model: str = "kokoro-v1.0.int8.onnx"  # 88 MB, ~890 MB RAM; kokoro-v1.0.onnx (fp32) sounds the same, +250 MB RAM
+    kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
     models_dir: str = ""  # "" = $HERMES_HOME/studio/models
     max_chars: int = 6000  # text spoken in one job

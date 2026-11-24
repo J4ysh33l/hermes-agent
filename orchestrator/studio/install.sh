@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The studio's voice engines in their own environment: $HERMES_HOME/venvs/studio (Kokoro + Edge TTS),
 # Kokoro's model files in $HERMES_HOME/studio/models. Hermes' environment is never touched.
-# Re-running is safe. Size: ~180 MB of packages + ~120 MB of model files. CPU only (no PyTorch).
+# Re-running is safe. Size: ~180 MB of packages + ~200 MB of model files. CPU only (no PyTorch).
 set -euo pipefail
 HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 VENV="$HOME_DIR/venvs/studio"
@@ -28,8 +28,12 @@ fetch() {  # name sha256
     mv "$path.part" "$path"
     echo "fetched $path"
 }
-# int8 by default: no audible difference from full precision in our listening test, 250 MB less RAM.
-fetch kokoro-v1.0.int8.onnx 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb
+# fp16 by default: half precision, faster than int8 on a CPU with AVX-512 FP16 (measured 2.6x vs 2.0x
+# real time), ~110 MB more RAM. int8 is the low-memory fallback: studio.kokoro_model: kokoro-v1.0.int8.onnx
+fetch kokoro-v1.0.fp16.onnx c1610a859f3bdea01107e73e50100685af38fff88f5cd8e5c56df109ec880204
+if [ "${KOKORO_INT8:-0}" = 1 ]; then
+    fetch kokoro-v1.0.int8.onnx 6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb
+fi
 if [ "${KOKORO_FP32:-0}" = 1 ]; then   # optional: studio.kokoro_model: kokoro-v1.0.onnx
     fetch kokoro-v1.0.onnx 7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5
 fi
