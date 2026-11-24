@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,7 +25,9 @@ from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
 from orchestrator.outreach.plan import picks
 
-from . import inbox, interview, payslips, request, settings
+from orchestrator.recap.parts import pending_files
+
+from . import inbox, interview, payslips, reply, request, settings
 from .payroll import Period
 from .payslips import Paths, rupees
 
@@ -57,12 +59,27 @@ End is optional (Start + 30 min). Or paste a table with columns Name, Position, 
 /menu — all your commands"""
 
 HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only after you approve
+/hr list — everything pending in HR: mail waiting for a reply, applications not answered, approvals
 /hr payslip — monthly payslips from the salary sheet (/hr payslip help for every step)
 /hr interview — one Teams link, each candidate invited to their own slot (/hr interview help)
 /hr inbox — mail to the HR mailbox sorted: urgent, people, campus, applications (/hr inbox help)
+/hr reply — answer HR mail in its thread: Gemini drafts, or a template with no model (/hr reply help)
 /menu — all your commands"""
 
-INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules (no AI model reads HR mail)
+REPLY_HELP = """**/hr reply** — answer HR mail in its own thread, From the HR mailbox, only after your yes
+/hr reply 2 — Gemini drafts a reply to mail 2 of the waiting list (/hr list or /hr inbox show)
+/hr reply 2 say we'll send the relieving letter by Friday — with your instruction
+/hr reply 2 ack Backend Engineer — a template, no model: ack · reject · docs · letter · leave · salary
+  (the words after it fill the role or the date: "letter 30 Nov" → "…by 30 Nov")
+/hr reply applications ack — acknowledge every unanswered application of the last 14 days (preview first)
+/hr reply show · yes · no — see the draft, send it, drop it
+/hr reply again shorter, mention the portal — Gemini redrafts with your change
+/hr reply edit <your text> — use your own words instead (blank lines split paragraphs)
+Before Gemini sees a mail, names, emails, phone numbers, links, amounts and ID numbers are swapped
+for placeholders; the draft is refused if any comes back changed or invented. "Hi <name>," and the
+sign-off are added by the script. /menu — all your commands"""
+
+INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules (no AI model; /hr reply drafts answers)
 /hr inbox show — new HR mail by kind, and every urgent or people mail still waiting for a reply
 /hr inbox list applications — the last 14 days of one kind (urgent · people · campus · applications · other)
 /hr inbox done 2 — mark a waiting mail handled (one answered in its thread clears on its own)
@@ -326,9 +343,221 @@ INTERVIEW = {"show": _interview_show, "yes": _interview_yes, "no": _interview_no
 INBOX = {"show": lambda ctx, _a: _inbox_sweep(ctx, always=True),
          "sweep": lambda ctx, _a: _inbox_sweep(ctx, always=False),  # the cron's word: silent when nothing new
          "list": _inbox_list, "done": _inbox_done}
+# ---- /hr reply ---------------------------------------------------------------------------------
+
+
+def _reply_path(ctx: Context) -> Path:
+    return ctx.paths.home / "reply.json"
+
+
+def _reply_saved(ctx: Context) -> dict | None:
+    path = _reply_path(ctx)
+    if not path.is_file():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
+        expiry.expire(path)
+        return None
+    return saved
+
+
+def _waiting_keys(store: inbox.Store) -> list[str]:
+    """The numbers you saw last (/hr list, /hr inbox show), else the waiting list as it is now."""
+    return store.data.get("listing") or [k for k, _ in store.open_items()]
+
+
+def _gemini_key(ctx: Context) -> str:
+    return ctx.secrets.get("GEMINI_API_KEY", "GOOGLE_API_KEY")
+
+
+def _item(key: str, it: dict, mail: reply.Mail | None, draft: reply.Draft, instruction: str, ctx: Context) -> dict:
+    name = mail.sender_name if mail else it["name"]
+    return {"key": key, "name": name, "to": it["from"], "subject": it["subject"], "how": draft.how,
+            "hidden": draft.hidden, "fixes": list(draft.fixes), "instruction": instruction,
+            "text": reply.as_text(draft, name, ctx.settings)}
+
+
+def _reply_preview(saved: dict, minutes: int) -> str:
+    items = saved["items"]
+    if len(items) > 1:
+        lines = [f"**Replies to {len(items)} mails** (\"{items[0]['how']}\"), waiting for your yes ({minutes} min):"]
+        lines += [f"{n}. {i['name']} <{i['to']}> — Re: {i['subject']}" for n, i in enumerate(items, 1)]
+        lines += ["", "Each gets:", items[0]["text"]]
+    else:
+        i = items[0]
+        lines = [f"**Reply to {i['name']}** <{i['to']}> — Re: {i['subject']}", "", i["text"], ""]
+        how = f"Drafted by {i['how']}" if i["how"].startswith(("gemini", "gemma")) else f"From {i['how']}"
+        if i["hidden"]:
+            how += f"; {i['hidden']} names, emails or numbers were hidden from it and put back"
+        lines.append(how + ".")
+        if i["fixes"]:
+            lines.append("Fixed in its answer: " + "; ".join(i["fixes"]))
+    lines += ["", "/hr reply yes · again <change> · edit <your text> · no"]
+    return "\n".join(lines)
+
+
+def _save_reply(ctx: Context, items: list[dict]) -> str:
+    saved = {"created": ctx.now, "items": items}
+    payslips.save_private(_reply_path(ctx), saved)
+    expiry.clear(_reply_path(ctx))
+    return _reply_preview(saved, ctx.settings.preview_minutes)
+
+
+def _draft_for(ctx: Context, key: str, it: dict, words: str) -> dict:
+    """``words``: a template name and its words, or an instruction for Gemini."""
+    name, _, rest = words.strip().partition(" ")
+    if ctx.settings.template(name.lower()) is not None:
+        return _item(key, it, None, reply.from_template(ctx.settings, name.lower(), rest), "", ctx)
+    token = graph.access(ctx.http, ctx.secrets, outlook.SCOPES)
+    mail = reply.fetch(ctx.http, token, key)
+    return _item(key, it, mail, reply.write(ctx.http, _gemini_key(ctx), ctx.settings, mail, words.strip()),
+                 words.strip(), ctx)
+
+
+def _reply_make(ctx: Context, rest: str) -> str:
+    number, _, words = rest.strip().partition(" ")
+    store = _inbox_store(ctx)
+    keys = _waiting_keys(store)
+    if not number.isdigit() or not 1 <= int(number) <= len(keys) or keys[int(number) - 1] not in store.items:
+        return (f"Pick a mail 1 to {len(keys)} from /hr list, e.g. /hr reply 2" if keys
+                else "No HR mail is waiting for a reply. /hr inbox show sweeps for new mail.")
+    key = keys[int(number) - 1]
+    try:
+        return _save_reply(ctx, [_draft_for(ctx, key, store.items[key], words)])
+    except reply.ReplyError as exc:
+        return f"{exc}\n\nTry a template instead: /hr reply {number} ack (or reject, docs, letter, leave, salary)."
+
+
+def _reply_applications(ctx: Context, arg: str) -> str:
+    name, _, words = arg.strip().partition(" ")
+    if ctx.settings.template(name.lower()) is None:
+        return "Which template? e.g. /hr reply applications ack (no model is used for a batch)"
+    store, now = _inbox_store(ctx), datetime.fromtimestamp(ctx.now, TZ)
+    rows = _unanswered_applications(store, now)[: ctx.settings.reply_bulk_max]
+    if not rows:
+        return "Every application of the last 14 days has an answer."
+    draft = reply.from_template(ctx.settings, name.lower(), words)
+    return _save_reply(ctx, [_item(k, it, None, draft, "", ctx) for k, it in rows])
+
+
+def _unanswered_applications(store: inbox.Store, now: datetime) -> list[tuple[str, dict]]:
+    oldest = (now.astimezone(UTC).replace(tzinfo=None) - timedelta(days=inbox.LIST_DAYS)).isoformat()
+    return sorted(((k, it) for k, it in store.items.items()
+                   if it["cat"] == "applications" and not it.get("done") and it["received"] >= oldest),
+                  key=lambda kv: kv[1]["received"])
+
+
+def _reply_show(ctx: Context, _arg: str) -> str:
+    saved = _reply_saved(ctx)
+    return _reply_preview(saved, ctx.settings.preview_minutes) if saved else "No reply is waiting."
+
+
+def _reply_again(ctx: Context, arg: str) -> str:
+    saved = _reply_saved(ctx)
+    if saved is None or len(saved["items"]) != 1:
+        return "No single reply is waiting to redraft. Start with /hr reply <number>."
+    old = saved["items"][0]
+    store = _inbox_store(ctx)
+    if old["key"] not in store.items:
+        return "That mail is no longer in the HR inbox list. Start again with /hr list."
+    try:
+        return _save_reply(ctx, [_draft_for(ctx, old["key"], store.items[old["key"]],
+                                            f"{old['instruction']} {arg}".strip())])
+    except reply.ReplyError as exc:
+        return f"{exc}\n\nThe earlier draft is gone; /hr reply edit <your text> to write it yourself."
+
+
+def _reply_edit(ctx: Context, arg: str) -> str:
+    saved = _reply_saved(ctx)
+    if saved is None or len(saved["items"]) != 1:
+        return "No single reply is waiting. Start with /hr reply <number>, then edit it."
+    if not arg.strip():
+        return "Write the reply after /hr reply edit (the greeting and sign-off are added)."
+    item = saved["items"][0]
+    item.update(how="your words", hidden=0, fixes=[],
+                text=reply.as_text(reply.own_words(arg), item["name"], ctx.settings))
+    return _save_reply(ctx, saved["items"])
+
+
+def _reply_yes(ctx: Context, _arg: str) -> str:
+    saved = _reply_saved(ctx)
+    if saved is None:
+        return f"No reply is waiting (a draft expires after {ctx.settings.preview_minutes} min)."
+    _reply_path(ctx).unlink()  # before sending: a second yes can never send twice
+    token = graph.access(ctx.http, ctx.secrets, outlook.SEND_SCOPES)
+    store, failed = _inbox_store(ctx), []
+    for item in saved["items"]:
+        try:
+            reply.send(ctx.http, token, item["key"], item["text"], ctx.settings.mailbox)
+        except OutreachError as exc:
+            ctx.log(item["to"], "reply", False, str(exc))
+            failed.append(f"{item['name']}: {exc}")
+            continue
+        ctx.log(item["to"], "reply", True, item["how"])
+        if item["key"] in store.items:
+            store.items[item["key"]]["done"] = "replied"
+    store.save()
+    sent = len(saved["items"]) - len(failed)
+    sender = f" from {ctx.settings.mailbox}" if ctx.settings.mailbox else ""
+    return "\n".join([f"✅ Sent {sent} of {len(saved['items'])} replies{sender}, each in its own thread.",
+                      *(["❌ Not sent:"] + failed if failed else [])])
+
+
+def _reply_no(ctx: Context, _arg: str) -> str:
+    path = _reply_path(ctx)
+    if path.is_file():
+        path.unlink()
+        return "Dropped. Nothing was sent."
+    return "Dropped the expired reply from the recap." if expiry.clear(path) else "Nothing was waiting."
+
+
+# ---- /hr list -----------------------------------------------------------------------------------
+
+
+def _approvals(ctx: Context) -> list[str]:
+    lines = []
+    for item in pending_files(ctx.paths.home.parent):
+        if item.path.parent != ctx.paths.home:
+            continue
+        if item.path.is_file():
+            created = json.loads(item.path.read_text(encoding="utf-8"))["created"]
+            ends = datetime.fromtimestamp(created + item.minutes * 60, TZ)
+            if ends > datetime.fromtimestamp(ctx.now, TZ):
+                lines.append(f"✍️ {item.name}: waiting for your yes until {ends:%H:%M} · {item.command}")
+                continue
+        if item.path.is_file() or expiry.marker(item.path).is_file():
+            lines.append(f"⌛ {item.name}: expired without your yes · /recap now to bring it back, "
+                         f"or {item.cancel} to drop it")
+    return lines
+
+
+def _list(ctx: Context, _arg: str) -> str:
+    store, now = _inbox_store(ctx), datetime.fromtimestamp(ctx.now, TZ)
+    waiting = inbox.open_lines(store, now)
+    store.save()  # keeps the numbers you see for /hr reply <n> and /hr inbox done <n>
+    apps = _unanswered_applications(store, now)
+    approvals = _approvals(ctx)
+    swept = store.data.get("last_sweep")
+    lines = ["**HR — everything pending**" + (f" (mail as of the {swept[11:16]} UTC sweep)" if swept else "")]
+    if waiting:
+        lines += ["", f"**Mail waiting for a reply ({len(waiting)})**", *waiting,
+                  "/hr reply 1 — draft an answer · /hr inbox done 1 — handled elsewhere"]
+    if apps:
+        lines += ["", f"📄 {len(apps)} applications of the last {inbox.LIST_DAYS} days have no answer · "
+                      "/hr reply applications ack"]
+    if approvals:
+        lines += ["", "**Approvals**", *approvals]
+    if len(lines) == 1:
+        lines.append("Nothing is pending." if swept else "Nothing is pending. /hr inbox show sweeps the HR mailbox first.")
+    return "\n".join(lines)
+
+
+REPLY = {"show": _reply_show, "yes": _reply_yes, "no": _reply_no, "cancel": _reply_no, "again": _reply_again,
+         "edit": _reply_edit, "applications": _reply_applications}
 TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
           "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP),
-          "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP)}  # next: "letter" (offer, termination)
+          "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP),
+          "reply": (REPLY, _reply_make, REPLY_HELP)}  # next: "letter" (offer, termination)
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 
@@ -341,6 +570,8 @@ def _split(text: str) -> tuple[str, str]:
 def handle(raw: str, state_dir: Path | None = None, http: Http | None = None, now: float | None = None) -> str:
     """``payslip show`` → that step; ``payslip <sheet> <dates>`` → make; anything else → help."""
     topic, rest = _split(raw)
+    if topic.lower() == "list" and not rest.strip():
+        return _list(Context(state_dir or default_state_dir(), http, now), "")
     if topic.lower() not in TOPICS:
         return HR_HELP
     steps, make, help_text = TOPICS[topic.lower()]

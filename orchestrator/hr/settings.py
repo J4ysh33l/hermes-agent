@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from orchestrator.brief.settings import EXAMPLE
+from orchestrator.brief.settings import EXAMPLE, ModelChoice
 
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
@@ -36,6 +36,25 @@ class InterviewTexts:
                        "the lobby until you admit them.<br><br>{schedule}<br><br>{sender}")
 
 
+# /hr reply templates: the middle of the reply (the script adds "Hi {first}," and the sign-off).
+# {company}; and from the words after the template name: {for_role} (" for the X role"),
+# {by_when} (" by X", else " shortly"), {for_when} (" for X"), {arg} (the words as written).
+REPLY_TEMPLATES = {
+    "ack": "Thank you for applying{for_role} at {company}. We have received your application and our team is "
+           "reviewing it. If your profile is a fit, we'll write to you with the next steps.",
+    "reject": "Thank you for your interest{for_role} at {company} and for the time you took to apply. After "
+              "reviewing your profile, we won't be moving forward at this time. We'll keep your details on file "
+              "and reach out if a suitable role opens up. We wish you the very best.",
+    "docs": "Thank you, we have received your documents. We'll let you know if anything else is needed.",
+    "letter": "Thank you for writing. Your letter is being prepared and we'll send it to you{by_when}.",
+    "leave": "Thank you for letting us know. Your leave{for_when} has been noted.",
+    "salary": "Thank you for writing to us. We have received your query and are looking into it. "
+              "We'll get back to you{by_when}.",
+}
+REPLY_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"),
+                ModelChoice("gemma-4-31b-it", False))
+
+
 @dataclass(frozen=True)
 class Settings:
     weekly_off: frozenset[int] = frozenset({6})  # 0 = Monday … 6 = Sunday; LOP divides by the other days
@@ -51,6 +70,13 @@ class Settings:
     interview: InterviewTexts = InterviewTexts()
     max_interviews: int = 30  # candidates in one /hr interview batch
     interview_minutes: int = 30  # a candidate's slot when the End is left out
+    reply_templates: tuple[tuple[str, str], ...] = tuple(REPLY_TEMPLATES.items())
+    reply_models: tuple[ModelChoice, ...] = REPLY_MODELS  # Gemini drafts; tried in order
+    redact_names: tuple[str, ...] = ()  # more names to hide from the model (your team, frequent senders)
+    reply_bulk_max: int = 30  # applications acknowledged in one /hr reply applications ack
+
+    def template(self, name: str) -> str | None:
+        return dict(self.reply_templates).get(name)
 
 
 def parse(raw: dict[str, Any]) -> Settings:
@@ -71,6 +97,11 @@ def parse(raw: dict[str, Any]) -> Settings:
                                     if k in InterviewTexts.__dataclass_fields__}),
         max_interviews=int(hr.get("max_interviews", base.max_interviews)),
         interview_minutes=int(hr.get("interview_minutes", base.interview_minutes)),
+        reply_templates=tuple({**REPLY_TEMPLATES, **{str(k): str(v) for k, v in (hr.get("replies") or {}).items()}}.items()),
+        reply_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True)))
+                           for m in hr["reply_models"]) if hr.get("reply_models") else base.reply_models,
+        redact_names=tuple(str(n) for n in hr.get("redact_names") or ()),
+        reply_bulk_max=int(hr.get("reply_bulk_max", base.reply_bulk_max)),
     )
 
 

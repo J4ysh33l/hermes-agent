@@ -1,5 +1,5 @@
 """The HR inbox sweep: mail sent to the HR mailbox (``hr.mailbox``, e.g. hr@medochealth.in), sorted
-by script into urgent, people, campus, applications and other. No model reads HR mail.
+by script into urgent, people, campus, applications and other. The sort reads no body and uses no model.
 
 The HR mailbox is a Microsoft 365 group, so its mail lands in your own Outlook; your Outlook
 login (Mail.Read) finds it with one search per sweep (``recipients:<mailbox>``, To or Cc).

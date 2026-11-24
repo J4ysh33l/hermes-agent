@@ -181,6 +181,12 @@ hr:
     candidate_subject: "Interview for {position} at {company} | {day}, {start} IST"
     # candidate_body: HTML; must contain {join}. The panel's also take {positions} {schedule}.
     panel_subject: "Interviews: {positions} | {day}"
+  # /hr reply: Gemini drafts with names, emails and numbers hidden; templates use no model.
+  redact_names: []            # more names to hide from Gemini, e.g. [Rishabh Jain, Nidhi Rao]
+  reply_bulk_max: 30          # applications answered by one /hr reply applications ack
+  # replies:                  # change or add a template (the middle of the mail; greeting and sign-off are added)
+  #   ack: "Thank you for applying{for_role} at {company}. ..."
+  # reply_models:             # default: gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemma-4-31b-it (json_mode: false)
 
 # ---------------------------------------------------------------- Smriti (/notes): meeting notes
 # Teams meetings you organise (recorded + transcribed). See orchestrator/notes/README.md.

@@ -1,8 +1,14 @@
-# HR: payslips, interviews, the HR inbox
+# HR: payslips, interviews, the HR inbox, replies
 
 Payslips from your monthly salary sheet, emailed from your Outlook after you approve; interviews on
-one Teams link; mail to the HR mailbox sorted. Scripts do everything. **No AI model sees pay, bank
-details or HR mail.**
+one Teams link; mail to the HR mailbox sorted; replies in the mail's own thread. Scripts do
+everything except a `/hr reply` draft you ask Gemini for. **No AI model sees pay or bank details.**
+Gemini sees an HR mail only when you ask it to draft a reply, and then only with names, emails,
+phone numbers, links, amounts and ID numbers replaced by placeholders (see below).
+
+`/hr list` shows everything pending in HR in one reply: mail waiting for a reply (numbered for
+`/hr reply` and `/hr inbox done`), applications of the last 14 days with no answer, and every HR
+approval waiting for your yes or expired without it (payslips, interviews, a reply draft).
 
 ## Each month
 
@@ -129,6 +135,40 @@ day's first sweep also reminds you of urgent mail still unanswered. One Outlook 
 plus one lookup per mail waiting for a reply. State: `$HERMES_HOME/hr/inbox.json` (subject, sender,
 kind; no bodies; forgotten after 30 days unless still waiting).
 
+## Replies
+
+`/hr reply <n>` answers mail `n` of the waiting list (`/hr list` or `/hr inbox show`) in its own
+thread, From `hr.mailbox`, only after `/hr reply yes`.
+
+```
+/hr reply 2                          Gemini drafts a reply
+/hr reply 2 say the letter goes out Friday     …following your instruction
+/hr reply 2 ack Backend Engineer     a template, no model (ack · reject · docs · letter · leave · salary)
+/hr reply applications ack           every unanswered application of 14 days, one preview, one yes
+/hr reply show · yes · no · again <change> · edit <your text>
+```
+
+- **The shape is the script's:** "Hi <first name>," and "Regards, <hr.sender_name>" are added by the
+  script; Gemini writes only the paragraphs in between, as JSON (`{"paragraphs": [...]}`), so it
+  can't change the layout. A greeting or sign-off it writes anyway is dropped and shown as a fix.
+- **What Gemini sees:** only the mail's new text (not the quoted thread) and your instruction, with
+  every name in the headers (sender, To, Cc), the signed name, `hr.redact_names`, emails, phone
+  numbers, links, amounts (₹, Rs, INR, lakh, LPA, k, /-), PAN, IFSC, Aadhaar and long ID or account
+  numbers replaced by `[NAME_1]`, `[EMAIL_1]`, `[AMOUNT_1]`… The table to put them back stays on
+  the host. A name written in the body that is none of those can still reach it.
+- **The check before anything is put back** (`redact.restore`):
+  - a placeholder written slightly wrong (`[name_1]`, `{NAME_1}`, `NAME_1`) is rewritten to its
+    exact form and listed under "Fixed in its answer";
+  - a placeholder the mail never had (`[NAME_7]`), or an email, phone, link, amount or ID number
+    written out, means the model made it up: the draft is refused and asked for once more with the
+    problem named, then the next model is tried (3.1 Flash-Lite, 3.5 Flash-Lite, Gemma 4);
+  - if none passes, nothing is drafted and you see every reason, with the template as a way out.
+- **Templates:** `hr.replies` in `brief.yaml` changes or adds them; the words after the name fill
+  `{for_role}` (" for the X role"), `{by_when}` (" by X", else " shortly"), `{for_when}`, `{arg}`.
+- **Sending:** Graph's reply action (Mail.Send, already granted), so the answer joins the thread.
+  A sent reply clears the mail from the waiting list. A draft expires after `hr.preview_minutes`;
+  an expired one stays in the 20:00 recap until `/resume` or `/hr reply no`.
+
 ## Setup
 
 - **Outlook:** the Entra app needs delegated **Mail.Send** with admin consent. Then sign in once
@@ -159,6 +199,11 @@ kind; no bodies; forgotten after 30 days unless still waiting).
 - **HR inbox** (fakes): sorting rules, a colleague's reply clears a waiting mail but the sender's
   follow-up does not, your own sent mail left out, a quiet sweep says nothing, the morning reminder
   once a day, `done` and `list`.
+- **Replies** (fakes, `tests/test_reply.py`): Gemini's request carries no name, email, phone, amount
+  or ID from the mail; 19 Indian formats hidden while dates and times stay; near-miss placeholders
+  fixed; an invented placeholder is asked again, an invented amount on every model refuses the draft;
+  templates and the applications batch make no model call; one yes sends once, in the thread, From
+  the HR mailbox; `/hr list` with waiting, expired and answered items. **Not run live yet.**
 - **Live, 2026-11-23:** `/hr inbox show` on your mailbox: 21 HR mails of the last 14 days sorted
   (1 urgent, 4 people, 3 campus, 10 applications, 3 other); 2 waiting for a reply; a second sweep
   printed nothing.

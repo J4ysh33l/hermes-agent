@@ -56,6 +56,14 @@ def _sheet_exists(data: dict, _now: float) -> list[str]:
     return [] if Path(data.get("sheet", "")).is_file() else ["the sheet file is gone"]
 
 
+def _still_unanswered(home: Path) -> Check:
+    def check(data: dict, _now: float) -> list[str]:
+        items = inbox.Store(home / "hr" / "inbox.json").items
+        return [f"{i['name']}'s mail was answered meanwhile" for i in data.get("items", [])
+                if items.get(i["key"], {}).get("done") == "replied"]
+    return check
+
+
 def _ist(stamp: str) -> datetime:
     when = datetime.fromisoformat(stamp)
     return when if when.tzinfo else when.replace(tzinfo=IST)
@@ -101,6 +109,8 @@ def pending_files(home: Path) -> list[Pending]:
                 hr_minutes, _sheet_exists, None),
         Pending(home / "hr" / "interview.json", "Interview batch", "/hr interview show", "/hr interview no",
                 hr_minutes, _slots_ahead, ("hr", "interview show")),
+        Pending(home / "hr" / "reply.json", "HR reply", "/hr reply show", "/hr reply no", hr_minutes,
+                _still_unanswered(home), ("hr", "reply show")),
         Pending(brief / "outreach" / "pending-slack.json", "Slack messages", "/slack show", "/slack no", out_minutes,
                 _times_ahead, ("slack", "show")),
         Pending(brief / "outreach" / "pending-meet.json", "Meetings", "/meet show", "/meet no", out_minutes,

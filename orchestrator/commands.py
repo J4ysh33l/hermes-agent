@@ -138,7 +138,7 @@ def table() -> tuple[ChatCommand, ...]:
                     _slack),
         ChatCommand("meet", "Book Outlook meetings + Slack notes: 1:1s, all-hands, approve", _outreach_help("meet"),
                     _meet),
-        ChatCommand("hr", "Payslips, interviews on one Teams link, the HR inbox sorted", _hr_help(), _hr),
+        ChatCommand("hr", "Payslips, interviews on one Teams link, the HR inbox sorted, replies, /hr list", _hr_help(), _hr),
         ChatCommand("day", "Today's tasks from To Do: done, top 3, snooze, points, streak", _myday_help("day"),
                     _myday("day")),
         ChatCommand("bills", "Bills (incl. found in Gmail): due timeline, reminders, mark paid", _myday_help("bills"),

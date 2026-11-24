@@ -19,7 +19,7 @@ from .parts import listing_path, pending_files
 HELP = """**/resume** — bring back an approval that expired without your yes
 /resume 2 — number from the ⌛ lines of the last recap (/recap now). It waits for your yes again,
 unless its time has passed (an interview slot, a scheduled message) or its files are gone; then make
-it again. /slack no, /meet no, /hr payslip no, /hr interview no drop one instead. /menu — all your commands"""
+it again. /slack no, /meet no, /hr payslip no, /hr interview no, /hr reply no drop one instead. /menu — all your commands"""
 
 
 def handle(raw: str, home: Path | None = None, now: float | None = None) -> str:

@@ -37,7 +37,7 @@ not upstream Hermes code and never touches Hermes' core.
 | `llm.py`, `usage.py`, `prices.yaml` | The one logged model client; the usage log and `/usage` report; prices and free limits. |
 | `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
-| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes`; no model sees pay. `hr/README.md`. |
+| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes` (no model sees pay); interviews; the HR inbox; `/hr reply` (Gemini drafts with names and numbers hidden, or templates) and `/hr list`. `hr/README.md`. |
 | `notes/` | Smriti (`/notes`): asks after each Teams meeting you organised what to make; transcribes the recording with Gemini (Hindi in Latin script, paced, audio only), then summaries, task lists, PRDs or any document, by Gemini or by Claude through the handoff repo. |
 | `recap/` | The 20:00 deadline recap (`/recap now`): approvals waiting or expired unapproved (until redone or dropped; `/resume 2` brings one back after a safety check), HR mail with no reply, To Do tasks and bills due, calendar deadlines. No model. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
