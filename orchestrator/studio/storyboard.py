@@ -44,7 +44,7 @@ asterisks). Voice directions go in ``say`` too: ``[beat]`` (a 0.4 s pause), ``[p
 fade), ``exit`` (lift, fade, whip, zoom, cut) and ``transition`` into the next scene (none, cut, fade, push,
 whip, zoom, flash, burn) to override the profile's motion for that scene.
 ``profile`` names the page profile (default: studio.profile). ``src`` is a file next to the storyboard,
-an https URL, or for an image scene ``stock:<what the footage shows>`` (searched on Pexels/Pixabay). Unknown types or keys are refused, so a typo fails here and not halfway through a render.
+an https URL, or for an image scene ``stock:<what to show>`` (a public-domain photo found at render time, broll.py). Unknown types or keys are refused, so a typo fails here and not halfway through a render.
 """
 
 from __future__ import annotations
@@ -211,7 +211,7 @@ def _fallback(where: str, value: Any) -> Mapping[str, Any]:
 
 SCHEMA["custom"] = {"brief": _text(True), "props": _json_object, "full_bleed": _flag(False), "component": _text(False),
                     "fallback": _fallback}
-STOCK = "stock:"  # an image scene's src searched on Pexels/Pixabay at render time (broll.py)
+STOCK = "stock:"  # an image scene's src searched at render time (broll.py: public-domain photos, or Pexels/Pixabay with a key)
 COMMON = {"type", "say", "enter", "exit", "transition", "emoji"}  # keys every scene may have
 
 
