@@ -49,7 +49,8 @@ class Redaction(unittest.TestCase):
         hidden = ("Rs 45000/-", "₹45,000", "INR 1,20,000.50", "12 LPA", "45k", "3.5 lakhs", "98765-43210",
                   "+91-9876543210", "09876543210", "022 2345 6789", "+44 20 7946 0958", "1234 5678 9012",
                   "ABCDE1234F", "SBIN0012345", "UAN 100123456789.", "emp id 4567890,", "x.y+z@mail.co.in",
-                  "www.linkedin.com/in/asha", "https://a.b/c?d=1")
+                  "www.linkedin.com/in/asha", "https://a.b/c?d=1", "asha.v [at] gmail [dot] com",
+                  "asha(at)gmail.com")
         for text in hidden:
             (seen,), table = redact.hide([text], [])
             self.assertEqual(len(table), 1, text)
@@ -188,6 +189,18 @@ class Reply(unittest.TestCase):
         self.assertIn("No reply is waiting", self.hr("reply show", later))
         self.assertIn("⌛ HR reply: expired without your yes", self.hr("list", later))
         self.assertIn("Dropped the expired reply", self.hr("reply no", later))
+
+    def test_a_greeting_or_sign_off_inside_a_paragraph_is_cut_and_the_subject_is_the_threads(self):
+        self.answers = [{"paragraphs": ["Hi [NAME_3], thank you for writing about your [AMOUNT_1].",
+                                        "We wish you the very best. We will reply by Friday.\nWarm regards,\nHR Team\nMedoc"]}]
+        shown = self.hr("reply 1")
+        self.assertIn("Hi Asha,\n\nThank you for writing about your Rs. 45,000.\n\n"
+                      "We wish you the very best. We will reply by Friday.\n\nRegards,\nMedoc HR", shown)
+        self.assertEqual(shown.count("Hi Asha"), 1)
+        self.assertIn("dropped its greeting 'Hi [NAME_3],'", shown)
+        self.assertIn("— Re: Pending salary for October", shown)  # the subject is the thread's, never the model's
+        self.hr("reply yes")
+        self.assertNotIn("subject", self.replies()[0].json_body["message"])
 
     def test_edit_replaces_the_words_and_keeps_the_greeting_and_sign_off(self):
         self.hr("reply 1 ack")

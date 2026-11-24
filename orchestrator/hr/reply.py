@@ -33,9 +33,15 @@ from .settings import Settings
 GRAPH = "https://graph.microsoft.com/v1.0"
 MAX_CHARS = 6000  # of the mail's new text sent to the model
 TRIES_PER_MODEL = 2
-GREETING = re.compile(r"^\s*(hi|hello|hey|dear|greetings)\b[^\n]{0,60}$", re.IGNORECASE)
-CLOSING = re.compile(r"^\s*(regards|best regards|warm regards|kind regards|thanks(?: and regards)?|thank you|"
-                     r"sincerely|best|cheers)\b[\s\S]{0,80}$", re.IGNORECASE)
+SIGN_WORDS = (r"(?:regards|best regards|warm regards|kind regards|thanks(?: and regards| & regards)?|thank you|"
+              r"sincerely|yours sincerely|yours truly|best|cheers)")
+GREETING = re.compile(r"^\s*(hi|hello|hey|dear|greetings)\b[^,.!?\n]{0,40}[,!.]?\s*$", re.IGNORECASE)  # alone
+GREETING_LEAD = re.compile(r"^\s*(?:hi|hello|hey|dear|greetings)\b[^,.!?\n]{0,40}[,!.]\s*", re.IGNORECASE)
+CLOSING = re.compile(r"^\s*" + SIGN_WORDS + r"\b[\s\S]{0,80}$", re.IGNORECASE)
+# A sign-off at the end of the last paragraph: on its own line or after a sentence ends (so "the very
+# best." stays), then up to three short lines (a name, a team, a company).
+CLOSING_TAIL = re.compile(r"(?:\n|(?<=[.!?])\s+)\s*" + SIGN_WORDS + r"[,!.]?[ \t]*(?:\n[^\n]{0,60}){0,3}\s*$",
+                          re.IGNORECASE)
 
 PROMPT = """You draft the body of an HR team's reply to the email below.
 Rules:
@@ -99,14 +105,22 @@ def first_name(name: str) -> str:
 
 
 def _trim(paragraphs: list[str]) -> tuple[list[str], list[str]]:
-    """Drop a greeting or sign-off the model wrote anyway (the script writes both)."""
+    """Drop a greeting or sign-off the model wrote anyway (the script writes both): a paragraph of its
+    own, or the start of the first paragraph ("Hi [NAME_1], thank you…") and the end of the last."""
     fixes = []
     paras = [p.strip() for p in paragraphs if p and p.strip()]
     if paras and GREETING.match(paras[0]):
         fixes.append(f"dropped its greeting {paras.pop(0)!r}")
+    elif paras and (lead := GREETING_LEAD.match(paras[0])):
+        rest = paras[0][lead.end():]
+        paras[0] = rest[:1].upper() + rest[1:]
+        fixes.append(f"dropped its greeting {lead.group(0).strip()!r}")
     if paras and CLOSING.match(paras[-1]):
         fixes.append(f"dropped its sign-off {paras.pop()!r}")
-    return paras, fixes
+    elif paras and (tail := CLOSING_TAIL.search(paras[-1])):
+        paras[-1] = paras[-1][:tail.start()].rstrip()
+        fixes.append(f"dropped its sign-off {' '.join(tail.group(0).split())!r}")
+    return [p for p in paras if p], fixes
 
 
 def _answer(text: str) -> list[str]:

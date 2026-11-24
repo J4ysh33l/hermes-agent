@@ -25,6 +25,9 @@ from dataclasses import dataclass
 KINDS = ("NAME", "EMAIL", "PHONE", "LINK", "AMOUNT", "ID")
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+# Written out to dodge spam filters: "asha.v [at] gmail [dot] com", "asha(at)gmail.com"
+EMAIL_SPELT = re.compile(r"[\w.+-]+\s?(?:\[at\]|\(at\)|\{at\}|\s@\s)\s?[\w-]+(?:\s?(?:\.|\[dot\]|\(dot\)|\{dot\})\s?[\w-]+)+",
+                         re.IGNORECASE)
 LINK = re.compile(r"\b(?:https?://|www\.)[^\s<>\"')\]]+", re.IGNORECASE)
 PHONE = re.compile(r"(?<![\w+])(?:\+?91[\s-]?|0)?[6-9]\d{4}[\s-]?\d{5}(?!\d)|(?<![\w+])\+\d[\d\s-]{8,14}\d(?!\d)"
                    r"|(?<![\w+-])\d{3,5}[\s-]\d{3,4}[\s-]\d{4}(?![\w-])")  # landlines: 022 2345 6789
@@ -43,8 +46,8 @@ EXACT = re.compile(r"\[(" + "|".join(KINDS) + r")_(\d+)\]")
 LOOSE = re.compile(r"[\[{(<]{1,2}\s*(" + "|".join(KINDS) + r")[\s_-]*(\d+)\s*[\]})>]{1,2}"  # wrong brackets/case/space
                    r"|(?<![\w\[])(" + "|".join(KINDS) + r")_(\d+)(?![\w\]])", re.IGNORECASE)  # brackets dropped
 # Order matters: a link holds an email-like part, and an amount or ID must not be split by the phone rule.
-FINDERS = (("LINK", LINK), ("EMAIL", EMAIL), ("AMOUNT", AMOUNT), ("PHONE", PHONE), ("ID", ID))
-LEAKS = {"EMAIL": EMAIL, "LINK": LINK, "PHONE": PHONE, "AMOUNT": AMOUNT, "ID": ID}
+FINDERS = (("LINK", LINK), ("EMAIL", EMAIL_SPELT), ("EMAIL", EMAIL), ("AMOUNT", AMOUNT), ("PHONE", PHONE), ("ID", ID))
+LEAKS = (("EMAIL", EMAIL), ("EMAIL", EMAIL_SPELT), ("LINK", LINK), ("PHONE", PHONE), ("AMOUNT", AMOUNT), ("ID", ID))
 
 
 @dataclass(frozen=True)
@@ -121,7 +124,7 @@ def restore(draft: str, table: dict[str, str]) -> Restored:
     used = dict.fromkeys(m.group(0) for m in EXACT.finditer(text))
     problems = [f"{p} is not in the mail (the model made it up)" for p in used if p not in table]
     bare = EXACT.sub(" ", text)
-    for kind, finder in LEAKS.items():
+    for kind, finder in LEAKS:
         problems += [f"{kind.lower()} {m.group(0).strip()!r} is not in the mail" for m in finder.finditer(bare)]
     if problems:
         return Restored("", tuple(fixes), tuple(problems))

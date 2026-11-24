@@ -150,9 +150,13 @@ thread, From `hr.mailbox`, only after `/hr reply yes`.
 
 - **The shape is the script's:** "Hi <first name>," and "Regards, <hr.sender_name>" are added by the
   script; Gemini writes only the paragraphs in between, as JSON (`{"paragraphs": [...]}`), so it
-  can't change the layout. A greeting or sign-off it writes anyway is dropped and shown as a fix.
+  can't change the layout. A greeting or sign-off it writes anyway, as its own paragraph or inside
+  one ("Hi [NAME_1], thank you…", "…by Friday. Warm regards, HR Team"), is cut and shown as a fix.
+- **The subject is the thread's:** Graph's reply action keeps the original subject as "Re: …";
+  the model never writes one.
 - **What Gemini sees:** only the mail's new text (not the quoted thread) and your instruction, with
-  every name in the headers (sender, To, Cc), the signed name, `hr.redact_names`, emails, phone
+  every name in the headers (sender, To, Cc), the signed name, `hr.redact_names`, emails (also
+  spelt out: `asha [at] gmail [dot] com`), phone
   numbers, links, amounts (₹, Rs, INR, lakh, LPA, k, /-), PAN, IFSC, Aadhaar and long ID or account
   numbers replaced by `[NAME_1]`, `[EMAIL_1]`, `[AMOUNT_1]`… The table to put them back stays on
   the host. A name written in the body that is none of those can still reach it.
