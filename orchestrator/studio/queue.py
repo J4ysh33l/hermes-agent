@@ -190,7 +190,7 @@ def _board(job: Job, hook: int) -> storyboard.Storyboard:
 
 
 def _pace(board: storyboard.Storyboard, made: video.Video) -> str:
-    words = sum(len(writer.spoken(scene.say).split()) for scene in board.scenes)
+    words = sum(writer.said_words(scene.say) for scene in board.scenes)  # as spoken (numbers read out)
     return (f"{made.seconds:.1f} s, {words} words = {words / max(made.seconds, 1) * 60:.0f} wpm · voice "
             f"{made.voice_took:.0f} s · render {made.render_took:.0f} s · {made.job.name}")
 

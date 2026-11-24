@@ -13,6 +13,7 @@ numbers.
 | Default voice | Kokoro `speed 1.15`, `pause 0.10` s between sentences | `profiles/default.yaml` → `voice:` |
 | Why 1.15 | Plain sentences at 1.0 measured 196, but a real 55 s short with voice directions came out at 167. Directions and pauses cost about 15% | measured 2026-11-24 |
 | Word budget | `writer.WPM = 170` at speed 1.0, scaled by the page's speed: about 196 at 1.15, so a 45 s video gets ~147 words | `writer.py` |
+| Numbers | counted as the voice reads them: 1887 is three words ("eighteen eighty-seven"), 2.5 million is four. A script full of years ran 53 s instead of 45 before this | `writer.said_words` |
 | Silence | each line's own leading and trailing silence is trimmed, so only `pause` sets the gap; dead air over max(1.2 s, the longest scripted pause + 0.5 s) is flagged by QC | `voice.py`, `qc.py` |
 | Loudness | the mix is brought to **-14 LUFS**, true peak under -1.5 dBTP; music sits ~15 dB under the voice and ducks while words are spoken | `audio.py`, `sound.py` |
 

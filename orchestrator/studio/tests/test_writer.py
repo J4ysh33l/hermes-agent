@@ -215,5 +215,14 @@ class HookTest(unittest.TestCase):
         self.assertEqual(writer._hook("Japan's trains apologise for being early. Here's why."), [])
         self.assertIn("no pause", writer._hook("Japan's trains [beat] apologise.")[0])
 
+
+class SpokenLengthTest(unittest.TestCase):
+    """A number is budgeted as the words the voice reads: a real script full of years ran 53 s, not 45."""
+
+    def test_numbers_count_as_they_are_read(self):
+        self.assertEqual(writer.said_words("Work began in 1887. [beat] It was built for the 1889 World's Fair."), 16)
+        self.assertEqual(writer.said_words("It's about 18,000 iron parts, held by 2.5 million *rivets*."), 13)
+        self.assertEqual(writer.said_words("Blue whales: the *biggest* animals ever."), 6)
+
 if __name__ == "__main__":
     unittest.main()

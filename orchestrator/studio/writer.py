@@ -93,7 +93,38 @@ class Draft:
         return "\n".join(s["say"] for s in (self.hooks[hook].scene, *self.scenes))
 
     def words(self, hook: int = 0) -> int:
-        return len(spoken(self.script(hook)).split())
+        return said_words(self.script(hook))
+
+
+NUMERAL = re.compile(r"^\d[\d,]*(?:\.\d+)?(?:st|nd|rd|th|s)?$")
+YEAR = re.compile(r"^1[1-9]\d\d$|^20\d\d$")
+
+
+def _under_thousand(n: int) -> int:
+    """Words in 1–999 read aloud: "three hundred thirty" = 3."""
+    hundreds, rest = divmod(n, 100)
+    return (2 if hundreds else 0) + (0 if not rest else 1 if rest < 20 or rest % 10 == 0 else 2)
+
+
+def _numeral_words(token: str) -> int:
+    """How many words a voice says for a written number: 1887 → "eighteen eighty-seven" (3)."""
+    bare = re.sub(r"(st|nd|rd|th|s)$", "", token).replace(",", "")
+    whole, _dot, decimals = bare.partition(".")
+    if YEAR.match(whole) and not decimals:
+        return 3
+    n = int(whole or 0)
+    words = 0
+    for scale in range(4):  # ones, thousand, million, billion
+        group = n // 1000 ** scale % 1000
+        words += _under_thousand(group) + (1 if group and scale else 0)
+    return max(1, words) + (1 + len(decimals) if decimals else 0)  # "point five"
+
+
+def said_words(say: str) -> int:
+    """Words as the voice says them: a number counts as the words it is read as, so a script full of
+    years and figures is budgeted for the time it really takes (1887 is three spoken words, not one)."""
+    tokens = (w.strip(".,") for w in re.sub(r"[^\w\s.,'’]", " ", spoken(say)).split())
+    return sum(_numeral_words(w) if NUMERAL.match(w) else 1 for w in tokens if re.search(r"\w", w))
 
 
 # ---------------------------------------------------------------- the prompt
@@ -384,7 +415,7 @@ def check(raw: Any, look: Profile, notes: str, target: int, folder: Path) -> lis
     problems += [f"hook {n}: {p}" for n, h in enumerate(raw["hooks"][1:], 2)
                  for p in _pacing(1, h["scene"]) + _evidence(1, h["scene"], notes)]
     problems += _avoided(first + [h["scene"] for h in raw["hooks"][1:]], look)
-    problems += _length(sum(len(spoken(s["say"]).split()) for s in first), target)
+    problems += _length(sum(said_words(s["say"]) for s in first), target)
     return list(dict.fromkeys(problems))
 
 
