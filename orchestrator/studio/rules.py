@@ -178,8 +178,10 @@ def check_script(raw: Any, p: Params) -> list[str]:
         problems += [f"{where}: unknown key {k!r}" for k in sorted(set(line) - {"say", "show"})]
     words = said_words(hooks[0]["say"]) + sum(said_words(ln["say"]) for ln in lines)
     if not p.low <= words <= p.high:
+        change = (f"add about {p.words - words} words (a line or two more)" if words < p.low
+                  else f"cut about {words - p.words} words")
         problems.append(f"the narration (hook 1 + lines) is {words} spoken words; it must be {p.low}–{p.high} "
-                        f"(about {p.words}) to fit the length. Numbers count as said: 1887 is 3 words")
+                        f"(about {p.words}) to fit the length: {change}. Numbers count as said: 1887 is 3 words")
     return list(dict.fromkeys(problems))
 
 

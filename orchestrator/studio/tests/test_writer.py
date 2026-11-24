@@ -27,6 +27,8 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp
 
+from orchestrator.brief.net import HttpError
+
 from orchestrator.studio import chat, profile, settings, storyboard, video, writer
 
 GEMINI = "https://generativelanguage.googleapis.com/"
@@ -201,6 +203,19 @@ class Writing(unittest.TestCase):
         self.assertEqual(draft.scenes[1]["say"], RACE["say"])  # the words stay
         self.assertNotIn("brief", draft.scenes[1])
         storyboard.load(writer.save(draft, self.job / "storyboard.json", "default")[0])
+
+    def test_a_busy_model_hands_the_call_to_the_next_one_and_the_work_so_far_is_kept(self):
+        answers = [SCRIPT, BOARD]
+
+        def reply(call):
+            if "gemini-3.5-flash-lite" in call.url and len(answers) == 1:  # busy once the script is written
+                raise HttpError(503, call.url, "This model is currently experiencing high demand.")
+            return answer(answers.pop(0))
+        self.http.on("POST", GEMINI, reply)
+        draft = self.write()
+        self.assertEqual(draft.model, "gemini-3.1-flash-lite")
+        self.assertEqual([c.url.split("models/")[1].split(":")[0] for c in self.http.calls],
+                         ["gemini-3.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"])
 
     def test_claude_on_request_gets_the_same_prompts_and_a_refusal_is_named(self):
         def reply(raw):

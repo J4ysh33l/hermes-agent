@@ -35,6 +35,7 @@ from .text import said_words
 
 SCRIPT_RETRIES = 1  # Claude checks its own script before handing it in; this is the safety net
 COMPONENT_FIXES = 1  # failing components go back once, then fall back to their library scene
+BUSY = (429, 503)  # rate-limited or overloaded: the next model takes the call
 CODE = re.compile(r"```(?:tsx|typescript|ts|jsx)?[^\n]*\n(.*?)```", re.DOTALL)
 FILE = re.compile(r"^\s*//\s*file:\s*([\w.-]+)\s*$", re.MULTILINE)
 
@@ -145,14 +146,29 @@ def _to_fallback(scene: dict[str, Any]) -> None:
 
 @dataclass
 class Model:
-    """One model answering the three calls (and their fixes)."""
+    """The model answering the three calls (and their fixes): ``choices[at]``. While it is busy (429/503)
+    the next one in ``choices`` takes over, keeping what was written so far."""
     http: Http
     keys: Keys
     settings: Settings
-    choice: ModelChoice
+    choices: tuple[ModelChoice, ...]
     calls: int = 0
+    at: int = 0
+
+    @property
+    def choice(self) -> ModelChoice:
+        return self.choices[self.at]
 
     def ask(self, prompt: str, step: str, code: bool = False) -> str:
+        while True:
+            try:
+                return self._ask(prompt, step, code)
+            except HttpError as exc:
+                if exc.status not in BUSY or self.at + 1 >= len(self.choices):
+                    raise
+                self.at += 1
+
+    def _ask(self, prompt: str, step: str, code: bool) -> str:
         self.calls += 1
         if self.choice.id.startswith("claude-"):
             return llm.claude(self.http, self.keys.claude, self.choice.id, prompt, workflow="studio", step=step,
@@ -217,9 +233,9 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
         raise WriterError("Writing a storyboard needs GEMINI_API_KEY")
     if len(notes.split()) < 3:
         raise WriterError("Give it something to work from: a topic with a few facts, or a draft script")
-    p, job, tried = brief.params(look, notes, seconds), folder.name, []
-    for choice in models(settings, use_claude):
-        model = Model(http, keys, settings, choice)
+    p, job, tried, chosen = brief.params(look, notes, seconds), folder.name, [], models(settings, use_claude)
+    for start, choice in enumerate(chosen):  # a model that cannot get it right: the next one starts over
+        model = Model(http, keys, settings, chosen[start:])
         try:
             script = stage(model, "script", job, brief.script(look, notes, seconds, job, False),
                            lambda raw: rules.check_script(raw, p), SCRIPT_RETRIES)
@@ -233,7 +249,7 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
         keep(folder, script, board)
         if rules.component_names(board):
             animate(model, look, board, script["title"], folder)
-        return finish(folder, choice.id, model.calls, wishes)
+        return finish(folder, model.choice.id, model.calls, wishes)
     raise WriterError("No usable storyboard: " + " | ".join(tried))
 
 

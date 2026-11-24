@@ -281,7 +281,7 @@ def _verify(w: Writing) -> None:
                 job.data["fixes"])
             job.log(f"animation: {len(failed)} component(s) failed, fix request #{job.data['issue']}")
             return
-        model = writer.Model(w.ctx.http, w.ctx.keys, w.ctx.settings, ModelChoice(job.data["writer"]))
+        model = writer.Model(w.ctx.http, w.ctx.keys, w.ctx.settings, (ModelChoice(job.data["writer"]),))
         writer.animate(model, w.look, board, title, job.folder, {n: p[:1500] for n, p in failed.items()})
         job.data["calls"] += model.calls
         job.log(f"animation: {len(failed)} component(s) failed, asked {job.data['writer']} to fix them")
