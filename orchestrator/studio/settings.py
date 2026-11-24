@@ -32,8 +32,8 @@ class Settings:
     voice_hi: str = "hm_omega"  # Kokoro voice for Hindi (Devanagari text)
     edge_voice_en: str = "en-IN-PrabhatNeural"  # Edge voice for English (/studio voices edge)
     edge_voice_hi: str = "hi-IN-MadhurNeural"  # Edge voice for Hindi (Devanagari text)
-    speed: float = 1.05  # 0.5 to 2.0
-    pause: float = 0.25  # seconds of silence after each sentence
+    speed: float = 1.15  # 0.5 to 2.0; 1.15 ≈ 200 wpm (explainer channels read at 190–220)
+    pause: float = 0.12  # seconds of silence after each sentence (80–150 ms keeps it tight)
     threads: int = 2  # CPU threads Kokoro may use
     kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)

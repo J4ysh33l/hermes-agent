@@ -215,7 +215,7 @@ A brand kit from you (name, 2 colours, font, logo) overrides any preset.
 
 | Layer | Spec |
 |---|---|
-| **Voice** | Target **190–220 wpm**. Ours measured **178 wpm** (Kokoro `speed 1.05`, `pause 0.25`): suggest `speed 1.15`, `pause 0.12` (research says 80–150 ms between sentences). Trim leading and trailing silence on every line. |
+| **Voice** | Target **190–220 wpm**. Ours: **217 wpm** with Kokoro `speed 1.15`, `pause 0.12` and each line's own silence trimmed (was 178 wpm at `speed 1.05`, `pause 0.25`, untrimmed). Gaps between sentences average ~0.18 s. |
 | **Music** | One bed per video, chosen by mood tag; ducked to about −18 to −24 dB under the voice, rising in gaps; normalised mix at −14 LUFS. Free sources: Pixabay Music, YouTube Audio Library (YouTube only), Kevin MacLeod (CC-BY, credit required, as OverSimplified did). |
 | **SFX** | whoosh before each cut; pop on text/item entrance; riser into the reveal; impact on the key word or number; click/typing under code; sparse for data/maps, dense for comedy. Pixabay SFX, Mixkit (check each licence). |
 

@@ -27,7 +27,9 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
   Devanagari first (one call; English words keep their sound: product → प्रोडक्ट). The rewrite must
   return the same number of lines, all in Devanagari, or nothing is spoken.
 - **Each sentence goes to its script's voice** (`voice_en`/`voice_hi`, or `edge_voice_en`/`edge_voice_hi`),
-  with `studio.pause` seconds after it. Each line's start and end come back, for captions and cuts.
+  with `studio.pause` seconds after it (the silence each engine leaves around a line is trimmed first, so
+  the pause alone sets the gap). Defaults `speed 1.15`, `pause 0.12`: 217 words a minute measured, the
+  pace of fast explainer channels (190–220). Each line's start and end come back, for captions and cuts.
   (Whisper on a mixed clip dropped the Hindi lines, so captions for generated voiceovers come from
   the known script and these times, not from a fresh transcript.)
 - **Kokoro model:** fp16 (`kokoro-v1.0.fp16.onnx`, 169 MB) by default, at your request. It was faster

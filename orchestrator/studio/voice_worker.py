@@ -5,7 +5,8 @@ Reads one JSON job on stdin and writes one 24 kHz mono 16-bit WAV:
    "model": "...onnx", "voices": "...bin",                       (kokoro)
    "lines": [{"text": "...", "voice": "am_michael", "lang": "en-us", "speed": 1.05, "pause": 0.25}, ...]}
 Prints one JSON line: {"seconds": 12.3, "sample_rate": 24000, "lines": [[start, end], ...]} (each
-line's place in the file, for captions and cuts).
+line's place in the file, for captions and cuts). Silence around each line is trimmed, so "pause" alone
+sets the gap between sentences.
 
 - kokoro: Kokoro-82M ONNX on the CPU (kokoro-onnx).
 - edge: Microsoft Edge's online read-aloud voices (edge-tts; unofficial, needs the internet). Each line
@@ -59,6 +60,19 @@ def _edge(_job: dict, line: dict, _state: dict):
 
 
 ENGINES = {"kokoro": _kokoro, "edge": _edge}
+QUIET = 0.01  # below this (about -40 dB) a sample counts as silence
+KEEP = 0.03  # seconds of the line's own lead-in and tail kept, so consonants are not clipped
+
+
+def _trim(samples):
+    """Drop the silence an engine leaves around a line (Kokoro adds ~0.2 s), so studio.pause alone sets
+    the gap between sentences."""
+    import numpy as np
+    loud = np.flatnonzero(np.abs(samples) > QUIET)
+    if not loud.size:
+        return samples
+    keep = int(RATE * KEEP)
+    return samples[max(0, loud[0] - keep):loud[-1] + 1 + keep]
 
 
 def main() -> int:
@@ -68,7 +82,7 @@ def main() -> int:
     make = ENGINES[job.get("engine", "kokoro")]
     state, parts, spans, at = {}, [], [], 0.0
     for line in job["lines"]:
-        samples = make(job, line, state)
+        samples = _trim(make(job, line, state))
         spans.append([round(at, 3), round(at + len(samples) / RATE, 3)])
         pause = np.zeros(int(RATE * float(line.get("pause", 0))), dtype="float32")
         parts += [samples, pause]
