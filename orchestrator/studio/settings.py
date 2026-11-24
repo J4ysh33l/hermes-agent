@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import re
+
 import yaml
 
 from orchestrator.brief.settings import EXAMPLE, ModelChoice
@@ -27,6 +29,21 @@ def _preset(value: str) -> str:
 
 
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+VIAS = ("auto", "api", "handoff")
+
+
+def _choice(key: str, value: str, options: tuple[str, ...]) -> str:
+    if value not in options:
+        raise ValueError(f"brief.yaml: studio.{key} must be one of {', '.join(options)}")
+    return value
+
+
+def _window(value: str) -> str:
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d", value):
+        raise ValueError("brief.yaml: studio.render_window is like 00:30-07:00")
+    return value
 
 
 def _writer(value: str) -> str:
@@ -78,6 +95,10 @@ class Settings:
     writer: str = "claude"  # who writes storyboards: claude (default; ANTHROPIC_API_KEY, paid) or gemini (free)
     claude_model: str = "claude-opus-5-5"  # writes storyboards and builds custom scenes (~$0.10–0.25 a storyboard)
     custom_review: bool = True  # Claude looks at frames of each custom scene it built and fixes what is off
+    claude_via: str = "auto"  # api (ANTHROPIC_API_KEY) | handoff (your Claude plan, via the handoff repo) | auto
+    handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md); studio/HANDOFF.md is the contract
+    render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
+    hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram
     claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
 
 
@@ -115,6 +136,10 @@ def parse(raw: dict[str, Any]) -> Settings:
         text_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in models)
         if models else base.text_models,
         writer=_writer(str(studio.get("writer", base.writer))),
+        claude_via=_choice("claude_via", str(studio.get("claude_via", base.claude_via)), VIAS),
+        handoff_repo=str(studio.get("handoff_repo", "") or (raw.get("notes") or {}).get("handoff_repo", "")),
+        render_window=_window(str(studio.get("render_window", base.render_window))),
+        hook_clips=bool(studio.get("hook_clips", base.hook_clips)),
         custom_review=bool(studio.get("custom_review", base.custom_review)),
         claude_model=str(studio.get("claude_model", base.claude_model)),
         claude_effort=_effort(str(studio.get("claude_effort", base.claude_effort))),

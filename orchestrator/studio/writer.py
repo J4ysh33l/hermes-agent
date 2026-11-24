@@ -80,6 +80,7 @@ class Draft:
     rounds: int  # model calls it took
     notes: tuple[str, ...]  # soft warnings, shown, not refused
     wishes: tuple[str, ...] = ()  # visuals the model wanted but we cannot make yet (scene type: wish)
+    cover: tuple[int, str] = (1, "")  # the scene the cover shows (1 = the hook) and its 2–4 big words
 
     def storyboard(self, hook: int, profile: str) -> dict[str, Any]:
         return {"title": self.title, "profile": profile, "scenes": [self.hooks[hook].scene, *self.scenes]}
@@ -169,6 +170,8 @@ The format and fields:
   quotes or headlines.
 - Total narration: about {words} words (hooks included, one hook counted).
 - Optional "emoji" on at most 2 scenes.
+- Optional "transition" into the next scene when the change means something (the page's own is used
+  otherwise): burn = a jump in time, flash = a reveal, zoom = going deeper, whip = a contrast, fade = calm, cut.
 - Voice directions inside "say" (spoken, never shown): [beat] = a 0.4 s pause, e.g. before a reveal
   ("And the winner is [beat] India."); [pause 0.8] = an exact pause; [slow] or [fast] = the rest of the
   sentence slower or faster. Use them where a human narrator would: 1–4 per video, never decoration.
@@ -182,8 +185,13 @@ The format and fields:
 {notes}
 </notes>
 
+# The cover
+Pick the most striking scene for the thumbnail (1 = the hook) and 2–4 huge words for it that add to the
+title, never repeat it (PLAYBOOK: one striking visual + a few words, high contrast).
+
 Answer with JSON only:
-{{"title": "...", "hooks": [{{"family": "...", "scene": {{...}}}}, x3], "scenes": [{{...}}, ...]}}"""
+{{"title": "...", "hooks": [{{"family": "...", "scene": {{...}}}}, x3], "scenes": [{{...}}, ...],
+ "cover": {{"scene": 2, "words": "..."}}}}"""
 
 REPAIR = """Your storyboard below failed these checks. Fix every one, keep everything else as good as it is,
 and answer with the whole corrected JSON only.
@@ -454,16 +462,32 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
             except (HttpError, ValueError) as exc:
                 tried.append(f"{model.id}: {str(exc)[:100]}")
                 break
-            wishes = _wishes(raw)
-            problems = check(raw, look, notes, words, folder)
-            if not problems:
-                hooks = tuple(Hook(h["family"], h["scene"]) for h in raw["hooks"])
-                return Draft(str(raw.get("title") or "").strip(), hooks, tuple(raw["scenes"]), model.id, rounds,
-                             tuple(soft_notes([hooks[0].scene, *raw["scenes"]])), tuple(wishes))
+            accepted = accept(raw, look, notes, words, folder, model.id, rounds)
+            if isinstance(accepted, Draft):
+                return accepted
+            problems = accepted
             tried.append(f"{model.id} (try {attempt + 1}): {'; '.join(problems[:3])}")
             question = REPAIR.format(problems="\n".join(f"- {p}" for p in problems),
                                      draft=json.dumps(raw, ensure_ascii=False, indent=1))
     raise WriterError("No usable storyboard: " + " | ".join(tried))
+
+
+def accept(raw: Any, look: Profile, notes: str, words: int, folder: Path, model: str,
+           rounds: int) -> Draft | list[str]:
+    """A model's answer → a Draft, or the problems to send back (wishes are taken out either way)."""
+    wishes = _wishes(raw)
+    problems = check(raw, look, notes, words, folder)
+    cover = raw.get("cover") if isinstance(raw, dict) else None
+    scenes = 1 + len(raw.get("scenes") or []) if isinstance(raw, dict) else 0
+    if cover is not None and not (isinstance(cover, dict) and isinstance(cover.get("scene"), int)
+                                  and 1 <= cover["scene"] <= scenes and 1 <= len(str(cover.get("words", "")).split()) <= 5):
+        problems.append(f'"cover" must be {{"scene": 1–{scenes}, "words": "2–4 words"}}')
+    if problems:
+        return problems
+    hooks = tuple(Hook(h["family"], h["scene"]) for h in raw["hooks"])
+    picked = (cover["scene"], " ".join(str(cover["words"]).split())) if cover else (1, "")
+    return Draft(str(raw.get("title") or "").strip(), hooks, tuple(raw["scenes"]), model, rounds,
+                 tuple(soft_notes([hooks[0].scene, *raw["scenes"]])), tuple(wishes), picked)
 
 
 def save(draft: Draft, out: Path, profile: str) -> list[Path]:
@@ -478,6 +502,9 @@ def save(draft: Draft, out: Path, profile: str) -> list[Path]:
     for n, hook in enumerate(draft.hooks, 1):
         lines.append(f"Hook {n} ({hook.family}): {hook.scene['say']}")
     lines += ["", *(f"[{s['type']}] {s['say']}" for s in draft.scenes)]
+    lines += ["", f"Cover: scene {draft.cover[0]}, words: {draft.cover[1] or draft.title}"]
+    out.with_suffix(".cover.json").write_text(json.dumps({"scene": draft.cover[0], "words": draft.cover[1]}),
+                                              encoding="utf-8")
     script = out.with_suffix(".txt")
     script.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return [*paths, script]

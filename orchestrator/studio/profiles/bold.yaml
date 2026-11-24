@@ -17,6 +17,8 @@ motion:
   exit_frames: 6
   punch: 0.15
   drift: 0.06
+  transition: whip
+  transition_frames: 7
 
 captions:
   words: 2

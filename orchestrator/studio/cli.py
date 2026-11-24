@@ -2,6 +2,8 @@
   python -m orchestrator.studio voice "text" --out speech.wav
   python -m orchestrator.studio write "notes or a draft script" --out sb.json [--notes notes.txt] [--profile bold] [--seconds 45] [--gemini]
   python -m orchestrator.studio cover storyboard.json --out cover.png [--scene 1] [--words "2-5 big words"] [--profile bold]
+  python -m orchestrator.studio queue run [--now] [--notify] | add "notes" [--gemini] | pick <id> <n> | list
+  python -m orchestrator.studio auth drive    (once: Google Drive for finished videos, drive.file scope)
   python -m orchestrator.studio wishes        (visuals the writer wanted but we cannot make yet, most wanted first)
   python -m orchestrator.studio video storyboard.json --out short.mp4 [--profile bold]   (storyboard.py: format)
 or any ``/studio`` words (``python -m orchestrator.studio voices``)."""
@@ -14,7 +16,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import chat, cover, profile, storyboard, video, voice, writer
+from . import audio, chat, cover, drive, profile, queue, storyboard, video, voice, writer
 
 
 def _video(home: Path, words: list[str]) -> int:
@@ -27,7 +29,8 @@ def _video(home: Path, words: list[str]) -> int:
     try:
         made = video.make(ctx.http, ctx.keys, ctx.settings, home, storyboard.load(args.storyboard), args.out,
                           args.profile)
-    except (storyboard.StoryboardError, profile.ProfileError, voice.VoiceError, video.VideoError) as exc:
+    except (storyboard.StoryboardError, profile.ProfileError, voice.VoiceError, video.VideoError,
+            audio.AudioError) as exc:
         print(f"⚠️ {exc}", file=sys.stderr)
         return 1
     print(f"{made.path}: {made.seconds:.1f} s · voice {made.voice_took:.0f} s · render {made.render_took:.0f} s"
@@ -90,11 +93,52 @@ def _write(home: Path, words: list[str]) -> int:
     return 0
 
 
+def _queue(home: Path, words: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="python -m orchestrator.studio queue")
+    parser.add_argument("action", choices=["run", "add", "pick", "list"])
+    parser.add_argument("rest", nargs="*", help="add: the notes · pick: <job id> <hook>")
+    parser.add_argument("--now", action="store_true", help="run: render now, outside studio.render_window")
+    parser.add_argument("--notify", action="store_true", help="run: send what happened to Telegram too")
+    parser.add_argument("--gemini", action="store_true", help="add: write with Gemini")
+    args = parser.parse_args(words)
+    ctx = chat.Context(home)
+    try:
+        said = QUEUE_ACTIONS[args.action](ctx, args)
+    except (queue.QueueError, writer.WriterError, profile.ProfileError, queue.HandoffError) as exc:
+        print(f"⚠️ {exc}", file=sys.stderr)
+        return 1
+    if said:
+        print(said)
+    if said and args.notify:
+        chat.Telegram(ctx.http, ctx.secrets).text(said)
+    return 0
+
+
+def _added(ctx: chat.Context, args: argparse.Namespace) -> str:
+    job = queue.add(ctx, " ".join(args.rest), "gemini" if args.gemini else "")
+    return f"Queued {job.id} ({job.state}): {job.data.get('title', 'Claude is writing it')}"
+
+
+def _picked(ctx: chat.Context, args: argparse.Namespace) -> str:
+    if len(args.rest) != 2 or not args.rest[1].isdigit():
+        raise queue.QueueError("pick <job id> <hook 1-3>")
+    return f"{queue.pick(ctx, args.rest[0], int(args.rest[1])).id}: hook {args.rest[1]}, renders next run"
+
+
+QUEUE_ACTIONS = {"run": lambda ctx, args: queue.run(ctx, force=args.now), "add": _added, "pick": _picked,
+                 "list": lambda ctx, _args: queue.status(ctx)}
+
+
 def main(argv: list[str] | None = None) -> int:
     words = sys.argv[1:] if argv is None else argv
     home = default_state_dir().parent
     if words[:1] == ["video"]:
         return _video(home, words[1:])
+    if words[:1] == ["queue"]:
+        return _queue(home, words[1:])
+    if words[:2] == ["auth", "drive"]:
+        drive.login(chat.Context(home).http, chat.Context(home).secrets)
+        return 0
     if words[:1] == ["cover"]:
         return _cover(home, words[1:])
     if words[:1] == ["write"]:

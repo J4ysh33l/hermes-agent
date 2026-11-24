@@ -3,7 +3,7 @@ import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame,
 import {Captions} from "./Captions";
 import {customView} from "./custom";
 import {Emoji} from "./Emoji";
-import {Camera, SceneFrame} from "./motion";
+import {Camera, Passage, SceneFrame, TRANSITION_LIGHT, overlaps} from "./motion";
 import {Bullets} from "./scenes/Bullets";
 import {Code} from "./scenes/Code";
 import {Compare} from "./scenes/Compare";
@@ -21,7 +21,7 @@ import {Quote} from "./scenes/Quote";
 import {Terminal} from "./scenes/Terminal";
 import {Timeline} from "./scenes/Timeline";
 import {Title} from "./scenes/Title";
-import {ProfileProvider, Theme, useTheme} from "./theme";
+import {Motion, ProfileProvider, Theme, useProfile, useTheme} from "./theme";
 import type {CustomScene, Scene, ShortProps} from "./types";
 
 type SceneView = React.FC<{scene: never; frames: number}>;
@@ -97,9 +97,17 @@ const emojiAt = (scene: Scene, words: ShortProps["words"], fps: number) => {
   return Math.round(((hit ? hit.start : scene.start + 0.3) - scene.start) * fps);
 };
 
+// How scene n leaves into scene n + 1 (none after the last scene).
+const passage = (scenes: Scene[], n: number, motion: Motion): Passage | undefined => {
+  if (n + 1 >= scenes.length) return undefined;
+  const kind = scenes[n].transition || motion.transition;
+  return {kind, frames: overlaps(kind) ? motion.transition_frames : 0};
+};
+
 const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
   const {fps, durationInFrames} = useVideoConfig();
   const theme = useTheme();
+  const {motion} = useProfile();
   const Background = BACKGROUNDS[theme.background];
   return (
     <AbsoluteFill style={{background: theme.bg}}>
@@ -111,16 +119,31 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
           const until = n + 1 < scenes.length ? Math.round(scenes[n + 1].start * fps) : durationInFrames;
           const frames = Math.max(1, until - from);
           const {view: View} = SCENES[scene.type];
-          const fullBleed = fills(scene);
+          const out = passage(scenes, n, motion);
+          // the scene keeps drawing while the next one comes in (it is drawn first, so underneath)
           return (
-            <Sequence key={n} from={from} durationInFrames={frames} layout="none">
+            <Sequence key={n} from={from} durationInFrames={frames + (out?.frames ?? 0)} layout="none">
               <SceneFrame frames={frames} enter={scene.enter || undefined} exit={scene.exit || undefined}
-                fullBleed={fullBleed}>
+                into={n > 0 ? passage(scenes, n - 1, motion) : undefined} out={out} fullBleed={fills(scene)}>
                 <View scene={scene as never} frames={frames} />
               </SceneFrame>
-              {scene.emoji ? <Emoji char={scene.emoji} at={emojiAt(scene, words, fps)} /> : null}
+              {scene.emoji ? (
+                <Sequence durationInFrames={frames} layout="none">
+                  <Emoji char={scene.emoji} at={emojiAt(scene, words, fps)} />
+                </Sequence>
+              ) : null}
             </Sequence>
           );
+        })}
+        {scenes.map((scene, n) => {
+          const out = passage(scenes, n, motion);
+          const Light = out && out.frames ? TRANSITION_LIGHT[out.kind] : undefined;
+          return Light && out ? (
+            <Sequence key={`light${n}`} from={Math.round(scenes[n + 1].start * fps)} durationInFrames={out.frames}
+              layout="none">
+              <LightOver frames={out.frames} Light={Light} />
+            </Sequence>
+          ) : null;
         })}
       </Camera>
       <Captions words={words} />
@@ -128,6 +151,11 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
       {audio ? <Audio src={staticFile(audio)} /> : null}
     </AbsoluteFill>
   );
+};
+
+const LightOver: React.FC<{frames: number; Light: React.FC<{t: number}>}> = ({frames, Light}) => {
+  const frame = useCurrentFrame();
+  return <Light t={interpolate(frame, [0, frames], [0, 1], {extrapolateRight: "clamp"})} />;
 };
 
 export const Short: React.FC<ShortProps> = (props) => (

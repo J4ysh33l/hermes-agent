@@ -68,6 +68,17 @@ class StoryboardTest(unittest.TestCase):
         self.refused({"scenes": []}, "at least one scene")
         self.refused({"scenes": [{"type": "title", "say": "A *big deal.", "text": "t"}]}, "not closed")
         self.refused({"scenes": [{"type": "title", "say": "x.", "text": "t", "exit": "explode"}]}, "must be one of")
+        self.refused({"scenes": [{"type": "title", "say": "x.", "text": "t", "transition": "spin"}]}, "must be one of")
+
+    def test_a_scene_can_choose_how_it_hands_over_to_the_next(self):
+        board = storyboard.parse({"scenes": [{"type": "title", "say": "One.", "text": "a", "transition": "burn"},
+                                             {"type": "title", "say": "Two.", "text": "b"}]}, self.folder)
+        said = [s for scene in board.scenes for s in voice.sentences(scene.say)]
+        job = self.folder / "job"
+        job.mkdir()
+        out = video.props(board, job, fake_speech(job, said), DEFAULT)
+        self.assertEqual([s["transition"] for s in out["scenes"]], ["burn", ""])  # "" = the profile's
+        self.assertEqual(out["profile"]["motion"]["transition"], "push")
 
     def test_the_newer_scene_types_are_checked_too(self):
         (self.folder / "messy.jpg").write_bytes(b"jpg")
@@ -128,6 +139,51 @@ def fake_speech(job: Path, spoken: list[str]) -> voice.Speech:
         spans.append((text, at, at + 1.0))
         at += 1.25
     return voice.Speech(job / "voice.wav", at, tuple(spans), 0)
+
+
+HAS_NODE = (video.PROJECT / "node_modules/.bin/esbuild").is_file() and shutil.which("node")
+
+CAPTION_SCRIPT = """
+import {pages, pageSize} from "%s/src/Captions";
+import {DEFAULT_PROFILE} from "%s/src/theme";
+const words = (s: string) => { let t = 0; return s.split(" ").map((text) => ({text, start: t, end: (t += 0.3) - 0.05, emphasis: false})); };
+const lines: string[] = JSON.parse(process.argv[2]);
+console.log(JSON.stringify(lines.map((s) => pages(words(s), 3).map((p) => ({words: p.map((w) => w.text),
+  size: pageSize(p, DEFAULT_PROFILE.captions)})))));
+"""
+
+
+@unittest.skipUnless(HAS_NODE, "remotion not installed (install.sh)")
+class CaptionPagesTest(unittest.TestCase):
+    """The caption pages as Captions.tsx builds them (bundled with esbuild, run in node)."""
+
+    def paged(self, *lines: str) -> list[list[dict]]:
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        (folder / "run.ts").write_text(CAPTION_SCRIPT % (video.PROJECT, video.PROJECT), encoding="utf-8")
+        bin_ = video.PROJECT / "node_modules/.bin/esbuild"
+        subprocess.run([str(bin_), str(folder / "run.ts"), "--bundle", "--platform=node", "--log-level=error",
+                        "--external:remotion", "--external:react", "--loader:.css=empty",
+                        f"--outfile={folder / 'run.js'}"], check=True, timeout=120)
+        done = subprocess.run(["node", str(folder / "run.js"), json.dumps(lines)], capture_output=True, text=True,
+                              check=True, timeout=60, env={**os.environ, "NODE_PATH": str(video.PROJECT / "node_modules")})
+        return json.loads(done.stdout)
+
+    def test_pages_follow_phrases_with_no_lone_words_or_dangling_articles(self):
+        save, bun, wow = self.paged("Save the world today.",
+                                    "Bun installs packages twenty five times faster than npm, and nobody noticed.",
+                                    "Wow.")
+        self.assertEqual([p["words"] for p in save], [["Save", "the", "world", "today."]])  # not 3 + 1
+        texts = [p["words"] for p in bun]
+        self.assertIn(["faster", "than", "npm,"], texts)  # the comma ends a page
+        self.assertTrue(all(len(p) >= 2 for p in texts))
+        self.assertTrue(all(p[-1].lower() not in ("the", "of", "to", "a") for p in texts))
+        self.assertEqual([p["words"] for p in wow], [["Wow."]])  # a one-word sentence stays one word
+
+    def test_a_word_too_long_for_the_width_shrinks_its_page_only(self):
+        long_, short = self.paged("Supercalifragilistic internationalization happens.", "Ship it now.")
+        self.assertLess(long_[0]["size"], 70)
+        self.assertEqual(short[0]["size"], 92)  # the profile's size when it fits
 
 
 class PropsTest(unittest.TestCase):

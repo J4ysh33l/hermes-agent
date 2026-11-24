@@ -2,12 +2,13 @@
 // - FEELS: spring character (snappy / soft / bouncy)
 // - ENTERS: how a thing arrives, as a style from progress 0 → 1
 // - EXITS: how a scene leaves over its last frames
+// - TRANSITIONS: scene to scene, the outgoing scene still moving under the incoming one
 // - Camera: slow drift over the scene plus a punch-in on every *emphasised* word
 // - Stepped: the "handmade" 12 fps look (graphics hold every other frame)
 // Scenes ask for these by name; a storyboard can override them per scene; the profile sets defaults.
 import React from "react";
 import {AbsoluteFill, Easing, Freeze, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
-import {Enter, Exit, Feel, SAFE, useProfile} from "./theme";
+import {Enter, Exit, Feel, SAFE, Transition, useProfile} from "./theme";
 
 export const FEELS: Record<Feel, {damping: number; stiffness: number; mass: number}> = {
   snappy: {damping: 14, stiffness: 180, mass: 0.6},
@@ -36,6 +37,44 @@ export const EXITS: Record<Exit, (t: number) => Style> = {
   zoom: (t) => ({transform: `scale(${1 + 0.6 * t})`, filter: `blur(${16 * t}px)`, opacity: 1 - t}),
   cut: () => ({}),
 };
+
+const W = 1080;
+const H = 1920;
+const hump = (t: number) => Math.sin(Math.PI * t); // 0 → 1 → 0 across a transition
+
+// `t` runs 0 → 1 (eased) over the overlap: `out` styles the leaving scene, `in` the arriving one (drawn on top).
+// "none" and "cut" do not overlap: SceneFrame uses the scene's own exit and entrance, or nothing.
+export const TRANSITIONS: Record<Exclude<Transition, "none" | "cut">, {out: (t: number) => Style; in: (t: number) => Style}> = {
+  fade: {out: (t) => ({opacity: 1 - t}), in: (t) => ({opacity: t})},
+  push: {out: (t) => ({transform: `translateY(${-H * 0.6 * t}px)`, opacity: 1 - t * 0.8}),
+    in: (t) => ({transform: `translateY(${H * 0.6 * (1 - t)}px)`, opacity: Math.min(1, t * 1.5)})},
+  whip: {out: (t) => ({transform: `translateX(${-W * 1.2 * t}px)`, filter: `blur(${36 * hump(t)}px)`}),
+    in: (t) => ({transform: `translateX(${W * 1.2 * (1 - t)}px)`, filter: `blur(${36 * hump(t)}px)`})},
+  zoom: {out: (t) => ({transform: `scale(${1 + 1.4 * t})`, filter: `blur(${20 * t}px)`, opacity: 1 - t}),
+    in: (t) => ({transform: `scale(${0.55 + 0.45 * t})`, filter: `blur(${14 * (1 - t)}px)`, opacity: Math.min(1, t * 1.4)})},
+  flash: {out: (t) => ({opacity: t < 0.5 ? 1 : 0}), in: (t) => ({opacity: t < 0.5 ? 0 : 1})},
+  burn: {out: (t) => ({opacity: 1 - t, filter: `brightness(${1 + 1.5 * t}) saturate(${1 + t})`}),
+    in: (t) => ({opacity: t, filter: `brightness(${2.5 - 1.5 * t})`})},
+};
+
+// Drawn over both scenes during a transition: a white flash, or warm light sweeping across (film burn).
+export const TRANSITION_LIGHT: Partial<Record<Transition, React.FC<{t: number}>>> = {
+  flash: ({t}) => <AbsoluteFill style={{background: "#fff", opacity: 0.9 * hump(t)}} />,
+  burn: ({t}) => (
+    <AbsoluteFill style={{mixBlendMode: "screen", opacity: hump(t),
+      background: `radial-gradient(ellipse 70% 55% at ${-20 + 140 * t}% ${70 - 40 * t}%, #fff8e0 0%, #ffb347 28%, #ff5e3a 52%, transparent 75%)`}} />
+  ),
+};
+
+export const overlaps = (kind: Transition) => kind !== "none" && kind !== "cut";
+
+export interface Passage {
+  kind: Transition;
+  frames: number; // the overlap (0 when the kind does not overlap)
+}
+
+const eased = (frame: number, from: number, frames: number) => interpolate(frame, [from, from + Math.max(1, frames)],
+  [0, 1], {extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic)});
 
 export const usePop = (delay = 0) => {
   const frame = useCurrentFrame();
@@ -69,18 +108,21 @@ export const Stepped: React.FC<{children: React.ReactNode}> = ({children}) => {
   return <Freeze frame={Math.floor(frame / every) * every}>{children}</Freeze>;
 };
 
-// A scene's frame: whole-scene entrance, slow drift, exit; padded into the safe area unless full-bleed.
-export const SceneFrame: React.FC<{frames: number; enter?: Enter; exit?: Exit; fullBleed?: boolean;
-  children: React.ReactNode}> = ({frames, enter, exit, fullBleed, children}) => {
+// A scene's frame: entrance (or the transition in), slow drift, exit (or the transition out, drawn in the
+// `out.frames` past `frames` while the next scene arrives); padded into the safe area unless full-bleed.
+export const SceneFrame: React.FC<{frames: number; enter?: Enter; exit?: Exit; into?: Passage; out?: Passage;
+  fullBleed?: boolean; children: React.ReactNode}> = ({frames, enter, exit, into, out, fullBleed, children}) => {
   const frame = useCurrentFrame();
   const {motion} = useProfile();
   const p = usePop();
   const drift = 1 + interpolate(frame, [0, frames], [0, motion.drift], {extrapolateRight: "clamp"});
-  const t = interpolate(frame, [frames - motion.exit_frames, frames], [0, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.in(Easing.cubic),
-  });
-  const style = combine(combine({transform: `scale(${drift})`}, ENTERS[enter ?? motion.enter](p)),
-    EXITS[exit ?? motion.exit](t));
+  const arriving = !into || into.kind === "none" ? ENTERS[enter ?? motion.enter](p)
+    : into.kind === "cut" ? {} : TRANSITIONS[into.kind].in(eased(frame, 0, into.frames));
+  const leaving = !out || out.kind === "none"
+    ? EXITS[exit ?? motion.exit](interpolate(frame, [frames - motion.exit_frames, frames], [0, 1], {
+      extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.in(Easing.cubic)}))
+    : out.kind === "cut" ? {} : TRANSITIONS[out.kind].out(eased(frame, frames, out.frames));
+  const style = combine(combine({transform: `scale(${drift})`}, arriving), leaving);
   return (
     <AbsoluteFill style={{...style, ...(fullBleed ? {} : {
       padding: `${SAFE.top}px ${SAFE.side}px ${SAFE.bottom + 260}px`, justifyContent: "center"})}}>

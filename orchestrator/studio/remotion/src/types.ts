@@ -1,4 +1,4 @@
-import type {Enter, Exit, Profile} from "./theme";
+import type {Enter, Exit, Profile, Transition} from "./theme";
 
 // The props video.py writes (props.json). Times are seconds on the voice track; the composition is
 // as long as the voice plus a short tail. Every file path is relative to the job folder (--public-dir).
@@ -21,6 +21,7 @@ interface SceneBase {
   beats: number[]; // each sentence's start, seconds from the scene's start
   enter: Enter | ""; // "" = the profile's
   exit: Exit | "";
+  transition: Transition | ""; // into the next scene; "" = the profile's
   emoji: string; // "" = none; else it pops on the scene's first *emphasised* word (or 0.3 s in)
 }
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +15,7 @@ from orchestrator.brief.store import default_state_dir
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import profile, settings, voice, writer
+from . import profile, queue, settings, voice, writer
 
 HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio voice <text> — read aloud with studio.engine and sent to you as a voice message
@@ -26,7 +28,9 @@ HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio write <notes or a draft script> — a storyboard with 3 hooks, written to your page profile by
   Claude (studio.writer; needs ANTHROPIC_API_KEY). /studio write gemini <notes> — by Gemini's free models.
   Numbers, quotes and headlines on screen must be in your notes, so include the facts you want shown.
-Rendering from chat comes with the overnight queue; for now render on the host (python -m orchestrator.studio video).
+/studio make <notes> — write it now and render it tonight (studio.render_window): you get the video, the
+  cover and hooks 2–3 as clips here, and on Drive. /studio make gemini <notes> — written by Gemini.
+/studio queue — the jobs · /studio pick <job> <n> — re-render with hook n · /studio run — render now
 /menu — all your commands"""
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
@@ -116,7 +120,40 @@ def _write(ctx: Context, text: str) -> str:
                       f".hook2/.hook3 = the others)"])
 
 
-STEPS = {"voice": _voice, "say": _voice, "voices": _voices, "write": _write}
+def _make(ctx: Context, text: str) -> str:
+    first, _, rest = text.strip().partition(" ")
+    who = first.lower() if first.lower() in settings.WRITERS else ""
+    job = queue.add(ctx, rest if who else text, who)
+    if job.state == "writing":
+        return (f"✍️ Job {job.id}: Claude is writing it through the handoff repo (issue #{job.data['issue']}). "
+                f"It renders in {ctx.settings.render_window} once written; /studio queue to check.")
+    script = job.folder.joinpath("storyboard.txt").read_text(encoding="utf-8")
+    return (f"✍️ Job {job.id} written by {job.data['writer']}; renders in {ctx.settings.render_window} "
+            f"(or /studio run now). You get the video, the cover and hooks 2–3 as clips; /studio pick "
+            f"{job.id} <n> re-renders with another hook.\n\n{script}")
+
+
+def _run(ctx: Context, _text: str) -> str:
+    log = ctx.home / "studio" / "queue" / "run.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as out:  # detached: a render takes minutes; it reports to Telegram itself
+        subprocess.Popen([sys.executable, "-m", "orchestrator.studio", "queue", "run", "--now", "--notify"],
+                         cwd=REPO, env={**os.environ, "HERMES_HOME": str(ctx.home)}, stdout=out, stderr=out,
+                         start_new_session=True)
+    return "🎬 Rendering the queue now; each video comes here when it is done."
+
+
+def _pick(ctx: Context, text: str) -> str:
+    parts = text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return "/studio pick <job id> <hook 1-3>"
+    job = queue.pick(ctx, parts[0], int(parts[1]))
+    return f"Job {job.id} will be rendered with hook {parts[1]} (next run, or /studio run)."
+
+
+STEPS = {"voice": _voice, "say": _voice, "voices": _voices, "write": _write, "make": _make, "run": _run,
+         "pick": _pick, "queue": lambda ctx, _text: queue.status(ctx)}
+REPO = Path(__file__).resolve().parents[2]
 
 
 def handle(raw: str, home: Path | None = None, http: Http | None = None) -> str:
@@ -126,5 +163,6 @@ def handle(raw: str, home: Path | None = None, http: Http | None = None) -> str:
         return HELP
     try:
         return step(Context(home or default_state_dir().parent, http), rest)
-    except (voice.VoiceError, NotesError, writer.WriterError, profile.ProfileError) as exc:
+    except (voice.VoiceError, NotesError, writer.WriterError, profile.ProfileError, queue.QueueError,
+            queue.HandoffError) as exc:
         return f"⚠️ {exc}"

@@ -78,6 +78,9 @@ def _flag(where: str, value: Any) -> bool:
 
 
 FONT = _choice("inter", "montserrat", "anton", "jetbrains")
+# Scene to scene: the next scene comes in while this one leaves (overlapping); "none" = the scene's own
+# exit, then the next one's entrance; "cut" = a hard cut.
+TRANSITIONS = ("none", "cut", "fade", "push", "whip", "zoom", "flash", "burn")
 USE = _use  # off | auto (only where it helps the video; never forced) | always
 
 SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
@@ -87,7 +90,8 @@ SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
                "enter": _choice("pop", "rise", "slide", "drop", "zoom", "fade"),
                "exit": _choice("lift", "fade", "whip", "zoom", "cut"),
                "exit_frames": _number(0, 15), "punch": _number(0, 0.3), "drift": _number(0, 0.2),
-               "step": _choice(0, 12, 15)},
+               "step": _choice(0, 12, 15),
+               "transition": _choice(*TRANSITIONS), "transition_frames": _number(3, 20)},
     "captions": {"words": _number(1, 6), "size": _number(48, 140), "upper": _flag, "font": FONT,
                  "stroke": _number(0, 24), "fill": _colour, "outline": _colour},
     "voice": {"engine": _choice("kokoro", "edge"), "voice_en": _text, "voice_hi": _text,

@@ -24,6 +24,8 @@ motion:
   punch: 0.08               # camera punch-in on *emphasised* words (0.08 = 8%)
   drift: 0.04               # slow push over each scene
   step: 0                   # 0 smooth; 12 = Vox-like 12 fps graphics (reads as stutter next to 30 fps captions)
+  transition: push   # none | cut | fade | push | whip | zoom | flash | burn: scene to scene
+  transition_frames: 8
 
 captions:
   words: 3                  # most words on screen at once

@@ -30,7 +30,7 @@ from typing import Any
 from orchestrator.brief.net import Http
 
 from . import profile as profiles
-from . import custom, direction, voice
+from . import audio, custom, direction, voice
 from .profile import Profile
 from .settings import Keys, Settings
 from .storyboard import Storyboard
@@ -116,7 +116,8 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
         start = 0.0 if n == 0 else mine[0][1]
         beats = [round(s - start, 3) for _t, s, _e in mine]  # each sentence's start, from the scene's start
         scenes.append({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats,
-                       "enter": scene.enter, "exit": scene.exit, "emoji": scene.emoji, **fields})
+                       "enter": scene.enter, "exit": scene.exit, "transition": scene.transition,
+                       "emoji": scene.emoji, **fields})
     if used != len(spans):
         raise VideoError(f"The voice gave {len(spans)} sentences for {used}; nothing rendered")
     return {"profile": look.render_props(), "audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}
@@ -126,6 +127,7 @@ def render_args(settings: Settings, job: Path, out: Path, entry: str = "src/inde
     args = [str(PROJECT / "node_modules/.bin/remotion"), "render", entry, "Short", str(out),
             f"--props={job / 'props.json'}", f"--public-dir={job}", "--codec=h264",
             f"--crf={settings.video_crf}", f"--x264-preset={settings.video_preset}", "--image-format=jpeg",
+            "--color-space=bt709",  # without it the file is tagged full-range JPEG colour (yuvj420p, found by qc.py)
             f"--jpeg-quality={settings.video_jpeg_quality}", "--pixel-format=yuv420p", "--audio-codec=aac",
             f"--audio-bitrate={settings.video_audio_bitrate}", f"--concurrency={settings.video_concurrency}",
             "--log=error"]
@@ -192,6 +194,7 @@ def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Story
     started = time.monotonic()
     text = "\n".join(scene.say for scene in board.scenes)
     speech = voice.speak(http, keys.gemini, voiced(settings, look), home, text, job / "voice.wav")
+    speech = replace(speech, path=audio.normalize(speech.path, job / "soundtrack.wav"))  # -14 LUFS
     voice_took = time.monotonic() - started
     (job / "props.json").write_text(json.dumps(props(board, job, speech, look), ensure_ascii=False), encoding="utf-8")
     out = out.resolve()

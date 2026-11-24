@@ -75,7 +75,7 @@ the top. Parts of a scene (list items, bars, boxes, events, "after") arrive on t
   (spring feel, default entrance and exit, punch-in strength, drift, optional 12 fps handmade look),
   captions, voice, writing (format, hooks, humour, tone, words to avoid, example scripts) and allowed
   elements (music, sound effects, b-roll, memes: `off`, `auto` = only where it helps, or `always`).
-  Built in: `default` (dev dark), `bold` (black/yellow, Anton, whip cuts), `paper` (warm paper, ink
+  Built in: `default` (dev dark), `bold` (black/yellow, Anton, whip transitions), `paper` (warm paper, ink
   colours, soft). Yours go in `$HERMES_HOME/studio/profiles/<name>.yaml` and state only what differs
   (`extends: bold` + two colours is a whole profile). Pick one with `--profile`, the storyboard's
   `"profile"`, or `studio.profile`.
@@ -83,6 +83,15 @@ the top. Parts of a scene (list items, bars, boxes, events, "after") arrive on t
   × 5 exits, a camera punch-in on `*emphasised*` words, slow drift, and optional 12 fps stepping
   (`motion.step: 12`; off everywhere: next to 30 fps captions it reads as dropped frames). The profile sets
   defaults; a storyboard scene can override `enter`/`exit`; scenes compose them for their parts.
+- **Transitions overlap** (`motion.transition`, `transition_frames`): the next scene comes in while the last one
+  is still moving: `push`, `whip` (with motion blur), `zoom`, `fade`, `flash` (white), `burn` (warm light
+  sweeping across, film burn), or `none` (exit, then entrance) and `cut`. The scene starts on its first word
+  as before; the outgoing one is drawn a few frames longer underneath. Default `push`, bold `whip`, paper
+  `fade`; a scene can pick its own (`"transition": "burn"` for a jump in time).
+- **Captions in phrases:** a page breaks at sentence ends, pauses and commas; inside a phrase the split is
+  the one with no lone words, no page ending on "the/of/to", nothing far over `captions.words`. A word too
+  wide for the screen shrinks its page (an estimate per font that errs wide); a stat's value is sized to fit
+  one line.
 - **Timing comes from the voice.** All narration goes to the voice in one job; each scene starts when its
   first sentence starts. Captions are the script as written, its time split over the words by length
   (not Whisper, which drops Hindi in mixed clips).
@@ -194,6 +203,36 @@ camera frames each country on its main landmass (the USA without Alaska and Hawa
 Guiana); labels and route ends sit on its largest piece. Zoomed out, the map draws the coarse 110 m
 outlines and skips countries off screen: the 2-map test went from 53 s to 36 s of render (8.5 s video).
 
+## Overnight queue: notes in, a checked video on Telegram and Drive out
+
+```
+/studio make <notes>          # adds a job (Claude writes it now through the API, or via the handoff repo)
+/studio run                   # renders waiting jobs now instead of in the render window
+/studio pick <job> <n>        # re-renders the job with hook n
+/studio queue                 # lists the jobs and their state
+python -m orchestrator.studio queue add|run|pick|list   # the same on the host
+```
+
+A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering through the handoff repo)
+→ `ready` → `rendered` → `done`, or `failed` with the reason sent to you. The `studio` cron
+(`install.sh` prints the line; every 30 minutes) collects handoff answers and renders inside
+`studio.render_window`, one run at a time.
+
+- **Who writes:** `studio.claude_via` — `api` needs `ANTHROPIC_API_KEY`; `handoff` uses your Claude plan:
+  Hermes commits `studio/<job>/request.md` to the handoff repo and opens an issue, the Claude scheduled task
+  commits `storyboard.json` (and a `sceneNN.tsx` per custom scene) following `studio/HANDOFF.md`; any check
+  that fails goes back once as `fix-1.md`. `auto` = the API when the key is set.
+- **What renders:** the video with hook 1, and (`hook_clips`) hooks 2 and 3 as clips of the hook scene alone,
+  plus the cover the writer chose.
+- **Sound:** the voice is brought to -14 LUFS (what platforms play shorts at; Kokoro speaks near -18) with
+  peaks held under -1.5 dBTP by a limiter.
+- **Quality check** (`qc.py`, ffprobe/ffmpeg on the finished file). Blocking: H.264 1080×1920 at 30 fps
+  yuv420p, AAC audio, the expected length, true peak under -0.5 dBTP. Warnings: loudness outside -17…-11 LUFS,
+  silence longer than the longest scripted pause, black or frozen picture, over 50 MB.
+- **Delivery:** Telegram gets the video (a 720p copy when over 48 MB), the hook clips, the cover and a message
+  with the QC summary and the script. Drive (`python -m orchestrator.studio auth drive` once; scope
+  `drive.file`, folder "Hermes Studio") gets the full video only when QC passed.
+
 ## Setup
 
 1. `orchestrator/studio/install.sh` (once): a separate environment `$HERMES_HOME/venvs/studio`
@@ -206,6 +245,10 @@ outlines and skips countries off screen: the 2-map test went from 53 s to 36 s o
    shell, ~100 MB). Chrome also needs the usual shared libraries (`npx remotion browser ensure` names any missing).
 
 ## Tested
+
+- **Queue** (`tests/test_queue.py`): a job goes notes → storyboard → render → Telegram/Drive with fake
+  tools; a handoff answer is collected and a failing one gets one fix round; pick re-renders; the lock and the
+  window hold; QC and loudness run on real ffmpeg-made files (a quiet tone comes out at -14 LUFS).
 
 - **Video** (`tests/test_video.py`): bad storyboards refused before anything runs; scenes start with
   their first sentence; captions show the script as written (Hinglish stays Latin) in order; list items

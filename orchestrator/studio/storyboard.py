@@ -41,7 +41,8 @@ says them when ``say`` has one sentence per item (after any intro sentences).
 ``*asterisks*`` to emphasise them (caption colour + a camera punch-in; the voice never hears the
 asterisks). Voice directions go in ``say`` too: ``[beat]`` (a 0.4 s pause), ``[pause 0.8]``, and
 ``[slow]`` / ``[fast]`` for the rest of a sentence (direction.py); captions never show them. The other keys are what is on screen, plus optional ``enter`` (pop, rise, slide, drop, zoom,
-fade) and ``exit`` (lift, fade, whip, zoom, cut) to override the profile's motion for that scene.
+fade), ``exit`` (lift, fade, whip, zoom, cut) and ``transition`` into the next scene (none, cut, fade, push,
+whip, zoom, flash, burn) to override the profile's motion for that scene.
 ``profile`` names the page profile (default: studio.profile). ``src`` is a file next to the storyboard,
 or an https URL. Unknown types or keys are refused, so a typo fails here and not halfway through a render.
 """
@@ -77,6 +78,7 @@ class Scene:
     enter: str  # "" = the profile's
     exit: str
     emoji: str  # "" = none; pops on the scene's first *emphasised* word
+    transition: str = ""  # into the next scene; "" = the profile's
 
 
 @dataclass(frozen=True)
@@ -209,7 +211,7 @@ def _fallback(where: str, value: Any) -> Mapping[str, Any]:
 
 SCHEMA["custom"] = {"brief": _text(True), "props": _json_object, "full_bleed": _flag(False), "component": _text(False),
                     "fallback": _fallback}
-COMMON = {"type", "say", "enter", "exit", "emoji"}  # keys every scene may have
+COMMON = {"type", "say", "enter", "exit", "transition", "emoji"}  # keys every scene may have
 
 
 def _map(f: Mapping[str, Any]) -> str:
@@ -269,7 +271,7 @@ def _scene(n: int, raw: Any) -> Scene:
     if not sentences(direction.strip(say)):
         raise StoryboardError(f"{where}.say has nothing to say")
     motion = {}
-    for key in ("enter", "exit"):
+    for key in ("enter", "exit", "transition"):
         value = raw.get(key, "")
         try:
             motion[key] = PROFILE_SCHEMA["motion"][key](f"{where}.{key}", value) if value else ""
@@ -282,7 +284,8 @@ def _scene(n: int, raw: Any) -> Scene:
     emoji = _text(False)(f"{where}.emoji", raw.get("emoji", MISSING))
     if len(emoji) > 8:
         raise StoryboardError(f"{where}.emoji is one emoji, not text")
-    return Scene(kind, say, marked, MappingProxyType(fields), motion["enter"], motion["exit"], emoji)
+    return Scene(kind, say, marked, MappingProxyType(fields), motion["enter"], motion["exit"], emoji,
+                 motion["transition"])
 
 
 def parse(raw: Any, folder: Path) -> Storyboard:

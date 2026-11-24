@@ -239,3 +239,8 @@ studio:
   custom_review: true             # Claude reviews frames of each custom scene it builds, and fixes what is off
   claude_model: claude-opus-5-5   # `write --claude` / `/studio write claude`: needs ANTHROPIC_API_KEY; paid (~$0.10–0.25 a storyboard)
   claude_effort: medium           # low | medium | high | xhigh | max: how hard Claude thinks (more = slower, dearer)
+  # The overnight queue (/studio make, the `studio` cron; README § Overnight queue):
+  claude_via: auto                # api (ANTHROPIC_API_KEY) | handoff (your Claude plan, via the handoff repo) | auto
+  handoff_repo: ""                # "" = notes.handoff_repo; copy orchestrator/studio/HANDOFF.md into that repo
+  render_window: "00:30-07:00"    # local time the queue may render in; /studio run renders now
+  hook_clips: true                # also render hooks 2 and 3 as short clips, to pick one on Telegram

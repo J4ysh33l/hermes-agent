@@ -5,7 +5,9 @@ Hermes commits the inputs and opens an issue; the **issue opened** event starts 
 task (claude.ai/code → Routines); Claude commits its answer and closes the issue; Hermes picks the
 answer up on its next run and sends it to you on Telegram. Code: `orchestrator/handoff.py`.
 
-Used by: Smriti (`/notes … claude`, contract `notes/HANDOFF.md`) and Watches (`/watch` setup research
+Used by: the Studio (`/studio make` when there is no ANTHROPIC_API_KEY: Claude writes the storyboard and
+its custom scenes, contract `studio/HANDOFF.md`; **re-paste the prompt below if you set the task up
+before the Studio existed**), Smriti (`/notes … claude`, contract `notes/HANDOFF.md`) and Watches (`/watch` setup research
 for a new page, contract `watch/HANDOFF.md`; notes on changes are Gemini's, not Claude's).
 
 Facts below are from the Claude Code docs (code.claude.com/docs/en/routines, checked 2026-11-24;
@@ -14,7 +16,8 @@ the feature is a research preview, so recheck if something doesn't match).
 ## Set it up once
 
 1. **Repo:** create a private repo (e.g. `you/hermes-handoff`). Copy `notes/HANDOFF.md` to
-   `smriti/HANDOFF.md` and `watch/HANDOFF.md` to `watch/HANDOFF.md` in it.
+   `smriti/HANDOFF.md`, `watch/HANDOFF.md` to `watch/HANDOFF.md` and `studio/HANDOFF.md` to
+   `studio/HANDOFF.md` in it.
 2. **Token for Hermes:** a fine-grained GitHub token for that repo only, with Contents and Issues
    read/write → `GITHUB_HANDOFF_TOKEN=…` in `$HERMES_HOME/.env`. Then `notes.handoff_repo: you/hermes-handoff`
    in `brief.yaml` (Watches use the same repo unless `watch.handoff_repo` says otherwise).
@@ -44,9 +47,10 @@ event. Read that issue (use the gh CLI or the GitHub API), then:
 
 - If it names a folder under smriti/, follow smriti/HANDOFF.md.
 - If it names a folder under watch/, follow watch/HANDOFF.md.
+- If it names a folder under studio/, follow studio/HANDOFF.md.
 - Anything else: comment "Not a handoff request" on the issue and stop.
 
-Write only the file the contract names, inside that request's folder. Commit it directly to the
+Write only the files the contract names, inside that request's folder. Commit it directly to the
 main branch (not a claude/ branch: my server reads main), push, then close the issue.
 Never change any other file. Never post the request's contents anywhere else.
 ```

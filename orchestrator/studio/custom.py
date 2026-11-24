@@ -81,6 +81,34 @@ IMPORT = re.compile(r"""^\s*import\s[^'"]*?from\s+['"]([^'"]+)['"]|^\s*import\s+
 CODE = re.compile(r"```(?:tsx|typescript|ts|jsx)?\s*\n(.*?)```", re.DOTALL)
 STUDIO = {"studio/motion": "src/motion", "studio/theme": "src/theme", "studio/types": "src/types"}
 
+CONTRACT = """# The component contract
+```tsx
+import React from "react";
+import {AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig} from "remotion";
+import {Arrive, usePop, revealAt, ENTERS, FEELS} from "studio/motion";   // optional helpers
+import {useTheme, useProfile} from "studio/theme";                       // colours: theme.bg, panel, text, muted, accent, cool, bad, good; fonts: theme.sans, theme.monoFamily
+import type {CustomScene} from "studio/types";                           // scene.props, scene.beats (s), scene.brief
+
+export default function Scene({scene, frames}: {scene: CustomScene; frames: number}) {
+  const frame = useCurrentFrame();   // 0 … frames-1, then ~10 more while the next scene comes in: clamp
+  ...
+}
+```
+- usePop(delay) is a 0→1 spring in the page's feel; revealAt(i, count, frames, scene.beats) is the frame
+  item i should appear on when the narration has one sentence per item; <Arrive delay={n}> wraps a part
+  in the page's entrance. The scene's own entrance, transition to the next scene, drift, punch-ins and captions are added for you.
+- Layout: unless the scene says "full_bleed": true, the component draws in a 900 × ~1030 px box centred in
+  the safe area (padding is done for you); full bleed owns the whole 1080×1920 frame (keep words clear of
+  the bottom 660 px, where captions go).
+- Allowed imports: """ + ", ".join(sorted(ALLOWED_IMPORTS)) + """. Nothing else.
+- Time things to the sentences: an element appears when its sentence starts (scene.beats), never on a
+  fixed timer that ignores the words.
+- Refused before it runs: network, storage, timers, Math.random, Date, CSS animations or transitions,
+  raw HTML. Then checked by TypeScript and by rendering real frames; a scene that fails is replaced by
+  its fallback library scene.
+
+""" + LIMITS
+
 BUILD = """You are building ONE scene of a vertical short video as a Remotion component (React + TypeScript).
 Make it look like the work of a top motion designer: clear, bold, every element earning its place,
 motion that explains. The narration plays over it; the picture must show what the words say, as they say it.
@@ -95,27 +123,7 @@ Layout: {layout}
 # The page's look (use these, through useTheme())
 {theme}
 
-# The contract
-```tsx
-import React from "react";
-import {{AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig}} from "remotion";
-import {{Arrive, usePop, revealAt, ENTERS, FEELS}} from "studio/motion";   // optional helpers
-import {{useTheme, useProfile}} from "studio/theme";                       // colours: theme.bg, panel, text, muted, accent, cool, bad, good; fonts: theme.sans, theme.monoFamily
-import type {{CustomScene}} from "studio/types";                           // scene.props, scene.beats (s), scene.brief
-
-export default function Scene({{scene, frames}}: {{scene: CustomScene; frames: number}}) {{
-  const frame = useCurrentFrame();   // 0 … frames-1, within this scene
-  ...
-}}
-```
-- usePop(delay) is a 0→1 spring in the page's feel; revealAt(i, count, frames, scene.beats) is the frame
-  item i should appear on when the narration has one sentence per item; <Arrive delay={{n}}> wraps a part
-  in the page's entrance. The scene's own entrance, exit, drift, punch-ins and captions are added for you.
-- Allowed imports: {imports}. Nothing else.
-- Time things to the sentences: an element appears when its sentence starts (scene.beats), never on a
-  fixed timer that ignores the words.
-
-{limits}
+{contract}
 
 Here is a library scene for the house style (yours may look nothing like it):
 ```tsx
@@ -243,7 +251,7 @@ def probe_props(scene: Scene, key: str, look: Profile) -> dict[str, Any]:
     return {"profile": look.render_props(), "frames": frames,
             "scene": {"type": "custom", "key": key, "brief": fields["brief"], "props": fields["props"],
                       "full_bleed": fields["full_bleed"], "start": 0, "end": frames / FPS, "beats": beats,
-                      "enter": scene.enter, "exit": scene.exit, "emoji": ""}}
+                      "enter": scene.enter, "exit": scene.exit, "transition": "", "emoji": ""}}
 
 
 @dataclass
@@ -287,7 +295,7 @@ class Smith:
         theme = json.dumps(self.look.render_props()["theme"])
         ask = BUILD.format(brief=fields["brief"], seconds=frames / FPS, frames=frames, say=scene.say, beats=beats,
                            props=json.dumps(dict(fields["props"]), ensure_ascii=False), layout=layout, theme=theme,
-                           imports=", ".join(sorted(ALLOWED_IMPORTS)), limits=LIMITS, example=example)
+                           contract=CONTRACT, example=example)
         code = _code(self._claude(ask, "custom-scene"))
         for attempt in range(REPAIRS + 1):
             problem, shots = self.check(key, code, scene)

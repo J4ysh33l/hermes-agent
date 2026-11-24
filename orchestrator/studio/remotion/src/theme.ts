@@ -38,6 +38,7 @@ export interface Theme {
 export type Enter = "pop" | "rise" | "slide" | "drop" | "zoom" | "fade";
 export type Exit = "lift" | "fade" | "whip" | "zoom" | "cut";
 export type Feel = "snappy" | "soft" | "bouncy";
+export type Transition = "none" | "cut" | "fade" | "push" | "whip" | "zoom" | "flash" | "burn";
 
 export interface Motion {
   feel: Feel; // spring character for every entrance
@@ -47,6 +48,8 @@ export interface Motion {
   punch: number; // camera punch-in on *emphasised* words (0.08 = 8%)
   drift: number; // slow push over each scene (0.04 = 4%)
   step: number; // 0 = smooth; 12 = graphics move at 12 fps (handmade, Vox-like)
+  transition: Transition; // scene to scene, the two overlapping; "none" = exit, then entrance
+  transition_frames: number;
 }
 
 export interface CaptionStyle {
@@ -73,7 +76,8 @@ export const DEFAULT_PROFILE: Profile = {
     accent: "#ffd23f", cool: "#4cc9f0", bad: "#ff5d73", good: "#3ddc97",
     font: "inter", mono: "jetbrains", background: "glow-grid",
   },
-  motion: {feel: "snappy", enter: "pop", exit: "lift", exit_frames: 5, punch: 0.08, drift: 0.04, step: 0},
+  motion: {feel: "snappy", enter: "pop", exit: "lift", exit_frames: 5, punch: 0.08, drift: 0.04, step: 0,
+    transition: "push", transition_frames: 8},
   captions: {words: 3, size: 92, upper: true, font: "inter", stroke: 14, fill: "#f5f7fb", outline: "#000000"},
 };
 

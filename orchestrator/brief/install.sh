@@ -48,7 +48,9 @@ sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/watch/launcher.py.templ
 mkdir -p "$HOME_DIR/watch" && chmod 700 "$HOME_DIR/watch"
 echo "wrote   $HOME_DIR/scripts/watch.py (Watches: new jobs, uploads and posts on pages you name)"
 
-echo "studio  run orchestrator/studio/install.sh once for /studio voice (Kokoro + Edge TTS, ~300 MB, CPU only)"
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/studio/launcher.py.template" > "$HOME_DIR/scripts/studio.py"
+echo "wrote   $HOME_DIR/scripts/studio.py (Studio queue: collects Claude's storyboards, renders overnight)"
+echo "studio  run orchestrator/studio/install.sh once for voices and video (Kokoro, Remotion, ~500 MB, CPU only)"
 
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
@@ -73,5 +75,7 @@ Next (run these yourself):
       --script smriti.py --deliver telegram --name smriti
   hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
       --script watch.py --deliver telegram --name watch
+  hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script studio.py --deliver telegram --name studio
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

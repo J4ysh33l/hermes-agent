@@ -35,7 +35,7 @@ def props(board: Storyboard, n: int, words: str, job: Path, look: profiles.Profi
     beats = [0.0] * max(1, len(sentences(scene.say)))  # every part already said
     return {"profile": look.render_props(), "words": words,
             "scene": {"type": scene.type, "start": 0.0, "end": FRAMES / 30, "beats": beats, "enter": scene.enter,
-                      "exit": scene.exit, "emoji": scene.emoji, **fields}}
+                      "exit": scene.exit, "transition": "", "emoji": scene.emoji, **fields}}
 
 
 def still_args(settings: Settings, job: Path, out: Path) -> list[str]:
