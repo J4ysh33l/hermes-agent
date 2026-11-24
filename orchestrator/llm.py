@@ -9,6 +9,7 @@ cachedContentTokenCount (input served from cache). Logging reads them; it costs 
 
 from __future__ import annotations
 
+import base64
 import time
 from pathlib import Path
 from typing import Any
@@ -59,11 +60,15 @@ def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
 
 
 def claude(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str, max_tokens: int = 16000,
-           effort: str = "medium") -> str:
+           effort: str = "medium", images: tuple[bytes, ...] = ()) -> str:
     """One Messages API call (raw HTTP, like ``gemini``, so it is logged and faked the same way).
     Thinking is on by default on current Claude models; ``effort`` sets how much (low … max). No sampling
-    parameters: API version 2026-10-21 refuses them. Raises ValueError on a refusal or a cut-off answer."""
-    body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}],
+    parameters: API version 2026-10-21 refuses them. Raises ValueError on a refusal or a cut-off answer.
+    ``images``: PNGs shown before the prompt (e.g. frames of a render to review)."""
+    content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                            "data": base64.b64encode(png).decode("ascii")}} for png in images]
+    body = {"model": model, "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": [*content, {"type": "text", "text": prompt}]}],
             "output_config": {"effort": effort}, "fallbacks": "default"}
     headers = {"x-api-key": api_key, "anthropic-version": CLAUDE_VERSION, "anthropic-beta": CLAUDE_FALLBACK}
     started = time.monotonic()

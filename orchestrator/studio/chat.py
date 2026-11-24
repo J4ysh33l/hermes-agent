@@ -23,8 +23,8 @@ HELP = """**/studio** — video, audio, b-roll and images, made on your server
   English sentences use the English voice; Hindi in Devanagari the Hindi one. Hinglish typed in Latin
   script is first written in Devanagari by Gemini (one call): neither engine reads it well otherwise.
 /studio voices · /studio voices edge — voice names to set in brief.yaml (studio.voice_en, edge_voice_en …)
-/studio write <notes or a draft script> — a storyboard with 3 hooks, written to your page profile
-  (Gemini, free). /studio write claude <notes> — written by Claude instead (paid, needs ANTHROPIC_API_KEY).
+/studio write <notes or a draft script> — a storyboard with 3 hooks, written to your page profile by
+  Claude (studio.writer; needs ANTHROPIC_API_KEY). /studio write gemini <notes> — by Gemini's free models.
   Numbers, quotes and headlines on screen must be in your notes, so include the facts you want shown.
 Rendering from chat comes with the overnight queue; for now render on the host (python -m orchestrator.studio video).
 /menu — all your commands"""
@@ -41,6 +41,10 @@ class Context:
     @property
     def key(self) -> str:
         return self.secrets.get("GEMINI_API_KEY", "GOOGLE_API_KEY")
+
+    @property
+    def keys(self) -> settings.Keys:
+        return settings.Keys(self.key, self.secrets.get("ANTHROPIC_API_KEY"))
 
 
 def _ogg(wav: Path) -> Path:
@@ -92,14 +96,14 @@ def _voices(ctx: Context, text: str) -> str:
 
 def _write(ctx: Context, text: str) -> str:
     first, _, rest = text.strip().partition(" ")
-    use_claude = first.lower() == "claude"
-    notes = rest if use_claude else text
+    named = first.lower() in settings.WRITERS
+    notes = rest if named else text
+    who = writer.choose(ctx.settings, first.lower() == "claude", first.lower() == "gemini")
     if not notes.strip():
         return "What is the video about? /studio write <notes or a draft script>"
     look = profile.load(ctx.settings.profile, ctx.home)
     folder = ctx.home / "studio" / "write" / f"{datetime.now():%Y%m%d-%H%M%S}"
-    keys = writer.Keys(ctx.key, ctx.secrets.get("ANTHROPIC_API_KEY"))
-    draft = writer.write(ctx.http, keys, ctx.settings, look, notes, 0, folder, use_claude)
+    draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, 0, folder, who)
     saved = writer.save(draft, folder / "storyboard.json", look.name)
     if draft.wishes:
         writer.remember(draft, ctx.home, notes)

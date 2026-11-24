@@ -1,6 +1,7 @@
 import React from "react";
 import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from "remotion";
 import {Captions} from "./Captions";
+import {customView} from "./custom";
 import {Emoji} from "./Emoji";
 import {Camera, SceneFrame} from "./motion";
 import {Bullets} from "./scenes/Bullets";
@@ -21,7 +22,7 @@ import {Terminal} from "./scenes/Terminal";
 import {Timeline} from "./scenes/Timeline";
 import {Title} from "./scenes/Title";
 import {ProfileProvider, Theme, useTheme} from "./theme";
-import type {Scene, ShortProps} from "./types";
+import type {CustomScene, Scene, ShortProps} from "./types";
 
 type SceneView = React.FC<{scene: never; frames: number}>;
 
@@ -44,7 +45,17 @@ export const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}
   beforeafter: {view: BeforeAfter as SceneView, fullBleed: false},
   logo: {view: Logo as SceneView, fullBleed: false},
   map: {view: WorldMap as SceneView, fullBleed: false},
+  custom: {view: CustomHost as SceneView, fullBleed: false},
 };
+
+// The component registered for this custom scene by the job's entry file.
+function CustomHost({scene, frames}: {scene: CustomScene; frames: number}) {
+  const View = customView(scene.key);
+  if (!View) throw new Error(`custom scene ${scene.key} has no component (the job's entry did not register it)`);
+  return <View scene={scene} frames={frames} />;
+}
+
+export const fills = (scene: Scene) => (scene.type === "custom" ? scene.full_bleed : SCENES[scene.type].fullBleed);
 
 const GRID = "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)";
 
@@ -99,7 +110,8 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
           // the last scene holds to the end of the video (no empty tail after the last word)
           const until = n + 1 < scenes.length ? Math.round(scenes[n + 1].start * fps) : durationInFrames;
           const frames = Math.max(1, until - from);
-          const {view: View, fullBleed} = SCENES[scene.type];
+          const {view: View} = SCENES[scene.type];
+          const fullBleed = fills(scene);
           return (
             <Sequence key={n} from={from} durationInFrames={frames} layout="none">
               <SceneFrame frames={frames} enter={scene.enter || undefined} exit={scene.exit || undefined}

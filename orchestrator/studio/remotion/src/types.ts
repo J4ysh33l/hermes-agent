@@ -151,9 +151,19 @@ export interface MapScene extends SceneBase {
   labels: boolean;
 }
 
+// A scene written for this one video (src/custom.ts). `key` names its component; `props` is whatever
+// the component was written to read; `full_bleed` = the component fills the whole 1080×1920 frame.
+export interface CustomScene extends SceneBase {
+  type: "custom";
+  key: string;
+  brief: string;
+  props: Record<string, unknown>;
+  full_bleed: boolean;
+}
+
 export type Scene = MapScene | TitleScene | BulletsScene | CodeScene | StatScene | ImageScene | CompareScene | TerminalScene |
   ChartScene | DiagramScene | QuoteScene | TimelineScene | ClippingScene | PostScene | MemeScene | BeforeAfterScene |
-  LogoScene;
+  LogoScene | CustomScene;
 
 export interface ShortProps extends Record<string, unknown> {
   profile: Profile;
@@ -168,4 +178,11 @@ export type CoverProps = {
   profile: Profile;
   scene: Scene;
   words: string;
+};
+
+// custom.py's probe: one scene at its real length (`frames`).
+export type ProbeProps = {
+  profile: Profile;
+  scene: Scene;
+  frames: number;
 };

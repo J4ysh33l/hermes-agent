@@ -73,7 +73,7 @@ class Writing(unittest.TestCase):
         self.tmp.cleanup()
 
     def write(self) -> writer.Draft:
-        return writer.write(self.http, writer.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home)
+        return writer.write(self.http, settings.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home)
 
     def prompts(self) -> list[str]:
         return [c.json_body["contents"][0]["parts"][-1]["text"] for c in self.http.calls]
@@ -150,44 +150,53 @@ class Writing(unittest.TestCase):
                    {"type": "message", "stop_reason": "refusal", "content": [],
                     "stop_details": {"type": "refusal", "category": None, "explanation": "policy"}}]
         self.http.on("POST", CLAUDE, lambda _call: replies.pop(0))
-        keys = writer.Keys("", "a")
+        keys = settings.Keys("", "a")
         with self.assertRaisesRegex(writer.WriterError, "needs ANTHROPIC_API_KEY"):
-            writer.write(self.http, writer.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home, True)
+            writer.write(self.http, settings.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home, True)
         draft = writer.write(self.http, keys, settings.Settings(), self.look, NOTES, 15, self.home, True)
         self.assertEqual((draft.model, draft.rounds), ("claude-opus-5-5", 1))
         call = self.http.calls[-1]
         self.assertEqual(call.headers["anthropic-version"], "2026-10-21")
         self.assertEqual(call.json_body["output_config"], {"effort": "medium"})
         self.assertNotIn("temperature", call.json_body)  # refused by this API version
-        self.assertIn(NOTES, call.json_body["messages"][0]["content"])
+        self.assertIn(NOTES, call.json_body["messages"][0]["content"][-1]["text"])
         self.assertEqual(self.http.count(GEMINI), 0)
         with self.assertRaisesRegex(writer.WriterError, "Claude declined: policy"):
             writer.write(self.http, keys, settings.Settings(), self.look, NOTES, 15, self.home, True)
 
     def test_studio_write_in_chat_answers_with_the_hooks_and_saves_the_storyboards(self):
-        (self.home / ".env").write_text("GEMINI_API_KEY=g\n", encoding="utf-8")
+        (self.home / ".env").write_text("GEMINI_API_KEY=g\nANTHROPIC_API_KEY=a\n", encoding="utf-8")
+        self.http.on("POST", CLAUDE, lambda _call: {"stop_reason": "end_turn", "usage": {},
+                                                   "content": [{"type": "text", "text": json.dumps(GOOD)}]})
         (self.home / "studio/profiles").mkdir(parents=True)
         (self.home / "studio/profiles/shorts.yaml").write_text("writing:\n  seconds: 15\n", encoding="utf-8")
         (self.home / "brief").mkdir()
         (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n", encoding="utf-8")
+        reply = chat.handle("write " + NOTES, self.home, self.http)  # Claude writes by default
+        self.assertIn("claude-opus-5-5", reply)
         self.answers = [GOOD]
-        reply = chat.handle("write " + NOTES, self.home, self.http)
+        self.assertIn("gemini-3.5-flash-lite", chat.handle("write gemini " + NOTES, self.home, self.http))
         self.assertIn("1. (definition-twist) Bun, a JavaScript runtime that *refuses* to wait.", reply)
         self.assertIn("[quote] Jarred calls it a *drop-in* replacement.", reply)
         saved = next((self.home / "studio/write").glob("*/storyboard.json"))
         self.assertEqual(len(storyboard.load(saved).scenes), 5)
-        self.assertIn("needs ANTHROPIC_API_KEY", chat.handle("write claude " + NOTES, self.home, self.http))
+        (self.home / ".env").write_text("GEMINI_API_KEY=g\n", encoding="utf-8")
+        self.assertIn("needs ANTHROPIC_API_KEY", chat.handle("write " + NOTES, self.home, self.http))
 
     def test_the_profiles_writing_reaches_the_prompt(self):
         bold = profile.load("bold", self.home)
         self.answers = [GOOD]
-        writer.write(self.http, writer.Keys("g"), settings.Settings(), bold, NOTES, 15, self.home)
+        writer.write(self.http, settings.Keys("g"), settings.Settings(), bold, NOTES, 15, self.home)
         ask = self.prompts()[0]
         self.assertIn("in this order of preference: pain-point, contrarian, number", ask)
         self.assertIn('"game-changer"', ask)  # avoid list, inherited from default
         self.assertIn('"X in N seconds" explainer', ask)  # the format's beats from PLAYBOOK
         self.assertIn(NOTES, ask)
-        self.assertNotIn("image,", ask.split("Allowed scene types:")[1].split("\n")[0])
+        library = ask.split("The library types (")[1].split(")")[0]
+        self.assertNotIn("image", library)  # no image files yet
+        self.assertNotIn("custom", library)  # custom is not a library type: it is anything else
+        self.assertIn("Nothing here limits your ideas except the real", ask)
+        self.assertIn("Not possible: photoreal people", ask)
 
 
 if __name__ == "__main__":

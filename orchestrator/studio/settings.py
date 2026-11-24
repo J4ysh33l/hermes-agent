@@ -29,10 +29,26 @@ def _preset(value: str) -> str:
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
+def _writer(value: str) -> str:
+    if value not in WRITERS:
+        raise ValueError(f"brief.yaml: studio.writer must be one of {', '.join(WRITERS)}")
+    return value
+
+
 def _effort(value: str) -> str:
     if value not in EFFORTS:
         raise ValueError(f"brief.yaml: studio.claude_effort must be one of {', '.join(EFFORTS)}")
     return value
+
+
+@dataclass(frozen=True)
+class Keys:
+    """API keys from $HERMES_HOME/.env (never brief.yaml)."""
+    gemini: str = ""
+    claude: str = ""
+
+
+WRITERS = ("claude", "gemini")
 
 
 @dataclass(frozen=True)
@@ -59,7 +75,9 @@ class Settings:
     video_browser: str = ""  # Chrome headless shell to use; "" = the one Remotion downloaded (install.sh)
     text_models: tuple[ModelChoice, ...] = TEXT_MODELS  # small text jobs (Hinglish → Devanagari)
     script_models: tuple[ModelChoice, ...] = SCRIPT_MODELS  # notes → storyboard (writer.py); a stronger model writes better
-    claude_model: str = "claude-opus-5-5"  # `write --claude` (needs ANTHROPIC_API_KEY; paid, ~$0.10–0.25 a storyboard)
+    writer: str = "claude"  # who writes storyboards: claude (default; ANTHROPIC_API_KEY, paid) or gemini (free)
+    claude_model: str = "claude-opus-5-5"  # writes storyboards and builds custom scenes (~$0.10–0.25 a storyboard)
+    custom_review: bool = True  # Claude looks at frames of each custom scene it built and fixes what is off
     claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
 
 
@@ -96,6 +114,8 @@ def parse(raw: dict[str, Any]) -> Settings:
         video_browser=str(studio.get("video_browser", base.video_browser)),
         text_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in models)
         if models else base.text_models,
+        writer=_writer(str(studio.get("writer", base.writer))),
+        custom_review=bool(studio.get("custom_review", base.custom_review)),
         claude_model=str(studio.get("claude_model", base.claude_model)),
         claude_effort=_effort(str(studio.get("claude_effort", base.claude_effort))),
         script_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in script)

@@ -21,7 +21,16 @@
             {"type": "beforeafter", "say": "...", "before": {"label": "...", "src": ""}, "after": {"label": "..."}},
             {"type": "logo", "say": "...", "name": "Rust", "src": "rust.svg", "tagline": "..."},
             {"type": "map", "say": "...", "title": "...", "focus": "India", "highlight": ["India", "Japan"],
-             "route": ["India", "Japan"], "labels": true}]}       # Natural Earth country names
+             "route": ["India", "Japan"], "labels": true},        # Natural Earth country names
+            {"type": "custom", "say": "...", "brief": "what is on screen, moment by moment",
+             "props": {...}, "full_bleed": false, "component": "coins.tsx",
+             "fallback": {"type": "stat", "value": 25, "suffix": "×", "label": "faster"}}]}
+
+The library types are a fast track (ready, tested, quick to render), not the limit. ``custom`` is any
+other picture: ``brief`` says what it shows; Claude writes it as a component for this one video
+(custom.py), or ``component`` names one written by hand next to the storyboard; ``props`` is data the
+component reads; ``fallback`` is a library scene (no "say") drawn instead if the component cannot be
+built or fails its checks, so a video never breaks.
 
 Any scene may also have ``"emoji": "🔥"``: it pops on the scene's first *emphasised* word.
 
@@ -175,6 +184,31 @@ SCHEMA: dict[str, dict[str, Field]] = {
     "map": {"title": _text(False), "focus": _text(False), "highlight": _list(0, 12, _text(True)),
             "route": _list(0, 6, _text(True)), "labels": _flag(True)},
 }
+def _json_object(where: str, value: Any) -> Mapping[str, Any]:
+    if value is MISSING:
+        return MappingProxyType({})
+    if not isinstance(value, dict) or len(json.dumps(value)) > 20_000:
+        raise StoryboardError(f"{where} must be an object of data (at most 20 KB)")
+    return MappingProxyType(value)
+
+
+def _fallback(where: str, value: Any) -> Mapping[str, Any]:
+    """A library scene's fields with its type, drawn when a custom scene cannot be."""
+    if not isinstance(value, dict) or value.get("type") not in set(SCHEMA) - {"custom"}:
+        raise StoryboardError(f"{where} must be a library scene ({{\"type\": \"stat\", ...}}) without \"say\"")
+    kind = value["type"]
+    unknown = set(value) - set(SCHEMA[kind]) - {"type"}
+    if unknown:
+        raise StoryboardError(f"{where} ({kind}): unknown key {min(unknown)!r}")
+    fields = {key: parse(f"{where}.{key}", value.get(key, MISSING)) for key, parse in SCHEMA[kind].items()}
+    problem = CHECKS.get(kind, lambda _f: "")(fields)
+    if problem:
+        raise StoryboardError(f"{where} ({kind}): {problem}")
+    return MappingProxyType({"type": kind, **fields})
+
+
+SCHEMA["custom"] = {"brief": _text(True), "props": _json_object, "full_bleed": _flag(False), "component": _text(False),
+                    "fallback": _fallback}
 COMMON = {"type", "say", "enter", "exit", "emoji"}  # keys every scene may have
 
 
@@ -261,6 +295,9 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         raise StoryboardError(f"unknown key {min(unknown)!r} in the storyboard")
     scenes = tuple(_scene(n, s) for n, s in enumerate(raw["scenes"]))
     for n, scene in enumerate(scenes):
+        component = scene.fields.get("component", "") if scene.type == "custom" else ""
+        if component and (not component.endswith(".tsx") or not (folder / component).is_file()):
+            raise StoryboardError(f"scene {n + 1}: component {folder / component} not found (a .tsx file)")
         for src in files(scene.fields):
             if not src.startswith("https://") and not (folder / src).is_file():
                 raise StoryboardError(f"scene {n + 1}: {folder / src} not found")

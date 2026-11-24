@@ -30,15 +30,16 @@ from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 from orchestrator.brief.settings import ModelChoice
 
-from . import direction, storyboard, video
+from . import custom, direction, storyboard, video
 from .profile import Profile
-from .settings import Settings
+from .settings import Keys, Settings
 from .voice import sentences
 
 PLAYBOOK = Path(__file__).with_name("PLAYBOOK.md")
 WPM = 196  # measured at voice speed 1.0, pause 0.15 (README); scales with the profile's speed
 MAX_SENTENCE = 24
 SCENE_WORDS = 20  # ~6 s at 196 wpm
+CUSTOM_WORDS = 40  # a custom scene animates through its own sentences
 PART_WORDS = 16  # per list item / bar / box / event
 HOOK_WORDS = 12  # the hook's first sentence
 FORMATS = {"explainer": "A", "news": "B", "how-it-works": "C", "business-case": "D", "hindi-explainer": "E"}
@@ -106,9 +107,10 @@ def _rules() -> str:
 
 
 def allowed_scenes(look: Profile) -> list[str]:
+    """The library types this page uses (all unless its profile lists some), plus custom, always."""
     elements = look.section("elements")
-    listed = list(elements["scenes"]) or list(storyboard.SCHEMA)
-    return [s for s in listed if s in storyboard.SCHEMA and s not in NEEDS_FILE]
+    listed = list(elements["scenes"]) or [s for s in storyboard.SCHEMA if s != "custom"]
+    return [s for s in listed if s in storyboard.SCHEMA and s not in NEEDS_FILE and s != "custom"] + ["custom"]
 
 
 def _families(look: Profile) -> list[str]:
@@ -119,7 +121,8 @@ def _families(look: Profile) -> list[str]:
 SCENE_HELP = storyboard.__doc__ or ""
 
 PROMPT = """You write vertical short videos (1080×1920, ~{seconds} s) for a faceless page. You write the
-narration AND choose what is on screen, as JSON scenes for a fixed renderer. You never write code.
+narration AND direct what is on screen, as JSON scenes. Quality beats speed: write the best video you can
+imagine, then express it with the scenes below.
 
 # The page
 Format: {format}. Language: {language}. Tone: {tone}. Humour: {humour}.
@@ -137,18 +140,30 @@ Families: {hook_bank}
 A hook is the whole first scene: the first sentence is at most {hook_words} words, says the topic or the
 claim at once, and never greets. Each hook must lead naturally into the same second scene.
 
-# Scenes
-Allowed scene types: {scenes}. Use variety: change the picture every 1.5–4 s; never two scenes of the
-same type in a row unless it is the point. The format and fields:
+# Scenes: a fast track, not a menu
+The library types ({scenes}) are ready-made, tested and quick to render: use one when it is genuinely the
+best way to show that moment. When a better picture exists, ask for it: a "custom" scene with a "brief"
+describing exactly what is on screen and how it moves with the words. A custom scene is built for this
+video by a motion designer (Claude, writing a Remotion component) and checked frame by frame; give it a
+"fallback" library scene, drawn only if the build fails. Nothing here limits your ideas except the real
+limits of the pipeline:
+
+{limits}
+
+Change the picture every 1.5–4 s; never two scenes of the same type in a row unless it is the point.
+The format and fields:
 {scene_help}
+- A custom brief is direction for an animator: name the elements, their arrangement, what appears on
+  which sentence, the motion, what the viewer should feel. Data the component should show goes in
+  "props" (numbers from the notes only). "full_bleed": true when it should own the whole frame.
 - "say" is the narration. One idea per sentence, sentences under {max_sentence} words, spoken English
   (contractions, plain words). Wrap 1–2 key words per scene in *asterisks* (caption colour + camera punch).
-- A scene without parts says at most {scene_words} words. Scenes with parts (bullets items, chart
+- A library scene without parts says at most {scene_words} words; a custom scene at most {custom_words}. Scenes with parts (bullets items, chart
   labels, diagram nodes, timeline events, terminal lines) say ONE sentence per part, in order, after at
   most one intro sentence.
 - Maps take COUNTRY names only (Natural Earth names, e.g. "United States of America", "India"); never
   cities or regions.
-- No "src" fields: there are no images yet. Leave out image and meme scenes.
+- No "src" fields: there are no image files yet, so no image or meme scenes (a custom scene can draw instead).
 - EVIDENCE: numbers in stat/chart scenes, quote text, clipping headlines and post text must be copied
   from the notes below. If the notes have no such fact, use another scene type. Never invent data,
   quotes or headlines.
@@ -158,9 +173,9 @@ same type in a row unless it is the point. The format and fields:
   ("And the winner is [beat] India."); [pause 0.8] = an exact pause; [slow] or [fast] = the rest of the
   sentence slower or faster. Use them where a human narrator would: 1–4 per video, never decoration.
   Punctuation directs too: "?" lifts, "..." hesitates, "—" breaks.
-- WISHES: if a scene would be clearly better with a visual we cannot make yet (an animation, an
-  illustration, footage, a sound), still pick the best allowed scene AND add "wish": "<that visual, in
-  at most 15 words>" to it. At most 3 wishes; they tell us what to build next.
+- WISHES: only for what is beyond the limits above even as a custom scene (real footage, a real person,
+  a specific sound): do your best on screen AND add "wish": "<that thing, in at most 15 words>" to the
+  scene. They tell us what to add to the pipeline next.
 
 # The notes (the only source of facts)
 <notes>
@@ -189,8 +204,9 @@ def prompt(look: Profile, notes: str, seconds: float, words: int) -> str:
         humour=w["humour"] or "none", avoid=", ".join(f'"{a}"' for a in (*w["avoid"], *ALWAYS_AVOID)),
         examples=examples, rules=_rules(), beats=_format_beats(w["format"]), families=", ".join(families[:3]),
         hook_bank="\n".join(f"- {name}: {template}" for name, template in HOOKS.items()),
-        hook_words=HOOK_WORDS, scenes=", ".join(allowed_scenes(look)), scene_help=SCENE_HELP,
-        max_sentence=MAX_SENTENCE, scene_words=SCENE_WORDS, words=words, notes=notes.strip())
+        hook_words=HOOK_WORDS, scenes=", ".join(s for s in allowed_scenes(look) if s != "custom"), scene_help=SCENE_HELP,
+        max_sentence=MAX_SENTENCE, scene_words=SCENE_WORDS, custom_words=CUSTOM_WORDS, words=words,
+        notes=notes.strip(), limits=custom.LIMITS)
 
 
 # ---------------------------------------------------------------- the checks
@@ -217,9 +233,24 @@ def _evidence(n: int, scene: dict[str, Any], notes: str) -> list[str]:
     problems = [f"{where} ({kind}): its {key} is not in the notes; copy it word for word or use another scene"
                 for key in texts if _squash(str(scene.get(key, ""))) not in squashed]
     numbers = [scene.get("value")] if kind == "stat" else list(scene.get("values") or []) if kind == "chart" else []
+    if kind == "custom":  # data a custom scene shows; small counts (3 gears) are pictures, not claims
+        numbers = [v for v in _numbers(scene.get("props")) if abs(v) >= 10]
+        problems += _evidence(n, dict(scene.get("fallback") or {}), notes) if isinstance(scene.get("fallback"), dict) else []
     problems += [f"{where} ({kind}): the number {v} is not in the notes; use only numbers given there"
                  for v in numbers if not _number_in(v, notes)]
     return problems
+
+
+def _numbers(value: Any) -> list[float]:
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, (int, float)):
+        return [value]
+    if isinstance(value, dict):
+        return [n for v in value.values() for n in _numbers(v)]
+    if isinstance(value, list):
+        return [n for v in value for n in _numbers(v)]
+    return []
 
 
 def _pacing(n: int, scene: dict[str, Any]) -> list[str]:
@@ -232,7 +263,7 @@ def _pacing(n: int, scene: dict[str, Any]) -> list[str]:
         problems.append(f"{where} ({scene['type']}): {parts} parts but {len(said)} sentences; say one sentence per part")
     elif parts and len(said) > parts + 1:
         problems.append(f"{where} ({scene['type']}): {len(said)} sentences for {parts} parts; at most one intro sentence")
-    limit = SCENE_WORDS + PART_WORDS * parts if parts else SCENE_WORDS
+    limit = SCENE_WORDS + PART_WORDS * parts if parts else CUSTOM_WORDS if scene.get("type") == "custom" else SCENE_WORDS
     if words > limit:
         problems.append(f"{where}: {words} words is too long for one picture (at most {limit}); split it")
     return problems
@@ -388,14 +419,13 @@ def _ask(http: Http, keys: Keys, settings: Settings, model: ModelChoice, questio
                       json_mode=model.json_mode, max_output_tokens=8000, temperature=0.9 if attempt == 0 else 0.4)
 
 
-@dataclass(frozen=True)
-class Keys:
-    gemini: str = ""
-    claude: str = ""
+def choose(settings: Settings, claude: bool = False, gemini: bool = False) -> bool:
+    """True = Claude writes: asked for, or studio.writer (claude by default) unless Gemini was asked for."""
+    return claude or (not gemini and settings.writer == "claude")
 
 
 def models(settings: Settings, use_claude: bool) -> tuple[ModelChoice, ...]:
-    """Gemini's free models by default; Claude when asked (one model, paid)."""
+    """Claude (studio.claude_model) or Gemini's free models (studio.script_models), tried in order."""
     return (ModelChoice(settings.claude_model),) if use_claude else settings.script_models
 
 

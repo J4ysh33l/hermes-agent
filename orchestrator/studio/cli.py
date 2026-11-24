@@ -1,6 +1,6 @@
 """On the host, no Telegram:
   python -m orchestrator.studio voice "text" --out speech.wav
-  python -m orchestrator.studio write "notes or a draft script" --out sb.json [--notes notes.txt] [--profile bold] [--seconds 45] [--claude]
+  python -m orchestrator.studio write "notes or a draft script" --out sb.json [--notes notes.txt] [--profile bold] [--seconds 45] [--gemini]
   python -m orchestrator.studio cover storyboard.json --out cover.png [--scene 1] [--words "2-5 big words"] [--profile bold]
   python -m orchestrator.studio wishes        (visuals the writer wanted but we cannot make yet, most wanted first)
   python -m orchestrator.studio video storyboard.json --out short.mp4 [--profile bold]   (storyboard.py: format)
@@ -25,13 +25,15 @@ def _video(home: Path, words: list[str]) -> int:
     args = parser.parse_args(words)
     ctx = chat.Context(home)
     try:
-        made = video.make(ctx.http, ctx.key, ctx.settings, home, storyboard.load(args.storyboard), args.out,
+        made = video.make(ctx.http, ctx.keys, ctx.settings, home, storyboard.load(args.storyboard), args.out,
                           args.profile)
     except (storyboard.StoryboardError, profile.ProfileError, voice.VoiceError, video.VideoError) as exc:
         print(f"⚠️ {exc}", file=sys.stderr)
         return 1
     print(f"{made.path}: {made.seconds:.1f} s · voice {made.voice_took:.0f} s · render {made.render_took:.0f} s"
           f" · job {made.job}")
+    for note in made.notes:
+        print(f"  {note}")
     return 0
 
 
@@ -61,14 +63,15 @@ def _write(home: Path, words: list[str]) -> int:
     parser.add_argument("--out", required=True, type=Path, help="the storyboard; hooks 2 and 3 go next to it")
     parser.add_argument("--profile", default="", help="page profile (default: studio.profile)")
     parser.add_argument("--seconds", type=float, default=0, help="length (default: the profile's writing.seconds)")
-    parser.add_argument("--claude", action="store_true", help="write with Claude (studio.claude_model; paid)")
+    parser.add_argument("--claude", action="store_true", help="write with Claude (the default; studio.writer)")
+    parser.add_argument("--gemini", action="store_true", help="write with Gemini's free models instead")
     args = parser.parse_args(words)
     ctx = chat.Context(home)
     try:
         notes = " ".join(args.text) + ("\n" + args.notes.read_text(encoding="utf-8") if args.notes else "")
         look = profile.load(args.profile or ctx.settings.profile, home)
-        keys = writer.Keys(ctx.key, ctx.secrets.get("ANTHROPIC_API_KEY"))
-        draft = writer.write(ctx.http, keys, ctx.settings, look, notes, args.seconds, args.out.parent, args.claude)
+        draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, args.seconds, args.out.parent,
+                             writer.choose(ctx.settings, args.claude, args.gemini))
     except (OSError, writer.WriterError, profile.ProfileError) as exc:
         print(f"⚠️ {exc}", file=sys.stderr)
         return 1

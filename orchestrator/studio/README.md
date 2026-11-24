@@ -111,7 +111,8 @@ python -m orchestrator.studio write "Bun: a JS runtime in Zig, 25x faster instal
 python -m orchestrator.studio video bun.json --out bun.mp4          # or bun.hook2.json / bun.hook3.json
 ```
 
-Gemini (`studio.script_models`, tried in order) writes the narration and picks the scenes, prompted
+Claude (`studio.writer: claude`, the default; `studio.claude_model`) writes the narration and directs the
+scenes; `--gemini` uses Gemini's free models (`studio.script_models`) instead. Prompted
 from the page profile's `writing:` (format, hooks, humour, tone, words to avoid, example scripts,
 length) and `PLAYBOOK.md` (the ten rules, the format's beats, the hook bank). It writes **3 hooks from 3
 different families**; `bun.json` opens with hook 1, `bun.hook2.json`/`bun.hook3.json` with the others, and
@@ -134,11 +135,31 @@ fallback model by the API). Same prompt, same checks. **Neither has been run aga
 In Telegram: `/studio write <notes>` answers with the hooks and the script and saves the storyboards in
 `$HERMES_HOME/studio/write/<time>/`; rendering from chat comes with the overnight queue.
 
-**Wishes: the library is a menu, never a checklist.** The writer picks only scenes that fit; nothing has
-to be used. When a scene would be clearly better with a visual we cannot make yet, it still picks the
-best available scene and adds a wish ("a 3D bun bouncing out of an oven"). Wishes are logged in
-`$HERMES_HOME/studio/wishes.jsonl`; `python -m orchestrator.studio wishes` ranks them, most wanted first,
-which is the backlog for new scenes and assets.
+## The library is a fast track, not a menu
+
+Quality beats speed. The 17 library scenes are ready-made, tested and quick to render, so the writer uses
+one when it is genuinely the best picture for that moment. For anything else it writes a **custom scene**:
+a `brief` an animator could work from, the data in `props`, and a `fallback` library scene. Claude then
+writes that one scene as a Remotion component (`custom.py`), and it must pass, in order:
+
+1. a static check: only the allowed imports, nothing that reaches outside the page or changes between
+   renders (network, storage, timers, `Math.random`, dates, CSS animations);
+2. TypeScript against the real scene types;
+3. a probe render: three frames of the scene alone, drawn by the real renderer;
+4. a review (`studio.custom_review: true`): Claude looks at those frames beside the brief and fixes
+   what is off (a fix that breaks the checks is ignored).
+
+A failure in 1–3 goes back to Claude with the error, twice at most; a scene that still fails, or that
+cannot be built (no `ANTHROPIC_API_KEY`), is drawn as its fallback and the reason is printed. The video
+is never lost. Passed components are cached in `$HERMES_HOME/studio/scenes/` and kept with each job
+(`custom/`). A component can also be written by hand: `"component": "race.tsx"` next to the storyboard
+(`tests/data/race.tsx` is one).
+
+The only limits the writer is given are the pipeline's real ones (`custom.LIMITS`): Remotion draws
+React/SVG/CSS in headless Chrome, frame by frame; no photoreal people or footage without a file; no true
+3D; the fonts installed; the 2-core host's render time; what the voices can do; where captions and
+platform buttons sit. **Wishes** are only for what is beyond even that (real footage, a specific sound):
+logged in `$HERMES_HOME/studio/wishes.jsonl` and ranked by `python -m orchestrator.studio wishes`.
 
 ## Voice directions
 

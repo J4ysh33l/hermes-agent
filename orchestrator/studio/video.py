@@ -30,9 +30,9 @@ from typing import Any
 from orchestrator.brief.net import Http
 
 from . import profile as profiles
-from . import direction, voice
+from . import custom, direction, voice
 from .profile import Profile
-from .settings import Settings
+from .settings import Keys, Settings
 from .storyboard import Storyboard
 
 PROJECT = Path(__file__).with_name("remotion")
@@ -52,6 +52,7 @@ class Video:
     job: Path  # the job folder (voice, props, assets, log)
     voice_took: float
     render_took: float
+    notes: tuple[str, ...] = ()  # custom scenes: built, cached, given, or drawn as their fallback and why
 
 
 def word_times(marked: str, start: float, end: float) -> list[dict[str, Any]]:
@@ -121,8 +122,8 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
     return {"profile": look.render_props(), "audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}
 
 
-def render_args(settings: Settings, job: Path, out: Path) -> list[str]:
-    args = [str(PROJECT / "node_modules/.bin/remotion"), "render", "src/index.ts", "Short", str(out),
+def render_args(settings: Settings, job: Path, out: Path, entry: str = "src/index.ts") -> list[str]:
+    args = [str(PROJECT / "node_modules/.bin/remotion"), "render", entry, "Short", str(out),
             f"--props={job / 'props.json'}", f"--public-dir={job}", "--codec=h264",
             f"--crf={settings.video_crf}", f"--x264-preset={settings.video_preset}", "--image-format=jpeg",
             f"--jpeg-quality={settings.video_jpeg_quality}", "--pixel-format=yuv420p", "--audio-codec=aac",
@@ -170,25 +171,34 @@ def voiced(settings: Settings, look: Profile) -> Settings:
                    speed=float(v["speed"]), pause=float(v["pause"]))
 
 
-def make(http: Http, key: str, settings: Settings, home: Path, board: Storyboard, out: Path,
+def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboard, out: Path,
          profile_name: str = "") -> Video:
-    """``profile_name`` (or the storyboard's, or studio.profile) picks the page profile."""
+    """``profile_name`` (or the storyboard's, or studio.profile) picks the page profile. Custom scenes are
+    built and checked first (custom.py); one that fails is drawn as its fallback and named in ``notes``."""
     look = profiles.load(profile_name or board.profile or settings.profile, home)
     if not (PROJECT / "node_modules/.bin/remotion").is_file():
         raise VideoError("Remotion is not installed: run orchestrator/studio/install.sh (needs Node 18+)")
-    board = check_countries(board)
     job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second
     job.mkdir(parents=True)
+    built = custom.prepare(http, keys, settings, home, board, look, job)
+    try:
+        return _render(http, keys, settings, home, check_countries(built.board), out, look, job, built)
+    finally:
+        custom.clean(built.entry)
+
+
+def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboard, out: Path, look: Profile,
+            job: Path, built: custom.Result) -> Video:
     started = time.monotonic()
     text = "\n".join(scene.say for scene in board.scenes)
-    speech = voice.speak(http, key, voiced(settings, look), home, text, job / "voice.wav")
+    speech = voice.speak(http, keys.gemini, voiced(settings, look), home, text, job / "voice.wav")
     voice_took = time.monotonic() - started
     (job / "props.json").write_text(json.dumps(props(board, job, speech, look), ensure_ascii=False), encoding="utf-8")
     out = out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     try:
-        done = subprocess.run(render_args(settings, job, out), cwd=PROJECT, capture_output=True, text=True,
+        done = subprocess.run(render_args(settings, job, out, built.entry), cwd=PROJECT, capture_output=True, text=True,
                               timeout=RENDER_TIMEOUT, check=False)
     except subprocess.TimeoutExpired:
         raise VideoError(f"The render took over {RENDER_TIMEOUT // 60} minutes; job kept in {job}") from None
@@ -196,4 +206,4 @@ def make(http: Http, key: str, settings: Settings, home: Path, board: Storyboard
     if done.returncode != 0 or not out.is_file():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no error text"]
         raise VideoError(f"Remotion failed: {tail[0][:200]} (log: {job / 'render.log'})")
-    return Video(out, speech.seconds + TAIL, job, voice_took, time.monotonic() - started)
+    return Video(out, speech.seconds + TAIL, job, voice_took, time.monotonic() - started, built.notes)

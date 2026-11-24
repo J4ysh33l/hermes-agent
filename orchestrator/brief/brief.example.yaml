@@ -235,5 +235,7 @@ studio:
   script_models:
     - {id: gemini-3.5-flash-lite}
     - {id: gemini-3.1-flash-lite}
+  writer: claude                  # who writes storyboards: claude (default) or gemini (free, weaker)
+  custom_review: true             # Claude reviews frames of each custom scene it builds, and fixes what is off
   claude_model: claude-opus-5-5   # `write --claude` / `/studio write claude`: needs ANTHROPIC_API_KEY; paid (~$0.10–0.25 a storyboard)
   claude_effort: medium           # low | medium | high | xhigh | max: how hard Claude thinks (more = slower, dearer)
