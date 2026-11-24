@@ -1,11 +1,13 @@
 """The studio queue, the quality check and the loudness step, against fake Claude, Telegram, Drive and
-GitHub; renders are stand-ins (the real ones are tested in test_video.py and test_custom.py).
+GitHub; renders and the components' check are stand-ins (the real ones: test_video.py, test_custom.py).
 
 The promises tested: /studio make writes now and renders only inside the night window (or on /studio
 run); a render delivers the video, cover and hook clips to Telegram, and to Drive only when the quality
-check passed and Drive is signed in; a failed check never reaches Drive; without an API key Claude writes
-through the handoff repo, the queue waits for the answer, saves its components, and sends one fix request
-when the checks fail; picking a hook re-renders with it; two runs never overlap; the quality check names
+check passed and Drive is signed in; a failed check never reaches Drive; without an API key Claude makes
+the three calls through the handoff repo, one issue each, whose body is the whole prompt (with the checker
+committed next to it); an answer is read only once its issue is closed; a failing script, storyboard or
+component gets its fix request, and a component that keeps failing is drawn as its fallback; custom scenes
+written through the API are checked before rendering too; picking a hook re-renders with it; two runs never overlap; the quality check names
 dead air, a black picture and the wrong format on real files; the voice is brought to -14 LUFS.
 
 Run: python3 orchestrator/studio/tests/test_queue.py   (or orchestrator/run_checks.sh)
@@ -31,10 +33,10 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fakes import FakeHttp, http_error
-from test_writer import GOOD, NOTES
+from test_writer import BOARD, NOTES, RACE as RACE_SCENE, SCRIPT, TSX, component
 
 from hermes_platform.resolver import locate_command
-from orchestrator.studio import audio, chat, qc, queue, video
+from orchestrator.studio import audio, chat, qc, queue, rules, video
 
 CLAUDE = "https://api.anthropic.com/v1/messages"
 TG = "https://api.telegram.org/bott/"
@@ -47,6 +49,22 @@ RACE = (Path(__file__).parent / "data/race.tsx").read_text(encoding="utf-8")
 
 def claude(text: str) -> dict:
     return {"stop_reason": "end_turn", "usage": {}, "content": [{"type": "text", "text": text}]}
+
+
+COVERED = {**BOARD, "cover": {"scene": 2, "words": "Bun wins"}}
+WITH_RACE = {**COVERED, "scenes": [COVERED["scenes"][0], {**RACE_SCENE, "props": {"times": 25}}, *COVERED["scenes"][2:]]}
+
+
+def writer_answers(board: dict):
+    """A fake Claude API answering each of the three calls by what it asks for."""
+    def answer(call) -> dict:
+        ask = call.json_body["messages"][0]["content"][-1]["text"]
+        if "1 of 3: the script" in ask:
+            return claude(json.dumps(SCRIPT))
+        if "3 of 3: custom scenes" in ask:
+            return claude(component("scene03.tsx", RACE))
+        return claude(json.dumps(board))
+    return answer
 
 
 class Stand:
@@ -71,7 +89,49 @@ class Stand:
         return qc.Report(bad, 14.0, -14.2, -1.6, 4.0)
 
     def tools(self) -> queue.Tools:
-        return queue.Tools(video=self.video, cover=self.cover, qc=self.qc)
+        return queue.Tools(video=self.video, cover=self.cover, qc=self.qc, verify=self.verify)
+
+    def verify(self, _settings, _look, boards, folder: Path) -> dict[str, str]:
+        """Fails the components named in ``self.broken`` (TypeScript's word for it)."""
+        self.verified = sorted({s.fields["component"] for b in boards for s in b.scenes
+                                if s.type == "custom" and s.fields["component"]})
+        return {n: "TypeScript:\nscene03.tsx(4,7): error TS2304: Cannot find name 'x'." for n in self.verified
+                if n in getattr(self, "broken", ())}
+
+
+class Hub:
+    """A fake handoff repo: files, issues (open until Claude answers), labels."""
+
+    def __init__(self, http: FakeHttp) -> None:
+        self.files: dict[str, str] = {}
+        self.issues: dict[int, dict] = {}
+        self.closed: set[int] = set()
+        http.on("PUT", GH + "contents/", self.put)
+        http.on("GET", GH + "contents/", self.get)
+        http.on("POST", GH + "issues", self.open)
+        http.on("GET", GH + "issues/", lambda c: {"state": "closed" if int(c.url.rsplit("/", 1)[1]) in self.closed
+                                                   else "open"})
+        http.on("POST", GH + "labels", http_error(422))  # it exists already
+
+    def put(self, call) -> dict:
+        self.files[call.url.split("contents/")[1]] = base64.b64decode(call.json_body["content"]).decode()
+        return {}
+
+    def get(self, call) -> dict:
+        path = call.url.split("contents/")[1]
+        if path not in self.files:
+            return http_error(404)(call)
+        return {"content": base64.b64encode(self.files[path].encode()).decode(), "sha": "s"}
+
+    def open(self, call) -> dict:
+        number = len(self.issues) + 1
+        self.issues[number] = call.json_body
+        return {"number": number}
+
+    def answer(self, number: int, files: dict[str, str]) -> None:
+        """Claude commits its files and closes the issue."""
+        self.files.update(files)
+        self.closed.add(number)
 
 
 class Queue(unittest.TestCase):
@@ -87,7 +147,7 @@ class Queue(unittest.TestCase):
         self.brief("")
         self.envfile("ANTHROPIC_API_KEY=a\n")
         self.http = FakeHttp()
-        self.http.on("POST", CLAUDE, lambda _c: claude(json.dumps({**GOOD, "cover": {"scene": 2, "words": "Bun wins"}})))
+        self.http.on("POST", CLAUDE, writer_answers(COVERED))
         for method in ("sendVideo", "sendPhoto", "sendMessage"):
             self.http.on("POST", TG + method, {"ok": True})
         self.stand = Stand()
@@ -152,44 +212,66 @@ class Queue(unittest.TestCase):
         self.assertIn("Drive: https://drive/v", self.sent("sendMessage")[-1].json_body["text"])
         self.assertEqual(json.loads((tokens / "drive.json").read_text())["folder"], "F")
 
-    def test_without_an_api_key_claude_writes_through_the_handoff_repo(self):
+    def test_without_an_api_key_claude_makes_the_three_calls_through_the_handoff_repo(self):
         self.envfile("GITHUB_HANDOFF_TOKEN=g\n")
         self.brief("  handoff_repo: me/hand\n", via="")  # the default: no API key needed
-        files: dict[str, str] = {}
-        self.http.on("PUT", GH + "contents/", lambda c: files.update({c.url.split("contents/")[1]: "sent"}) or {})
-        self.http.on("POST", GH + "issues", {"number": 7})
-        self.http.on("GET", GH + "contents/", self._github(files))
+        hub = Hub(self.http)
         reply = chat.handle("make " + NOTES, self.home, self.http)
-        self.assertIn("issue #7", reply)
+        self.assertIn("issue #1", reply)
         job_id = queue.jobs(self.home)[0].id
-        request = next(k for k in files if k.endswith("request.md"))
-        self.assertEqual(request, f"studio/{job_id}/request.md")
-        self.assertEqual(self.run_queue(), "")  # Claude has not answered: nothing to say
-        answer = copy.deepcopy(GOOD)
-        answer["scenes"].append({"type": "custom", "say": "Bun is done first.", "brief": "a race",
-                                 "props": {"times": 25}, "component": "scene06.tsx",
-                                 "fallback": {"type": "stat", "value": 25, "label": "faster"}})
-        answer["scenes"][1]["value"] = 40  # not in the notes: the checks send it back
-        files[f"studio/{job_id}/storyboard.json"] = json.dumps(answer)
-        files[f"studio/{job_id}/scene06.tsx"] = RACE
+        folder = f"studio/{job_id}"
+        script_ask = hub.issues[1]
+        self.assertEqual(script_ask["labels"], ["hermes"])  # the routine claims the oldest "hermes" issue
+        self.assertIn("1 of 3: the script", script_ask["body"])  # the body is the whole prompt
+        self.assertIn(f"python3 tools/check.py script {folder}", script_ask["body"])
+        self.assertEqual(hub.files["tools/studio/rules.py"], Path(rules.__file__).read_text(encoding="utf-8"))
+        self.assertEqual(rules.Params.loads(hub.files[f"{folder}/rules.json"]).notes, NOTES)
+        self.assertEqual(self.run_queue(DAY), "")  # the issue is open: Claude has not answered
+
+        greeting = {**SCRIPT, "hooks": [{"family": "question", "say": "Hello, why is Bun fast?"}, *SCRIPT["hooks"][1:]]}
+        hub.answer(1, {f"{folder}/script.json": json.dumps(greeting)})
         self.run_queue(DAY)
-        fix = next(k for k in files if k.endswith("fix-1.md"))
-        self.assertEqual(queue.load(self.home, job_id).state, "writing")
-        answer["scenes"][1]["value"] = 25
-        files[f"studio/{job_id}/storyboard-fix1.json"] = json.dumps(answer)
+        self.assertIn("starts with a greeting", hub.issues[2]["body"])  # the fix request
+        hub.answer(2, {f"{folder}/script.json": json.dumps(SCRIPT)})
+        self.run_queue(DAY)
+        self.assertIn("2 of 3: direction", hub.issues[3]["body"])
+        self.assertIn("A test runner. A bundler. A package manager.", hub.issues[3]["body"])
+
+        invented = copy.deepcopy(WITH_RACE)
+        invented["scenes"][3]["text"] = "Node is dead."
+        hub.answer(3, {f"{folder}/storyboard.json": json.dumps(invented)})
+        self.run_queue(DAY)
+        self.assertIn("its text is not in the notes", hub.issues[4]["body"])
+        hub.answer(4, {f"{folder}/storyboard.json": json.dumps(WITH_RACE)})
+        self.run_queue(DAY)
+        self.assertIn("### scene03.tsx (scene 3)", hub.issues[5]["body"])
+
+        hub.answer(5, {f"{folder}/scene03.tsx": TSX.replace("Math.min", "Math.random() + Math.min")})
+        self.run_queue(DAY)  # refused by the static check: back once, with the reason
+        self.assertIn("scene03.tsx: missing, or refused by the static check", hub.issues[6]["body"])
+        hub.answer(6, {f"{folder}/scene03.tsx": RACE})
         self.assertIn("written, renders in", self.run_queue(DAY))
         job = queue.load(self.home, job_id)
-        self.assertEqual((job.state, job.data["writer"]), ("ready", "claude (handoff)"))
-        self.assertEqual(job.folder.joinpath("scene06.tsx").read_text(encoding="utf-8"), RACE)
-        self.assertTrue(fix)
+        self.assertEqual((job.state, job.data["writer"], job.data["calls"]), ("ready", "claude (handoff)", 6))
+        self.assertEqual(self.stand.verified, ["scene03.tsx"])
+        self.assertEqual(job.folder.joinpath("scene03.tsx").read_text(encoding="utf-8"), RACE)
+        board = json.loads(job.folder.joinpath("storyboard.json").read_text(encoding="utf-8"))
+        self.assertEqual(board["scenes"][2]["component"], "scene03.tsx")
+        self.assertEqual(len(hub.issues), 6)
 
-    def _github(self, files: dict[str, str]):
-        def read(call):
-            path = call.url.split("contents/")[1]
-            if path not in files or files[path] == "sent":
-                return http_error(404)(call)
-            return {"content": base64.b64encode(files[path].encode()).decode()}
-        return read
+    def test_a_component_that_keeps_failing_is_drawn_as_its_fallback(self):
+        self.http.on("POST", CLAUDE, writer_answers(WITH_RACE))
+        self.stand.broken = {"scene03.tsx"}
+        job = queue.add(self.ctx(), NOTES)
+        self.assertEqual((job.state, job.data["stage"]), ("writing", "verify"))  # checked before it can render
+        self.run_queue(DAY)
+        job = queue.load(self.home, job.id)
+        self.assertEqual(job.state, "ready")
+        self.assertEqual(self.http.count(CLAUDE), 4)  # script, direction, components, one fix
+        board = json.loads(job.folder.joinpath("storyboard.json").read_text(encoding="utf-8"))
+        self.assertEqual((board["scenes"][2]["type"], board["scenes"][2]["value"]), ("stat", 25))
+        self.assertFalse(job.folder.joinpath("scene03.tsx").exists())
+        self.assertIn("scene03.tsx: drawn as its fallback (scene03.tsx(4,7): error TS2304", " ".join(job.data["log"]))
 
     def test_picking_a_hook_rerenders_with_it_and_skips_the_clips(self):
         job = queue.add(self.ctx(), NOTES)

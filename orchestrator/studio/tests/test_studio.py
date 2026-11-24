@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 from fakes import FakeHttp
 
 from hermes_platform.resolver import locate_command
-from orchestrator.studio import chat, settings, voice
+from orchestrator.studio import chat, settings, text, voice
 
 GEMINI = "https://generativelanguage.googleapis.com/"
 FAKE_KOKORO = """import json, sys, wave
@@ -54,7 +54,7 @@ class Lines(unittest.TestCase):
         for english in ("Most teams don't fail because the code is bad.", "Ship it to real users today.",
                         "नमस्ते दोस्तों, आज हम बात करेंगे।", "OK"):
             self.assertFalse(voice.is_hinglish(english), english)
-        self.assertEqual(voice.sentences("One. Two!\nतीन। चार?"), ["One.", "Two!", "तीन।", "चार?"])
+        self.assertEqual(text.sentences("One. Two!\nतीन। चार?"), ["One.", "Two!", "तीन।", "चार?"])
 
 
 class Speaking(unittest.TestCase):

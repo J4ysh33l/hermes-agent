@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp, http_error
 
-from orchestrator.studio import broll, profile, storyboard, writer
+from orchestrator.studio import brief, broll, profile, storyboard
 from orchestrator.studio.settings import Keys
 
 PEXELS_VIDEOS = {"videos": [
@@ -120,14 +120,15 @@ class BrollTest(unittest.TestCase):
             storyboard.parse({"scenes": [{"type": "meme", "say": "x.", "src": "stock:cat", "top": "a", "bottom": "b"}]},
                              self.home)
 
-    def test_the_writer_offers_footage_only_where_the_page_allows_it(self):
-        self.assertIn("image", writer.allowed_scenes(self.look))
-        self.assertIn('"stock:', writer.prompt(self.look, "notes about mumbai", 30, 80))
+    def test_the_director_is_offered_footage_only_where_the_page_allows_it(self):
+        script = {"title": "Mumbai", "hooks": [], "lines": []}
+        self.assertIn("image", brief.allowed_scenes(self.look))
+        self.assertIn('"stock:', brief.direction(self.look, "notes about mumbai", script, "j", False))
         (self.home / "studio/profiles").mkdir(parents=True)
         (self.home / "studio/profiles/quiet.yaml").write_text("elements:\n  broll: off\n", encoding="utf-8")
         quiet = profile.load("quiet", self.home)
-        self.assertNotIn("image", writer.allowed_scenes(quiet))
-        self.assertIn('No "src"', writer.prompt(quiet, "notes about mumbai", 30, 80))
+        self.assertNotIn("image", brief.allowed_scenes(quiet))
+        self.assertIn('No "src"', brief.direction(quiet, "notes about mumbai", script, "j", False))
 
 
 if __name__ == "__main__":

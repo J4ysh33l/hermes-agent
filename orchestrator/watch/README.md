@@ -45,7 +45,7 @@ off for one watch.
 ## Setup research: Claude (`watch.claude`, default on)
 
 Through the handoff repo and your Claude scheduled task (set up once: `orchestrator/HANDOFF.md`;
-the rules Claude follows are `HANDOFF.md` in this folder). When a page you add is read as plain links,
+the rules Claude follows travel in the issue itself, `claude.SETUP`). When a page you add is read as plain links,
 Claude looks for the job board behind it, a feed, or the JSON the page loads, tests it with a fetch,
 and writes a spec. Hermes checks the spec, reads it once and switches over ("🔧 Watch 2 set up by
 Claude: Keka job feed, 9 roles"); if it's wrong or can't be read, the page keeps being read as before

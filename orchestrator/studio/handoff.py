@@ -1,98 +1,114 @@
 """Claude on your plan, through the handoff repo (orchestrator/HANDOFF.md): used when there is no
 ANTHROPIC_API_KEY (``studio.claude_via``). Asynchronous, which suits the overnight queue.
 
-Hermes commits ``studio/<job>/request.md`` (the same writing prompt the API gets, plus the custom-scene
-component contract) and opens an issue; the Claude scheduled task writes ``storyboard.json`` and, for
-each custom scene, its component ``sceneNN.tsx``, commits them and closes the issue. The queue picks the
-answer up, runs every check, and on problems sends one fix request (``fix-1.md`` → ``storyboard-fix1.json``).
-The contract the scheduled task follows: ``studio/HANDOFF.md`` (copy it into the repo).
+The three writing calls (``brief.py``) become three issues, one at a time, each body the whole prompt:
+
+1. ``script``: Claude writes ``studio/<job>/script.json``;
+2. ``direction``: ``studio/<job>/storyboard.json``;
+3. ``animation`` (when there are custom scenes): one ``sceneNN.tsx`` per custom scene.
+
+Before the first, Hermes commits ``studio/<job>/rules.json`` (the job's ``rules.Params``) and keeps
+``tools/check.py`` plus ``tools/studio/`` (``rules.py`` and the modules it needs, copied as they are) up to
+date, so Claude runs the same checks as Hermes before handing in. An answer is read once Claude has closed
+its issue; ``queue.py`` checks it again and moves the job on, or sends a fix request.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from orchestrator.brief.creds import Secrets
 from orchestrator.brief.net import Http
-from orchestrator.handoff import Handoff, HandoffError
+from orchestrator.handoff import Handoff
 
-from . import custom, writer
-from .profile import Profile
+from . import brief, rules
 
-COMPONENT = re.compile(r"^[a-z0-9_-]{1,40}\.tsx$")
-FIXES = 1
+HERE = Path(__file__).parent
+TOOLS = ("direction.py", "text.py", "storyboard.py", "rules.py")  # standard library only, copied as they are
 
-REQUEST = """# Studio request {job}
+CHECK = '''"""Checks a studio answer before it is handed in. Written by Hermes; the rules are tools/studio/rules.py.
 
-Write a storyboard for a vertical short video, following the brief below exactly.
-
-**Answer files (commit them to the default branch, then close the issue):**
-- `studio/{job}/{answer}`: the storyboard JSON, nothing else in the file.
-- For every scene with `"type": "custom"`: its component as `studio/{job}/sceneNN.tsx` (NN = the scene's
-  number: hook 1 is scene 01, the first of "scenes" is 02), and set that scene's `"component"` to the file name.
-  Hooks 2 and 3 are other openings for scene 01: a custom one is `hook2.tsx` / `hook3.tsx`.
-  Follow the component contract at the end. Make each one as good as a top motion designer would.
-
----
-
-{prompt}
-
----
-
-{contract}
-
-A library scene for the house style:
-```tsx
-{example}
-```
+    python3 tools/check.py script studio/<job>       script.json
+    python3 tools/check.py direction studio/<job>    storyboard.json (against script.json)
+    python3 tools/check.py animation studio/<job>    the custom scenes' components
 """
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from studio import rules  # noqa: E402
+
+
+def load(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), ""
+    except (OSError, ValueError) as exc:
+        return None, f"{path.name}: {exc}"
+
+
+def problems(stage, folder):
+    params = rules.Params.loads((folder / "rules.json").read_text(encoding="utf-8"))
+    script, wrong = load(folder / "script.json")
+    if stage == "script":
+        return [wrong] if wrong else rules.check_script(script, params)
+    board, wrong_board = load(folder / "storyboard.json")
+    if wrong or wrong_board:
+        return [w for w in (wrong, wrong_board) if w]
+    board = rules.take_wishes(board)[0]
+    if stage == "direction":
+        return rules.check_direction(board, script, params)
+    names = list(rules.component_names(board).values())
+    codes = {n: (folder / n).read_text(encoding="utf-8") if (folder / n).is_file() else None for n in names}
+    return rules.check_components(codes, names)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3 or sys.argv[1] not in ("script", "direction", "animation"):
+        sys.exit(__doc__)
+    found = problems(sys.argv[1], Path(sys.argv[2]))
+    print("\\n".join(f"- {p}" for p in found) if found else "OK: ready to hand in")
+    sys.exit(1 if found else 0)
+'''
 
 
 def repo(http: Http, secrets: Secrets, name: str) -> Handoff:
     return Handoff(http, secrets, name)
 
 
-def answer_name(round_: int) -> str:
-    return "storyboard.json" if round_ == 0 else f"storyboard-fix{round_}.json"
+def tools() -> dict[str, str]:
+    files = {"tools/check.py": CHECK, "tools/studio/__init__.py": ""}
+    files.update({f"tools/studio/{name}": (HERE / name).read_text(encoding="utf-8") for name in TOOLS})
+    return files
 
 
-def ask(hand: Handoff, job: str, look: Profile, notes: str, seconds: float, round_: int = 0,
-        problems: list[str] | None = None, previous: Any = None) -> int:
-    """Commits the request (or a fix request) and opens its issue; returns the issue number."""
-    seconds = seconds or float(look.section("writing")["seconds"])
-    text = writer.prompt(look, notes, seconds, writer.target_words(look, seconds))
-    if round_:
-        text = writer.REPAIR.format(problems="\n".join(f"- {p}" for p in problems or []),
-                                    draft=json.dumps(previous, ensure_ascii=False, indent=1))
-    body = REQUEST.format(job=job, answer=answer_name(round_), prompt=text, contract=custom.CONTRACT,
-                          example=(custom.PROJECT / "src/scenes/Bullets.tsx").read_text(encoding="utf-8"))
-    name = "request.md" if round_ == 0 else f"fix-{round_}.md"
-    return hand.send({f"studio/{job}/{name}": body}, f"studio {job}" + (f" fix {round_}" if round_ else ""),
-                     f"Folder: studio/{job}/ — follow studio/HANDOFF.md; the request is studio/{job}/{name}.")
+def start(hand: Handoff, job: str, params: rules.Params, prompt: str) -> int:
+    """The job's first issue (the script), with its rules and the up-to-date checker."""
+    for path, text in tools().items():
+        hand.put(path, text)
+    return hand.send({f"studio/{job}/rules.json": params.dumps()}, f"studio {job}: script", prompt)
 
 
-def collect(hand: Handoff, job: str, round_: int, folder: Path) -> Any:
-    """The answer once committed (with its components saved into ``folder``), or None while waiting."""
-    text = hand.read(f"studio/{job}/{answer_name(round_)}")
+def ask(hand: Handoff, job: str, stage: str, prompt: str, round_: int = 0) -> int:
+    """A later call (direction, animation) or a fix request; returns the issue number."""
+    return hand.send({}, f"studio {job}: {stage}" + (f" fix {round_}" if round_ else ""), prompt)
+
+
+def answer(hand: Handoff, job: str, stage: str) -> tuple[Any, str]:
+    """(the stage's JSON answer, "") or (None, what is wrong with it)."""
+    name = brief.ANSWERS[stage]
+    text = hand.read(f"studio/{job}/{name}")
     if text is None:
-        return None
+        return None, f"{name} is missing: write it to studio/{job}/{name}"
     try:
-        raw = json.loads(text)
+        return json.loads(text), ""
     except ValueError as exc:
-        raise HandoffError(f"the storyboard Claude committed is not JSON: {exc}") from None
-    scenes = [h.get("scene") for h in raw.get("hooks") or [] if isinstance(h, dict)] + list(raw.get("scenes") or [])
-    for scene in scenes:
-        name = scene.get("component", "") if isinstance(scene, dict) else ""
-        if not name:
-            continue
-        if not COMPONENT.match(name):
-            raise HandoffError(f"component name {name!r} is not like scene02.tsx")
-        code = hand.read(f"studio/{job}/{name}")
-        if code is None:
-            scene.pop("component")  # missing: the scene is built by the API if it can, else its fallback is drawn
-            continue
-        folder.joinpath(name).write_text(code, encoding="utf-8")
-    return raw
+        return None, f"{name} is not JSON: {exc}"
+
+
+def components(hand: Handoff, job: str, names: list[str]) -> dict[str, str | None]:
+    return {name: hand.read(f"studio/{job}/{name}") for name in names}
+

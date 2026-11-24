@@ -75,7 +75,7 @@ Next (run these yourself):
       --script smriti.py --deliver telegram --name smriti
   hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
       --script watch.py --deliver telegram --name watch
-  hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
+  hermes cron create "*/5 * * * *" --timezone Asia/Kolkata --no-agent \\
       --script studio.py --deliver telegram --name studio
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

@@ -32,7 +32,7 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
   with `studio.pause` seconds after it (the silence each engine leaves around a line is trimmed first, so
   the pause alone sets the gap). The default profile speaks at `speed 1.15`, `pause 0.10`: about 196 words a
   minute on a real script. Plain sentences at `1.0` measured 196, but a real 55 s short with voice directions
-  came out at 167 (too slow), so the speed went up and the writer's budget (`writer.WPM`) came down to 170 at 1.0. Each line's start and end come back, for captions and cuts.
+  came out at 167 (too slow), so the speed went up and the writer's budget (`brief.WPM`) came down to 170 at 1.0. Each line's start and end come back, for captions and cuts.
   (Whisper on a mixed clip dropped the Hindi lines, so captions for generated voiceovers come from
   the known script and these times, not from a fresh transcript.)
 - **Kokoro model:** fp16 (`kokoro-v1.0.fp16.onnx`, 169 MB) by default, at your request. It was faster
@@ -262,16 +262,27 @@ and the voice stay the default's until you change them.
 python -m orchestrator.studio queue add|run|pick|list   # the same on the host
 ```
 
-A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering through the handoff repo)
-→ `ready` → `rendered` → `done`, or `failed` with the reason sent to you. The `studio` cron
-(`install.sh` prints the line; every 30 minutes) collects handoff answers and renders inside
-`studio.render_window`, one run at a time.
+A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` → `ready` → `rendered` → `done`, or
+`failed` with the reason sent to you. The `studio` cron (`install.sh` prints the line; every 5 minutes)
+moves writing jobs on and renders inside `studio.render_window`, one run at a time.
 
-- **Who writes:** `studio.claude_via` — `handoff` (the default, no API key) uses your Claude plan:
-  Hermes commits `studio/<job>/request.md` to the handoff repo and opens an issue, the Claude scheduled task
-  commits `storyboard.json` (and a `sceneNN.tsx` per custom scene) following `studio/HANDOFF.md`; any check
-  that fails goes back once as `fix-1.md`. `api` needs `ANTHROPIC_API_KEY` (paid per call; it also lets
-  Claude look at frames of its custom scenes and fix them); `auto` = the API when the key is set.
+- **Three writing calls, one job each** (`writer.py`, prompts in `prompts/`, filled by `brief.py`):
+  1. **Script** (`prompts/script.md`): the words only. Title, 3 hooks from 3 families, the lines after
+     the hook; the page's tone and humour, the format's beats, how to write for a text-to-speech voice.
+  2. **Direction** (`prompts/direction.md`): the pictures only. The script's words are locked (grouped
+     into scenes, never edited); library scenes, or custom scenes with a brief for the animator, as many
+     as the video deserves; the cover.
+  3. **Animation** (`prompts/animation.md`, only with custom scenes): every custom scene's component in
+     one answer, knowing the look and every scene around it.
+  Each answer is checked in code (`rules.py`): a failing script goes back once, a failing storyboard
+  `studio.direction_retries` times (default 2). Then every component goes through TypeScript and a test
+  render (`custom.verify`); failures go back once, then are drawn as their fallback library scene.
+- **Who writes:** `studio.claude_via` — `handoff` (the default, no API key) uses your Claude plan: each call
+  is an issue in the handoff repo whose body is the whole prompt (`orchestrator/HANDOFF.md`); Hermes commits
+  `studio/<job>/rules.json` and keeps `tools/check.py` + `tools/studio/` there (the same `rules.py`), so
+  Claude checks its own answer in the same session before handing in. The queue reads an answer once Claude
+  closes the issue. `api` needs `ANTHROPIC_API_KEY` (paid per call); `auto` = the API when the key is set.
+  `/studio make gemini <notes>` makes the same three calls with Gemini's free models.
 - **What renders:** the video with hook 1, and (`hook_clips`) hooks 2 and 3 as clips of the hook scene alone,
   plus the cover the writer chose.
 - **Sound:** the voice is brought to -14 LUFS (what platforms play shorts at; Kokoro speaks near -18) with
@@ -306,9 +317,10 @@ A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering
   only licensed music for the profile is used and credited; the mix lasts the video, the music is there in
   pauses, ducked under words and faded at the end.
 
-- **Queue** (`tests/test_queue.py`): a job goes notes → storyboard → render → Telegram/Drive with fake
-  tools; a handoff answer is collected and a failing one gets one fix round; pick re-renders; the lock and the
-  window hold; QC and loudness run on real ffmpeg-made files (a quiet tone comes out at -14 LUFS).
+- **Queue** (`tests/test_queue.py`): a job goes notes → script → direction → animation → render →
+  Telegram/Drive with fake tools, through the API and through the handoff repo (an answer read only once its
+  issue is closed; failing answers get their fix requests; a component that keeps failing falls back);
+  pick re-renders; the lock and the window hold; QC and loudness run on real ffmpeg-made files (a quiet tone comes out at -14 LUFS).
 
 - **Video** (`tests/test_video.py`): bad storyboards refused before anything runs; scenes start with
   their first sentence; captions show the script as written (Hinglish stays Latin) in order; list items

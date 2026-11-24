@@ -1,64 +1,68 @@
 # The Claude handoff: one private repo, one Claude scheduled task
 
 Hermes can't call Claude on a Pro plan, so work for Claude goes through a private GitHub repo:
-Hermes commits the inputs and opens an issue; the **issue opened** event starts a Claude scheduled
-task (claude.ai/code → Routines); Claude commits its answer and closes the issue; Hermes picks the
-answer up on its next run and sends it to you on Telegram. Code: `orchestrator/handoff.py`.
+Hermes commits any input files and opens an issue labelled `hermes` whose **body is the whole task**
+(what to do, the rules, where to write the answer). The **issue opened** event starts a Claude
+scheduled task (claude.ai/code → Routines); Claude claims the issue, does that one job, commits its
+answer and closes the issue; Hermes picks the answer up on its next run. Code: `orchestrator/handoff.py`.
 
-Used by: the Studio (`/studio make` when there is no ANTHROPIC_API_KEY: Claude writes the storyboard and
-its custom scenes, contract `studio/HANDOFF.md`; **re-paste the prompt below if you set the task up
-before the Studio existed**), Smriti (`/notes … claude`, contract `notes/HANDOFF.md`) and Watches (`/watch` setup research
-for a new page, contract `watch/HANDOFF.md`; notes on changes are Gemini's, not Claude's).
+There are no instruction files in the repo to copy or keep up to date: each request carries its own.
 
-Facts below are from the Claude Code docs (code.claude.com/docs/en/routines, checked 2026-11-24;
-the feature is a research preview, so recheck if something doesn't match).
+Used by:
+- **Studio** (`/studio make` without an Anthropic API key): three issues per video, one job each: the
+  script, the direction (storyboard), the custom scenes' components (`orchestrator/studio/prompts/`).
+  Hermes also keeps `tools/check.py` and `tools/studio/` in the repo: the same checks Hermes runs, so
+  Claude checks its own answer before handing it in.
+- **Smriti** (`/notes … claude`): a document from a meeting transcript (`smriti/<id>/transcript.md`).
+- **Watches** (`/watch` setup research for a new page): `watch/<n>-setup-<time>/spec.json`.
+
+Facts below are from the Claude Code docs (code.claude.com/docs/en/routines, checked 2026-11-24; the
+feature is a research preview, so recheck if something doesn't match). The docs don't say that a
+GitHub-triggered session receives the issue's text, so the prompt fetches it with one command.
 
 ## Set it up once
 
-1. **Repo:** create a private repo (e.g. `you/hermes-handoff`). Copy `notes/HANDOFF.md` to
-   `smriti/HANDOFF.md`, `watch/HANDOFF.md` to `watch/HANDOFF.md` and `studio/HANDOFF.md` to
-   `studio/HANDOFF.md` in it.
+1. **Repo:** create a private repo (e.g. `you/hermes-handoff`). Nothing to copy into it.
 2. **Token for Hermes:** a fine-grained GitHub token for that repo only, with Contents and Issues
    read/write → `GITHUB_HANDOFF_TOKEN=…` in `$HERMES_HOME/.env`. Then `notes.handoff_repo: you/hermes-handoff`
-   in `brief.yaml` (Watches use the same repo unless `watch.handoff_repo` says otherwise).
+   in `brief.yaml` (Watches and the Studio use the same repo unless `watch.handoff_repo` /
+   `studio.handoff_repo` say otherwise).
 3. **Claude GitHub App** installed on the repo (GitHub triggers need it, private repos included).
 4. **The scheduled task** at claude.ai/code → Routines → New:
    - Repository: the handoff repo.
    - Trigger: **GitHub → Issues → opened** on that repo. (No schedule needed.)
    - Environment network access: **Full**, or Limited plus the sites you watch. The default Limited
      list covers GitHub and package registries, not ordinary websites, and Watches' setup research
-     opens the pages you add. Smriti alone needs no web access.
-   - Model: pick it in the task's model selector (applies to every run). Sonnet is plenty for both
-     jobs and uses less of your plan than Opus.
-   - Prompt: paste the one below.
-5. **Branch:** Claude pushes to `claude/…` branches unless told otherwise, and Hermes reads the
-   default branch. The prompt says "commit to main"; make sure no branch protection blocks your
-   own pushes to `main` in this repo.
+     opens the pages you add. Smriti and the Studio need no web access.
+   - Connectors: **remove them all**. Every connector's tools are sent on every step of every run;
+     none of these jobs uses one.
+   - Model: pick it in the task's model selector (applies to every run). Sonnet uses less of your
+     plan than Opus.
+   - Prompt: paste the one below. **If you set the task up before, replace its prompt:** the old one
+     sent Claude to read `HANDOFF.md` files that no longer exist.
+5. **Branch:** the prompt says "push to main"; make sure no branch protection blocks your own pushes
+   to `main` in this repo.
 
-Runs use your plan's usage like an interactive session. Documented caps are hourly (GitHub-event
-runs have their own, unpublished cap); Hermes opens one issue per new plain page you watch (or
-`/watch ask`) and one per `/notes … claude` request.
+Runs use your plan's usage like an interactive session. GitHub-event runs have per-task and
+per-account hourly caps (numbers unpublished); an event beyond them is dropped, and its issue waits
+for the next run (each run takes the oldest waiting issue).
 
 ## The prompt to paste
 
 ```
-You are the worker for my Hermes handoff repo. This session was started by a GitHub "issue opened"
-event. Read that issue (use the gh CLI or the GitHub API), then:
+This run started because an issue was opened in this repo. Your task is the oldest open issue
+labelled "hermes"; its body is the whole task, and nothing else in the repo is part of it.
 
-- If it names a folder under smriti/, follow smriti/HANDOFF.md.
-- If it names a folder under watch/, follow watch/HANDOFF.md.
-- If it names a folder under studio/, follow studio/HANDOFF.md.
-- Anything else: comment "Not a handoff request" on the issue and stop.
+1. Claim it and read it with exactly this one command:
+   n=$(gh issue list --state open --label hermes --search "sort:created-asc" --limit 1 --json number --jq '.[0].number'); [ -n "$n" ] && gh issue edit "$n" --remove-label hermes >/dev/null && gh issue view "$n" --json number,body --jq '"ISSUE \(.number)\n\(.body)"' || echo "NOTHING TO DO"
+   If it prints NOTHING TO DO, stop.
+2. Do the one job the body describes. Everything you need is in the body. Read only the files the
+   body names; do not list, open or search anything else, do not look at earlier jobs.
+3. Finish with ONE shell command: write every answer file the body names (quoted heredocs), run the
+   check command the body gives (if it gives one), then, chained with &&, git add, commit, push to
+   main and gh issue close <number>. If the check prints problems, fix exactly those and run the
+   same command again.
+4. Then stop. No summary, no comment on the issue.
 
-Write only the files the contract names, inside that request's folder. Commit it directly to the
-main branch (not a claude/ branch: my server reads main), push, then close the issue.
-Never change any other file. Never post the request's contents anywhere else.
+Never post the job's contents anywhere else. Never write outside the folder the body names.
 ```
-
-## Alternative trigger: the API
-
-A task can also have an **API trigger**: `POST https://api.anthropic.com/v1/claude_code/routines/<trig_…>/fire`
-with `Authorization: Bearer <the task's own token>`, `anthropic-version`, and `{"text": "…"}` (up to
-65,536 characters, delivered to the prompt as a `<routine-fire-payload>` block). Hermes doesn't use it
-yet: issues need no extra token and leave a visible queue. If GitHub triggers ever stop being
-available, the issue body can be sent as the fire text instead.

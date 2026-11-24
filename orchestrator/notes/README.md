@@ -29,9 +29,9 @@ when you ask, and what you ask for is never dropped.
 3. **Documents come from the saved text.** Summary and tasks arrive as messages; a PRD or a document
    you describe (`doc client follow-up email`) as a Word file. Asking again a week later costs one
    text call: the audio is never sent twice.
-4. **Claude** (`… claude`): Hermes commits the transcript and the request to your private handoff
-   repo and opens an issue, the event your Claude scheduled task starts on. Claude commits
-   `result.md`; Hermes sends it to you. The contract is `HANDOFF.md`.
+4. **Claude** (`… claude`): Hermes commits the transcript to your private handoff repo and opens an
+   issue whose body is the whole request (`handoff.REQUEST`), the event your Claude scheduled task
+   starts on. Claude commits `result.md`; Hermes sends it to you.
 
 A request waiting (for the recording, the budget or Claude) or failed is listed in the 20:00 recap.
 A failure is retried each run, up to `max_attempts`, then reported with the command to ask again.
@@ -69,7 +69,8 @@ none above ~88k.
 - **Cron:** `orchestrator/brief/install.sh` writes `smriti.py`; add the `smriti` cron it prints
   (every 15 minutes; idle runs make no network call).
 - **Claude (optional):** `notes.handoff_repo` in `brief.yaml`, `GITHUB_HANDOFF_TOKEN` in `.env`
-  (fine-grained, that repo only, Contents and Issues read/write), `HANDOFF.md` in the repo.
+  (fine-grained, that repo only, Contents and Issues read/write), and the scheduled task
+  (`orchestrator/HANDOFF.md`).
 
 ## Tested
 

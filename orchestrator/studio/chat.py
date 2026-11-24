@@ -15,7 +15,7 @@ from orchestrator.brief.store import default_state_dir
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import profile, queue, settings, voice, writer
+from . import brief, profile, queue, settings, voice, writer
 
 HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio voice <text> — read aloud with studio.engine and sent to you as a voice message
@@ -115,7 +115,7 @@ def _write(ctx: Context, text: str) -> str:
     hooks = [f"{n}. ({h.family}) {h.scene['say']}" for n, h in enumerate(draft.hooks, 1)]
     body = [f"[{s['type']}] {s['say']}" for s in draft.scenes]
     extra = [f"⚠️ {n}" for n in draft.notes] + [f"💭 wish: {w}" for w in draft.wishes]
-    return "\n".join([f"🎬 **{draft.title}** · {draft.words()} words (~{draft.words() / writer.WPM * 60:.0f} s) · "
+    return "\n".join([f"🎬 **{draft.title}** · {draft.words()} words (~{draft.words() / brief.WPM * 60:.0f} s) · "
                       f"{draft.model}", "", "**Hooks**", *hooks, "", "**Script** (after the hook)", *body,
                       *([""] + extra if extra else []), "", f"Saved: {saved[0].parent} (storyboard.json = hook 1, "
                       f".hook2/.hook3 = the others)"])

@@ -27,7 +27,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from orchestrator.studio import cover, profile, settings, storyboard, video, voice
+from orchestrator.studio import cover, profile, settings, storyboard, text, video, voice
 
 DEFAULT = profile.load("default", Path("/nowhere"))
 
@@ -73,7 +73,7 @@ class StoryboardTest(unittest.TestCase):
     def test_a_scene_can_choose_how_it_hands_over_to_the_next(self):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "One.", "text": "a", "transition": "burn"},
                                              {"type": "title", "say": "Two.", "text": "b"}]}, self.folder)
-        said = [s for scene in board.scenes for s in voice.sentences(scene.say)]
+        said = [s for scene in board.scenes for s in text.sentences(scene.say)]
         job = self.folder / "job"
         job.mkdir()
         out = video.props(board, job, fake_speech(job, said), DEFAULT)
@@ -196,7 +196,7 @@ class PropsTest(unittest.TestCase):
 
     def test_scenes_start_with_their_first_sentence_and_items_get_beats(self):
         board = storyboard.parse(ALL_TYPES, self.folder)
-        said = [s for scene in board.scenes for s in voice.sentences(scene.say)]
+        said = [s for scene in board.scenes for s in text.sentences(scene.say)]
         out = video.props(board, self.job, fake_speech(self.job, said), DEFAULT)
         self.assertEqual([s["start"] for s in out["scenes"]], [0.0, 1.25, 5.0, 6.25, 7.5, 8.75])
         self.assertEqual(out["scenes"][1]["beats"], [0.0, 1.25, 2.5])  # "Why?" then one sentence per item

@@ -98,7 +98,8 @@ class Settings:
     claude_model: str = "claude-opus-5-5"  # writes storyboards and builds custom scenes (~$0.10–0.25 a storyboard)
     custom_review: bool = True  # Claude looks at frames of each custom scene it built and fixes what is off
     claude_via: str = "handoff"  # handoff (your Claude plan, via the private handoff repo; default) | api | auto
-    handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md); studio/HANDOFF.md is the contract
+    handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
+    direction_retries: int = 2  # a storyboard that fails its checks goes back to the director this many times
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
     hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram
     claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
@@ -140,6 +141,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         writer=_writer(str(studio.get("writer", base.writer))),
         claude_via=_choice("claude_via", str(studio.get("claude_via", base.claude_via)), VIAS),
         handoff_repo=str(studio.get("handoff_repo", "") or (raw.get("notes") or {}).get("handoff_repo", "")),
+        direction_retries=min(5, max(0, int(studio.get("direction_retries", base.direction_retries)))),
         render_window=_window(str(studio.get("render_window", base.render_window))),
         hook_clips=bool(studio.get("hook_clips", base.hook_clips)),
         custom_review=bool(studio.get("custom_review", base.custom_review)),

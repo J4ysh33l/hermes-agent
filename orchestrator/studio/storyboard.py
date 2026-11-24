@@ -57,12 +57,17 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from . import direction
-from .profile import SCHEMA as PROFILE_SCHEMA
-from .profile import ProfileError
-from .voice import sentences
+from .text import sentences
 
 MAX_SCENES = 40
 MAX_ITEMS = 6
+# Motion a scene may set for itself (the page profile's ``motion:`` takes the same values).
+ENTERS = ("pop", "rise", "slide", "drop", "zoom", "fade")
+EXITS = ("lift", "fade", "whip", "zoom", "cut")
+# Scene to scene: the next scene comes in while this one leaves (overlapping); "none" = the scene's own
+# exit, then the next one's entrance; "cut" = a hard cut.
+TRANSITIONS = ("none", "cut", "fade", "push", "whip", "zoom", "flash", "burn")
+MOTION = {"enter": ENTERS, "exit": EXITS, "transition": TRANSITIONS}
 
 
 class StoryboardError(ValueError):
@@ -272,12 +277,11 @@ def _scene(n: int, raw: Any) -> Scene:
     if not sentences(direction.strip(say)):
         raise StoryboardError(f"{where}.say has nothing to say")
     motion = {}
-    for key in ("enter", "exit", "transition"):
+    for key, options in MOTION.items():
         value = raw.get(key, "")
-        try:
-            motion[key] = PROFILE_SCHEMA["motion"][key](f"{where}.{key}", value) if value else ""
-        except ProfileError as exc:
-            raise StoryboardError(str(exc)) from None
+        if value and value not in options:
+            raise StoryboardError(f"{where}.{key} must be one of {', '.join(options)}")
+        motion[key] = value or ""
     fields = {key: parse(f"{where}.{key}", raw.get(key, MISSING)) for key, parse in SCHEMA[kind].items()}
     problem = CHECKS.get(kind, lambda _f: "")(fields)
     if problem:

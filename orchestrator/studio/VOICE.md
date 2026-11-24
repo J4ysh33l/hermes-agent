@@ -12,8 +12,8 @@ numbers.
 | Your pick | **~196 wpm**. 217 (Fireship's pace) was too fast for you; 167 was too slow | PLAYBOOK § 8 |
 | Default voice | Kokoro `speed 1.15`, `pause 0.10` s between sentences | `profiles/default.yaml` → `voice:` |
 | Why 1.15 | Plain sentences at 1.0 measured 196, but a real 55 s short with voice directions came out at 167. Directions and pauses cost about 15% | measured 2026-11-24 |
-| Word budget | `writer.WPM = 170` at speed 1.0, scaled by the page's speed: about 196 at 1.15, so a 45 s video gets ~147 words | `writer.py` |
-| Numbers | counted as the voice reads them: 1887 is three words ("eighteen eighty-seven"), 2.5 million is four. A script full of years ran 53 s instead of 45 before this | `writer.said_words` |
+| Word budget | `brief.WPM = 170` at speed 1.0, scaled by the page's speed: about 196 at 1.15, so a 45 s video gets ~147 words | `brief.py` |
+| Numbers | counted as the voice reads them: 1887 is three words ("eighteen eighty-seven"), 2.5 million is four. A script full of years ran 53 s instead of 45 before this | `text.said_words` |
 | Silence | each line's own leading and trailing silence is trimmed, so only `pause` sets the gap; dead air over max(1.2 s, the longest scripted pause + 0.5 s) is flagged by QC | `voice.py`, `qc.py` |
 | Loudness | the mix is brought to **-14 LUFS**, true peak under -1.5 dBTP; music sits ~15 dB under the voice and ducks while words are spoken | `audio.py`, `sound.py` |
 
@@ -31,12 +31,12 @@ Written inside the narration, obeyed by the voice, never shown in the captions (
 
 - Use 1–4 per video, where a human narrator would pause or lean in, never as decoration.
 - Punctuation directs too: "?" lifts the voice, "..." hesitates, "—" breaks.
-- **Never in a hook's first sentence:** the first seconds have no dead air (`writer._hook` refuses it).
+- **Never in a hook's first sentence:** the first seconds have no dead air (`rules.hook_problems` refuses it).
 - Captions show a word only once it is said, even inside a directed sentence: each part keeps its own time.
 
 ## Writing for the ear
 
-These are in the writer's prompt (`writer.PROMPT`, from PLAYBOOK § 1–3):
+These are in the script writer's prompt (`prompts/script.md`, from PLAYBOOK § 1–3):
 
 - **The first words are the topic or the claim.** No intro, no greeting, never "in this video".
 - **Hook:** first sentence 6–9 words; the whole hook scene at most 2 sentences and 16 words (~5 s). There are

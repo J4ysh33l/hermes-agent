@@ -34,6 +34,7 @@ from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 
 from .profile import Profile
+from .rules import ALLOWED_IMPORTS, static_problems
 from .settings import Keys, Settings
 from .storyboard import Scene, Storyboard
 from .voice import sentences
@@ -44,7 +45,6 @@ WPM = 196
 FPS = 30
 TSC_TIMEOUT = 180
 STILL_TIMEOUT = 180
-MAX_BYTES = 60_000
 REPAIRS = 2
 
 LIMITS = """What the pipeline can make (the real limits; anything inside them is fair game):
@@ -63,21 +63,6 @@ LIMITS = """What the pipeline can make (the real limits; anything inside them is
   words cannot be stressed; on-screen *emphasis* does that job.
 - Captions sit at the bottom (the lowest ~660 px); platform buttons cover the top ~230 px and right ~90 px."""
 
-ALLOWED_IMPORTS = {"react", "remotion", "@remotion/transitions", "d3-geo", "topojson-client",
-                   "world-atlas/countries-110m.json", "world-atlas/countries-50m.json",
-                   "studio/motion", "studio/theme", "studio/types"}
-BANNED = [
-    (re.compile(r"\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|navigator\.sendBeacon"), "no network"),
-    (re.compile(r"\beval\s*\(|new\s+Function\s*\(|\brequire\s*\(|\bimport\s*\("), "no eval or dynamic import"),
-    (re.compile(r"localStorage|sessionStorage|indexedDB|document\.cookie|window\.location|window\.open"),
-     "no storage or navigation"),
-    (re.compile(r"dangerouslySetInnerHTML|<script|<iframe"), "no raw HTML or scripts"),
-    (re.compile(r"Math\.random|Date\.now|new\s+Date\s*\(|performance\.now"),
-     "no randomness or clock: use random(seed) from remotion and the frame number"),
-    (re.compile(r"setTimeout|setInterval|requestAnimationFrame"), "no timers: everything follows the frame"),
-    (re.compile(r"@keyframes|\banimation\s*:|\btransition\s*:"), "no CSS animations or transitions"),
-]
-IMPORT = re.compile(r"""^\s*import\s[^'"]*?from\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]""", re.MULTILINE)
 CODE = re.compile(r"```(?:tsx|typescript|ts|jsx)?\s*\n(.*?)```", re.DOTALL)
 STUDIO = {"studio/motion": "src/motion", "studio/theme": "src/theme", "studio/types": "src/types"}
 
@@ -168,20 +153,6 @@ class Result:
 # ---------------------------------------------------------------- checks
 
 
-def static_problems(code: str) -> list[str]:
-    problems = []
-    if len(code.encode()) > MAX_BYTES:
-        problems.append(f"the component is over {MAX_BYTES // 1000} KB")
-    for found in IMPORT.finditer(code):
-        name = found.group(1) or found.group(2)
-        if name not in ALLOWED_IMPORTS:
-            problems.append(f"import {name!r} is not allowed (allowed: {', '.join(sorted(ALLOWED_IMPORTS))})")
-    problems += [f"{why} (found {match.group(0)!r})" for pattern, why in BANNED for match in [pattern.search(code)] if match]
-    if not re.search(r"export\s+default\s+(function|\w)", code):
-        problems.append("there is no `export default function Scene(...)`")
-    return problems
-
-
 def _on_disk(code: str, depth: int) -> str:
     """studio/* imports → the project's src/ (the folder is ``depth`` levels below remotion/)."""
     up = "../" * depth
@@ -254,6 +225,52 @@ def probe_props(scene: Scene, key: str, look: Profile) -> dict[str, Any]:
                       "enter": scene.enter, "exit": scene.exit, "transition": "", "emoji": ""}}
 
 
+def installed() -> bool:
+    return (PROJECT / "node_modules/.bin/tsc").is_file() and (PROJECT / "node_modules/.bin/remotion").is_file()
+
+
+def check_one(settings: Settings, look: Profile, root: Path, key: str, code: str,
+              scene: Scene) -> tuple[str, list[Path]]:
+    """One component: the first problem ("" = none) and the probe frames. ``root`` is a folder inside
+    remotion/.jobs/ (three levels below remotion/ once ``key`` is added)."""
+    wrong = static_problems(code)
+    if wrong:
+        return "Not allowed:\n- " + "\n- ".join(wrong), []
+    place = root / key
+    place.mkdir(parents=True, exist_ok=True)
+    (place / f"{key}.tsx").write_text(_on_disk(code, 3), encoding="utf-8")
+    _write_entry(place, [key], 3)
+    types = typecheck(place)
+    if types:
+        return types, []
+    props = probe_props(scene, key, look)
+    frames = props["frames"]
+    shots, error = probe(settings, place, props, sorted({min(frames - 1, 20), frames // 2, max(0, frames - 8)}))
+    return error, shots
+
+
+def verify(settings: Settings, look: Profile, boards: list[Storyboard], folder: Path) -> dict[str, str]:
+    """Every component the boards name (``folder``/sceneNN.tsx), checked as at render time: allowed code,
+    TypeScript, a test render of a few frames. Returns file name → problem for those that fail (static
+    checks only when Remotion is not installed here)."""
+    scenes = {s.fields["component"]: s for b in boards for s in b.scenes if s.type == "custom" and s.fields["component"]}
+    failed = {}
+    root = JOBS / f"verify-{folder.name}"
+    try:
+        for name, scene in sorted(scenes.items()):
+            code = (folder / name).read_text(encoding="utf-8")
+            if not installed():
+                wrong = static_problems(code)
+                problem = "Not allowed:\n- " + "\n- ".join(wrong) if wrong else ""
+            else:
+                problem, _shots = check_one(settings, look, root, Path(name).stem, code, scene)
+            if problem:
+                failed[name] = problem
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return failed
+
+
 @dataclass
 class Smith:
     http: Http
@@ -269,21 +286,7 @@ class Smith:
                           step=step, effort=self.settings.claude_effort, images=images, max_tokens=32000)
 
     def check(self, key: str, code: str, scene: Scene) -> tuple[str, list[Path]]:
-        """The first problem ("" = none) and the probe frames."""
-        wrong = static_problems(code)
-        if wrong:
-            return "Not allowed:\n- " + "\n- ".join(wrong), []
-        place = self.folder / key
-        place.mkdir(parents=True, exist_ok=True)
-        (place / f"{key}.tsx").write_text(_on_disk(code, 3), encoding="utf-8")
-        _write_entry(place, [key], 3)
-        types = typecheck(place)
-        if types:
-            return types, []
-        props = probe_props(scene, key, self.look)
-        frames = props["frames"]
-        shots, error = probe(self.settings, place, props, sorted({min(frames - 1, 20), frames // 2, max(0, frames - 8)}))
-        return error, shots
+        return check_one(self.settings, self.look, self.folder, key, code, scene)
 
     def build(self, key: str, scene: Scene) -> str:
         """Claude writes the component; checked and repaired; returns code that passed (or raises)."""

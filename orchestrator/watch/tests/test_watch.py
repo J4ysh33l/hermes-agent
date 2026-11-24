@@ -91,6 +91,7 @@ class Watching(unittest.TestCase):
         self.http.on("PUT", GH + "/contents/", self._put)
         self.http.on("GET", GH + "/contents/", self._get)
         self.http.on("POST", GH + "/issues", self._issue)
+        self.http.on("POST", GH + "/labels", {})
         self.http.on("GET", "https://jobs.lever.co/acme/", "<html><nav>Menu</nav><main>Bengaluru · Senior · "
                      "backend platform team</main><script>x()</script></html>")
         self.http.on("POST", "https://generativelanguage.googleapis.com/", self._gemini)
@@ -170,6 +171,11 @@ class Watching(unittest.TestCase):
         added = self.watch("add https://acme.example/careers engineering roles")
         self.assertIn("🔎 Claude is looking for the best way to watch it", added)
         self.assertIn("watch/1-setup-", self.issues[0]["title"] + json.dumps(list(self.github)))
+        body = self.issues[0]["body"]  # the issue is the whole task: no instruction file in the repo to follow
+        self.assertEqual(self.issues[0]["labels"], ["hermes"])
+        for needed in ("https://acme.example/careers", "engineering roles", "/spec.json", "curl -sL", "close this issue"):
+            self.assertIn(needed, body)
+        self.assertNotIn("HANDOFF.md", body)
         self.claude_writes("spec.json", '{"kind": "pdf"}')
         self.assertIn("Claude's setup was not used (kind must be one of", self.tick(NOW + 600))
         self.watch("ask 1")

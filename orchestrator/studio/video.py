@@ -33,7 +33,9 @@ from . import profile as profiles
 from . import audio, broll, custom, direction, sound, voice
 from .profile import Profile
 from .settings import Keys, Settings
+from .rules import ALIASES
 from .storyboard import Storyboard
+from .text import sentences
 
 PROJECT = Path(__file__).with_name("remotion")
 FPS, WIDTH, HEIGHT = 30, 1080, 1920
@@ -105,7 +107,7 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
     spans = list(speech.lines)
     scenes, words, used = [], [], 0
     for n, scene in enumerate(board.scenes):
-        said = voice.sentences(scene.marked)
+        said = sentences(scene.marked)
         mine = spans[used:used + len(said)]
         used += len(said)
         parts = speech.parts[used - len(said):used] if speech.parts else [()] * len(said)
@@ -137,9 +139,6 @@ def render_args(settings: Settings, job: Path, out: Path, entry: str = "src/inde
 
 
 WORLD = PROJECT / "node_modules/world-atlas/countries-50m.json"
-ALIASES = {"usa": "United States of America", "us": "United States of America", "america": "United States of America",
-           "uk": "United Kingdom", "britain": "United Kingdom", "uae": "United Arab Emirates",
-           "russia": "Russia", "south korea": "South Korea", "korea": "South Korea"}
 
 
 def check_countries(board: Storyboard, world: Path = WORLD) -> Storyboard:

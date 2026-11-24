@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp
 
-from orchestrator.studio import cover, custom, profile, settings, storyboard
+from orchestrator.studio import cover, custom, profile, rules, settings, storyboard
 
 CLAUDE = "https://api.anthropic.com/v1/messages"
 RACE = (Path(__file__).parent / "data/race.tsx").read_text(encoding="utf-8")
@@ -45,12 +45,12 @@ def reply(text: str) -> dict:
 
 class Checks(unittest.TestCase):
     def test_code_that_reaches_outside_the_page_or_is_not_deterministic_is_refused(self):
-        self.assertEqual(custom.static_problems(RACE), [])
+        self.assertEqual(rules.static_problems(RACE), [])
         bad = 'import fs from "fs";\nexport default function S() { fetch("https://x"); return Math.random(); }'
-        problems = " | ".join(custom.static_problems(bad))
+        problems = " | ".join(rules.static_problems(bad))
         for expected in ("import 'fs' is not allowed", "no network", "no randomness"):
             self.assertIn(expected, problems)
-        self.assertIn("no timers", " ".join(custom.static_problems(RACE + "\nsetTimeout(() => 1, 5);")))
+        self.assertIn("no timers", " ".join(rules.static_problems(RACE + "\nsetTimeout(() => 1, 5);")))
 
 
 class Preparing(unittest.TestCase):

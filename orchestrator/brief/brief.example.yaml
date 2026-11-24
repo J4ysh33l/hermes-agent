@@ -241,6 +241,7 @@ studio:
   claude_effort: medium           # low | medium | high | xhigh | max: how hard Claude thinks (more = slower, dearer)
   # The overnight queue (/studio make, the `studio` cron; README § Overnight queue):
   claude_via: handoff             # handoff (default: your Claude plan via the private handoff repo, no API key) | api | auto
-  handoff_repo: ""                # "" = notes.handoff_repo; copy orchestrator/studio/HANDOFF.md into that repo
+  handoff_repo: ""                # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
+  direction_retries: 2            # a storyboard that fails its checks goes back to the director this many times
   render_window: "00:30-07:00"    # local time the queue may render in; /studio run renders now
   hook_clips: true                # also render hooks 2 and 3 as short clips, to pick one on Telegram

@@ -22,6 +22,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from .storyboard import ENTERS, EXITS, TRANSITIONS
+
 BUILT_IN = Path(__file__).with_name("profiles")
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,40}$")
 COLOUR = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -78,17 +80,14 @@ def _flag(where: str, value: Any) -> bool:
 
 
 FONT = _choice("inter", "montserrat", "anton", "jetbrains")
-# Scene to scene: the next scene comes in while this one leaves (overlapping); "none" = the scene's own
-# exit, then the next one's entrance; "cut" = a hard cut.
-TRANSITIONS = ("none", "cut", "fade", "push", "whip", "zoom", "flash", "burn")
 USE = _use  # off | auto (only where it helps the video; never forced) | always
 
 SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
     "theme": {**{key: _colour for key in ("bg", "glow", "panel", "text", "muted", "accent", "cool", "bad", "good")},
               "font": FONT, "mono": FONT, "background": _choice("glow-grid", "glow", "flat")},
     "motion": {"feel": _choice("snappy", "soft", "bouncy"),
-               "enter": _choice("pop", "rise", "slide", "drop", "zoom", "fade"),
-               "exit": _choice("lift", "fade", "whip", "zoom", "cut"),
+               "enter": _choice(*ENTERS),
+               "exit": _choice(*EXITS),
                "exit_frames": _number(0, 15), "punch": _number(0, 0.3), "drift": _number(0, 0.2),
                "step": _choice(0, 12, 15),
                "transition": _choice(*TRANSITIONS), "transition_frames": _number(3, 20)},

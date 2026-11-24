@@ -2,16 +2,22 @@
 
 A job is a folder ``$HERMES_HOME/studio/queue/<id>/`` with ``job.json`` and everything it made. States:
 
-    writing   Claude is writing it through the handoff repo (no API key); the queue collects the answer
+    writing   the three writing calls (writer.py) and the components' check; ``stage`` says which step:
+              script → direction → animation (only with custom scenes) → verify
     ready     the storyboards are saved and checked; waits for the render window (studio.render_window)
     rendered  video (the chosen hook), hook clips, cover and the quality check are done
     done      the preview went to Telegram, and to Drive when the check passed and Drive is signed in
     failed    a step failed; the reason is in job.json and was sent to you
 
-``/studio make <notes>`` adds a job (writing it at once through the API, or opening a handoff request),
-``/studio pick <id> <n>`` re-renders it with hook n, ``/studio run`` renders now, ``/studio queue`` lists.
-The ``studio`` cron (every 30 minutes) collects handoff answers and renders inside the window; one run at
-a time (a lock), and a run never starts a render after the window closes.
+Through the API (Gemini, or Claude with a key) ``/studio make`` writes the script, direction and components
+at once. Through the handoff repo (Claude on your plan) each call is an issue: the queue reads the answer
+once Claude closes it, checks it (``rules.py``), and opens the next call's issue or a fix request (the script
+once, direction ``studio.direction_retries`` times). Either way, ``verify`` puts every component through
+TypeScript and a test render; failures go back once, then are drawn as their fallback scene.
+
+``/studio pick <id> <n>`` re-renders a job with hook n, ``/studio run`` renders now, ``/studio queue`` lists.
+The ``studio`` cron (every 5 minutes) moves writing jobs on and renders inside the window; one run at a
+time (a lock), and a run never starts a render after the window closes.
 """
 
 from __future__ import annotations
@@ -29,11 +35,13 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.brief.net import HttpError
-from orchestrator.handoff import HandoffError
+from orchestrator.brief.settings import ModelChoice
+from orchestrator.handoff import Handoff, HandoffError
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import audio, cover, custom, direction, drive, handoff, profile, qc, storyboard, video, voice, writer
+from . import audio, brief, cover, custom, direction, drive, handoff, profile, qc, rules, storyboard, video, voice, writer
+from .text import said_words, sentences
 
 PROXY_MB = 48  # Telegram bots may upload 50 MB
 STEP_ERRORS = (video.VideoError, cover.CoverError, qc.QcError, writer.WriterError, HandoffError, NotesError,
@@ -51,6 +59,7 @@ class Tools:
     video: Callable[..., video.Video] = video.make
     cover: Callable[..., Path] = cover.make
     qc: Callable[..., qc.Report] = qc.run
+    verify: Callable[..., dict[str, str]] = custom.verify  # components: TypeScript and a test render
 
 
 @dataclass
@@ -117,14 +126,21 @@ def add(ctx: Any, notes: str, who: str = "", seconds: float = 0) -> Job:
     folder = _new_folder(root(ctx.home), f"{datetime.now():%Y%m%d-%H%M%S}")
     folder.joinpath("notes.txt").write_text(notes, encoding="utf-8")
     job = Job(folder, {"id": folder.name, "created": datetime.now().isoformat(timespec="seconds"),
-                       "profile": look.name, "seconds": seconds, "hook": 1, "picked": False, "round": 0,
-                       "writer": how, "state": "writing", "outputs": {}})
+                       "profile": look.name, "seconds": seconds, "hook": 1, "picked": False, "via": how,
+                       "writer": "claude (handoff)" if how == "handoff" else how, "stage": "script", "round": 0, "fixes": 0, "calls": 0, "wishes": [],
+                       "state": "writing", "outputs": {}})
     if how == "handoff":
-        job.data["issue"] = handoff.ask(handoff.repo(ctx.http, ctx.secrets, ctx.settings.handoff_repo), job.id,
-                                        look, notes, seconds)
-        job.log(f"handoff issue #{job.data['issue']} opened")
+        prompt = brief.script(look, notes, seconds, job.id, True)
+        job.data["issue"] = handoff.start(_hand(ctx), job.id, brief.params(look, notes, seconds), prompt)
+        job.data["calls"] = 1
+        job.log(f"script: handoff issue #{job.data['issue']} opened")
         return job
     draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, seconds, folder, how == "claude-api")
+    job.data.update(writer=draft.model, calls=draft.rounds, wishes=list(draft.wishes), title=draft.title)
+    if rules.component_names(_json(job, "direction.json")):
+        job.data["stage"] = "verify"
+        job.log(f"written by {draft.model} in {draft.rounds} call(s); custom scenes are checked next")
+        return job
     _keep(ctx, job, draft)
     return job
 
@@ -150,35 +166,153 @@ def _keep(ctx: Any, job: Job, draft: writer.Draft) -> None:
     job.log(f"written by {draft.model}: {draft.title}", "ready")
 
 
-# ---------------------------------------------------------------- steps
+# ---------------------------------------------------------------- writing, call by call
 
 
-def _collect(ctx: Any, job: Job) -> bool:
-    """A handoff answer → ready (or a fix request); False while Claude has not answered."""
-    hand = handoff.repo(ctx.http, ctx.secrets, ctx.settings.handoff_repo)
-    raw = handoff.collect(hand, job.id, job.data["round"], job.folder)
-    if raw is None:
-        return False
-    look = profile.load(job.data["profile"], ctx.home)
-    notes = job.folder.joinpath("notes.txt").read_text(encoding="utf-8")
-    seconds = job.data["seconds"] or float(look.section("writing")["seconds"])
-    accepted = writer.accept(raw, look, notes, writer.target_words(look, seconds), job.folder, "claude (handoff)",
-                             job.data["round"] + 1)
-    if isinstance(accepted, writer.Draft):
-        _keep(ctx, job, accepted)
+def _hand(ctx: Any) -> Handoff:
+    return handoff.repo(ctx.http, ctx.secrets, ctx.settings.handoff_repo)
+
+
+def _json(job: Job, name: str) -> Any:
+    return json.loads(job.folder.joinpath(name).read_text(encoding="utf-8"))
+
+
+@dataclass(frozen=True)
+class Writing:
+    """What one writing step needs about its job."""
+    ctx: Any
+    tools: Tools
+    job: Job
+    look: profile.Profile
+    notes: str
+    seconds: float
+
+    @property
+    def params(self) -> rules.Params:
+        return brief.params(self.look, self.notes, self.seconds)
+
+
+def _writing(ctx: Any, tools: Tools, job: Job) -> Writing:
+    return Writing(ctx, tools, job, profile.load(job.data["profile"], ctx.home),
+                   job.folder.joinpath("notes.txt").read_text(encoding="utf-8"), job.data["seconds"])
+
+
+def _ask(w: Writing, stage: str, prompt: str) -> None:
+    """The next call's issue."""
+    w.job.data.update(stage=stage, round=0, calls=w.job.data["calls"] + 1)
+    w.job.data["issue"] = handoff.ask(_hand(w.ctx), w.job.id, stage, prompt)
+    w.job.log(f"{stage}: handoff issue #{w.job.data['issue']} opened")
+
+
+def _retry(w: Writing, stage: str, limit: int, prompt: str, problems: list[str], previous: str) -> None:
+    """A fix request for this call, or the job fails once its retries are used."""
+    if w.job.data["round"] >= limit:
+        raise writer.WriterError(f"Claude's {stage} still failed the checks: " + "; ".join(problems[:3]))
+    w.job.data.update(round=w.job.data["round"] + 1, calls=w.job.data["calls"] + 1)
+    w.job.data["issue"] = handoff.ask(_hand(w.ctx), w.job.id, stage,
+                                      brief.fix(stage, w.job.id, prompt, problems, previous), w.job.data["round"])
+    w.job.log(f"{stage}: {len(problems)} problem(s), fix request #{w.job.data['issue']}")
+
+
+def _previous(raw: Any) -> str:
+    return json.dumps(raw, ensure_ascii=False, indent=1) if raw is not None else "(no readable answer)"
+
+
+def _got_script(w: Writing) -> None:
+    raw, wrong = handoff.answer(_hand(w.ctx), w.job.id, "script")
+    problems = [wrong] if wrong else rules.check_script(raw, w.params)
+    if problems:
+        _retry(w, "script", writer.SCRIPT_RETRIES, brief.script(w.look, w.notes, w.seconds, w.job.id, True),
+               problems, _previous(raw))
+        return
+    w.job.folder.joinpath("script.json").write_text(_previous(raw), encoding="utf-8")
+    w.job.data["title"] = str(raw["title"]).strip()
+    _ask(w, "direction", brief.direction(w.look, w.notes, raw, w.job.id, True))
+
+
+def _got_direction(w: Writing) -> None:
+    script = _json(w.job, "script.json")
+    raw, wrong = handoff.answer(_hand(w.ctx), w.job.id, "direction")
+    board, wishes = rules.take_wishes(raw)
+    problems = [wrong] if wrong else rules.check_direction(board, script, w.params)
+    if problems:
+        _retry(w, "direction", w.ctx.settings.direction_retries,
+               brief.direction(w.look, w.notes, script, w.job.id, True), problems, _previous(raw))
+        return
+    writer.keep(w.job.folder, script, board)
+    w.job.data["wishes"] = wishes
+    if rules.component_names(board):
+        _ask(w, "animation", brief.animation(w.look, board, script["title"], w.job.id, True))
+        return
+    _keep(w.ctx, w.job, _finish(w.job))
+
+
+def _got_animation(w: Writing) -> None:
+    board = _json(w.job, "direction.json")
+    wanted = w.job.data.get("fixing") or list(rules.component_names(board).values())
+    codes = handoff.components(_hand(w.ctx), w.job.id, wanted)
+    written = writer.save_components(w.job.folder, codes, wanted)
+    w.job.log(f"animation: {len(written)} of {len(wanted)} component(s) collected")
+    _verify(w)
+
+
+def _finish(job: Job) -> writer.Draft:
+    return writer.finish(job.folder, job.data["writer"], job.data["calls"], job.data["wishes"])
+
+
+def _verify(w: Writing) -> None:
+    """Every component through TypeScript and a test render; failures go back once, then fall back."""
+    board, job = _json(w.job, "direction.json"), w.job
+    names = list(rules.component_names(board).values())
+    draft = _finish(job)
+    boards = [storyboard.parse(draft.storyboard(n, job.data["profile"]), job.folder) for n in range(len(draft.hooks))]
+    failed = w.tools.verify(w.ctx.settings, w.look, boards, job.folder)
+    failed.update({n: "missing, or refused by the static check" for n in names if not job.folder.joinpath(n).is_file()})
+    if failed and job.data["fixes"] < writer.COMPONENT_FIXES:
+        job.data["fixes"] += 1
+        title = job.data.get("title") or draft.title
+        if job.data["via"] == "handoff":
+            prompt = brief.animation(w.look, board, title, job.id, True, set(failed))
+            previous = "\n\n".join(f"// file: {n}\n{job.folder.joinpath(n).read_text(encoding='utf-8')}"
+                                    for n in failed if job.folder.joinpath(n).is_file())
+            job.data.update(stage="animation", fixing=sorted(failed), calls=job.data["calls"] + 1)
+            job.data["issue"] = handoff.ask(_hand(w.ctx), job.id, "animation", brief.fix(
+                "animation", job.id, prompt, [f"{n}: {p[:1500]}" for n, p in failed.items()], previous or "(none)"),
+                job.data["fixes"])
+            job.log(f"animation: {len(failed)} component(s) failed, fix request #{job.data['issue']}")
+            return
+        model = writer.Model(w.ctx.http, w.ctx.keys, w.ctx.settings, ModelChoice(job.data["writer"]))
+        writer.animate(model, w.look, board, title, job.folder, {n: p[:1500] for n, p in failed.items()})
+        job.data["calls"] += model.calls
+        job.log(f"animation: {len(failed)} component(s) failed, asked {job.data['writer']} to fix them")
+        _verify(w)
+        return
+    for name, problem in sorted(failed.items()):
+        job.folder.joinpath(name).unlink(missing_ok=True)
+        job.log(f"{name}: drawn as its fallback ({custom.headline(problem)})")
+    _keep(w.ctx, job, _finish(job))
+
+
+STEPS: dict[str, Callable[[Writing], None]] = {"script": _got_script, "direction": _got_direction,
+                                               "animation": _got_animation}
+
+
+def _collect(ctx: Any, job: Job, tools: Tools) -> bool:
+    """One step of writing; False while Claude has not answered."""
+    w = _writing(ctx, tools, job)
+    if job.data["stage"] == "verify":
+        _verify(w)
         return True
-    if job.data["round"] >= handoff.FIXES:
-        raise writer.WriterError("Claude's storyboard still failed the checks: " + "; ".join(accepted[:3]))
-    job.data["round"] += 1
-    job.data["issue"] = handoff.ask(hand, job.id, look, notes, seconds, job.data["round"], accepted, raw)
-    job.log(f"checks failed ({len(accepted)}): fix request #{job.data['issue']}")
+    if not _hand(ctx).closed(job.data["issue"]):
+        return False
+    STEPS[job.data["stage"]](w)
     return True
 
 
 def longest_pause(board: storyboard.Storyboard) -> float:
     pauses = [0.0]
     for scene in board.scenes:
-        for sentence in voice.sentences(scene.say):
+        for sentence in sentences(scene.say):
             d = direction.parse(sentence)
             pauses += [d.lead, *(p.pause for p in d.parts)]
     return max(pauses)
@@ -190,7 +324,7 @@ def _board(job: Job, hook: int) -> storyboard.Storyboard:
 
 
 def _pace(board: storyboard.Storyboard, made: video.Video) -> str:
-    words = sum(writer.said_words(scene.say) for scene in board.scenes)  # as spoken (numbers read out)
+    words = sum(said_words(scene.say) for scene in board.scenes)  # as spoken (numbers read out)
     return (f"{made.seconds:.1f} s, {words} words = {words / max(made.seconds, 1) * 60:.0f} wpm · voice "
             f"{made.voice_took:.0f} s · render {made.render_took:.0f} s · {made.job.name}")
 
@@ -288,7 +422,7 @@ def _lock(home: Path) -> Iterator[bool]:
 
 
 def _advance(ctx: Any, job: Job, tools: Tools, render: bool) -> str:
-    if job.state == "writing" and not _collect(ctx, job):
+    if job.state == "writing" and not _collect(ctx, job, tools):
         return ""
     if job.state == "ready" and render:
         _render(ctx, job, tools)
@@ -336,5 +470,6 @@ def status(ctx: Any, last: int = 10) -> str:
     if not found:
         return "No studio jobs yet. /studio make <notes>"
     marks = {"writing": "✍️", "ready": "⏳", "rendered": "🎞", "done": "✅", "failed": "⚠️"}
-    return "\n".join(f"{marks.get(j.state, '·')} {j.id} {j.state}: {j.data.get('title', '')}"
+    return "\n".join(f"{marks.get(j.state, '·')} {j.id} {j.state}"
+                     + (f" ({j.data.get('stage', '')})" if j.state == "writing" else "") + f": {j.data.get('title', '')}"
                      + (f" ({j.data['error'][:80]})" if j.state == "failed" else "") for j in found)

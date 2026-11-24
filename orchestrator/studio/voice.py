@@ -25,9 +25,9 @@ from orchestrator.brief.net import Http, HttpError
 
 from . import direction
 from .settings import Settings
+from .text import sentences
 
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
-SENTENCE = re.compile(r"(?<=[.!?।])\s+|\n+")
 # Common Hindi words as they are typed in Latin script; a sentence with several is Hinglish.
 HINGLISH = re.compile(r"\b(hai|hain|kya|nahi|nahin|aur|mein|main|hum|kaise|toh|yeh|ye|woh|wo|kar|karo|karna|ke|ki|"
                       r"ka|ko|se|bhi|tha|thi|hota|hoti|kyun|kyunki|aap|apna|apni|matlab|bahut|accha|achha|dekho|"
@@ -64,10 +64,6 @@ class Speech:
     lines: tuple[tuple[str, float, float], ...]  # (text spoken, start, end) per sentence, for captions and cuts
     rewritten: int  # Hinglish sentences put into Devanagari by Gemini
     parts: tuple[tuple[tuple[float, float], ...], ...] = ()  # per sentence: each part's (start, end)
-
-
-def sentences(text: str) -> list[str]:
-    return [s.strip() for s in SENTENCE.split(text or "") if s.strip()]
 
 
 def is_hinglish(sentence: str) -> bool:

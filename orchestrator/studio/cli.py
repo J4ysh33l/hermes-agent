@@ -16,7 +16,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import audio, chat, cover, drive, profile, queue, reference, sound, storyboard, video, voice, writer
+from . import audio, brief, chat, cover, drive, profile, queue, reference, sound, storyboard, video, voice, writer
 
 
 def _video(home: Path, words: list[str]) -> int:
@@ -81,7 +81,7 @@ def _write(home: Path, words: list[str]) -> int:
         return 1
     saved = writer.save(draft, args.out, look.name)
     print(f"{draft.title}: {len(draft.scenes) + 1} scenes, {draft.words()} words "
-          f"(~{draft.words() / writer.WPM * 60:.0f} s) · {draft.model}, {draft.rounds} call(s)")
+          f"(~{draft.words() / brief.WPM * 60:.0f} s) · {draft.model}, {draft.rounds} call(s)")
     for n, hook in enumerate(draft.hooks, 1):
         print(f"  hook {n} ({hook.family}): {hook.scene['say']}")
     for note in draft.notes:

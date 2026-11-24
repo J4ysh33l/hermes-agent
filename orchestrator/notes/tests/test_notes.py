@@ -109,7 +109,7 @@ class Smriti(unittest.TestCase):
         self.transcripts = [{"id": "T2", "createdDateTime": "2026-11-23T07:45:00Z"},
                             {"id": "T1", "createdDateTime": "2026-11-23T07:30:30Z"}]
         self.vtts = {"T1": SESSION_1, "T2": SESSION_2}
-        self.prompts, self.uploads, self.deleted, self.sent, self.github = [], 0, [], [], {}
+        self.prompts, self.uploads, self.deleted, self.sent, self.github, self.issues = [], 0, [], [], {}, []
         self.chunk = 0
         self.http = self.fake_http()
         self.env = mock.patch.dict("os.environ", {"HERMES_HOME": str(self.home)})
@@ -146,7 +146,8 @@ class Smriti(unittest.TestCase):
         http.on("POST", f"{GEMINI}/v1beta/models/", self.gemini)
         http.on("POST", f"{TG}/send", lambda c: self.sent.append((c.url.rsplit("/", 1)[1], c.json_body or c.data)) or {})
         http.on("PUT", f"{GH}/contents/", lambda c: self.github.update({c.url.split("contents/")[1]: c.json_body}) or {})
-        http.on("POST", f"{GH}/issues", {"number": 7})
+        http.on("POST", f"{GH}/issues", lambda c: self.issues.append(c.json_body) or {"number": 7})
+        http.on("POST", f"{GH}/labels", {})
         http.on("GET", f"{GH}/contents/", self.github_get)
         return http
 
@@ -242,6 +243,12 @@ class Smriti(unittest.TestCase):
         self.assertEqual((req["status"], req["issue"], req["what"]), ("claude", 7, "client follow-up email"))
         self.assertIn(f"smriti/{req['id']}/transcript.md", self.github)
         self.assertIn("Asha Verma", base64.b64decode(self.github[f"smriti/{req['id']}/transcript.md"]["content"]).decode())
+        issue = self.issues[0]  # the issue is the whole task: no instruction file in the repo to follow
+        self.assertEqual(issue["labels"], ["hermes"])
+        for needed in (f"smriti/{req['id']}/transcript.md", f"smriti/{req['id']}/result.md", "Not discussed",
+                       "close this issue"):
+            self.assertIn(needed, issue["body"])
+        self.assertNotIn("HANDOFF.md", issue["body"])
         self.smriti()  # Claude has not written it yet
         self.assertEqual(self.sent, [])
         self.github[f"smriti/{req['id']}/result.md"] = {"content": base64.b64encode(b"# Email\nHi team").decode()}
