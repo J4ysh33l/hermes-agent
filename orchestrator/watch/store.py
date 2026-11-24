@@ -1,8 +1,9 @@
 """What the watcher remembers: ``$HERMES_HOME/watch/watches.json`` (0600).
 
 Each watch, under its number: the page, how to read it (``spec``), what you care about, how often,
-paused or not, Claude on or off, the items seen last time (link → title), when it was last checked
-and changed, failures in a row, and the Claude requests still open (setup research, change notes).
+paused or not, Claude's setup research and Gemini's notes on or off, the items seen last time
+(link → title), when it was last checked and changed, failures in a row, and Claude's setup research
+still open.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ class Store:
         number = str(self.data.get("next", 1))
         self.data["next"] = int(number) + 1
         self.watches[number] = {"url": url, "name": name, "what": what, "spec": spec, "every": every_hours,
-                                "paused": False, "claude": claude, "items": None, "checked": 0.0,
+                                "paused": False, "claude": claude, "notes": True, "items": None, "checked": 0.0,
                                 "changed": 0.0, "fails": 0, "error": "", "asks": []}
         return number
 

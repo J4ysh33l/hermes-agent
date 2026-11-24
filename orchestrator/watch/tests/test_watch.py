@@ -1,9 +1,9 @@
 """/watch against fake pages, a fake job board and a fake GitHub handoff repo.
 
 The promises tested: a known job board is read from its feed; the first read is a baseline, later
-reads report only what is new; a page that fails or suddenly shows nothing never reports "removed"
-and is reported once after fail_after; Claude is asked for a note on a change and its note is
-delivered on a later run; Claude's setup spec is checked, used, and the old source kept if it fails.
+reads report only what is new, with Gemini's note written from the new items' pages; a page that
+fails or suddenly shows nothing never reports "removed" and is reported once after fail_after;
+Claude's setup spec is checked, used, and the old source kept if it fails.
 
 Run: python3 orchestrator/watch/tests/test_watch.py   (or orchestrator/run_checks.sh)
 """
@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -74,8 +75,11 @@ class Watching(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
+        self.env = mock.patch.dict("os.environ", {"HERMES_HOME": str(self.home)})
+        self.env.start()
         (self.home / "brief").mkdir()
-        (self.home / ".env").write_text("GITHUB_HANDOFF_TOKEN=gh\n", encoding="utf-8")
+        (self.home / ".env").write_text("GITHUB_HANDOFF_TOKEN=gh\nGEMINI_API_KEY=g\n", encoding="utf-8")
+        self.prompts: list[str] = []
         self.config(handoff_repo="me/handoff")
         self.jobs = ["Backend Engineer", "Designer"]
         self.github: dict[str, dict] = {}
@@ -87,9 +91,17 @@ class Watching(unittest.TestCase):
         self.http.on("PUT", GH + "/contents/", self._put)
         self.http.on("GET", GH + "/contents/", self._get)
         self.http.on("POST", GH + "/issues", self._issue)
+        self.http.on("GET", "https://jobs.lever.co/acme/", "<html><nav>Menu</nav><main>Bengaluru · Senior · "
+                     "backend platform team</main><script>x()</script></html>")
+        self.http.on("POST", "https://generativelanguage.googleapis.com/", self._gemini)
 
     def tearDown(self):
+        self.env.stop()
         self.tmp.cleanup()
+
+    def _gemini(self, call):
+        self.prompts.append(call.json_body["contents"][0]["parts"][-1]["text"])
+        return {"candidates": [{"content": {"parts": [{"text": "Platform Engineer: Bengaluru, senior. Worth a look."}]}}]}
 
     def config(self, **watch):
         (self.home / "brief" / "brief.yaml").write_text(json.dumps({"watch": watch}), encoding="utf-8")
@@ -118,23 +130,28 @@ class Watching(unittest.TestCase):
     def tick(self, at: float) -> str:
         return work.tick(work.context(self.home, self.http, at))
 
-    def test_first_read_is_a_baseline_then_only_new_items_are_reported_with_a_claude_note(self):
+    def test_first_read_is_a_baseline_then_only_new_items_are_reported_with_a_gemini_note(self):
+        self.config(handoff_repo="me/handoff", about="Founder; hiring backend engineers in India")
         added = self.watch("add https://jobs.lever.co/acme backend roles in India")
         self.assertIn("✅ Watch 1: jobs.lever.co/acme, read from its job board's feed, every 12 h.", added)
         self.assertIn("2 items now", added)
-        self.assertEqual(self.issues, [])  # a job board needs no setup research
+        self.assertEqual(self.prompts, [])  # the baseline needs no note
         self.assertEqual(self.tick(NOW + 3600), "")  # not due yet
         self.jobs.append("Platform Engineer")
         news = self.tick(NOW + 13 * 3600)
         self.assertIn("👀 **jobs.lever.co/acme** — 1 new\n• Platform Engineer\n  https://jobs.lever.co/acme/2", news)
-        self.assertIn("Claude's note on these will follow.", news)
-        request = self.issues[0]["body"]
-        self.assertIn("What I care about: backend roles in India", request)
-        self.assertIn("- Platform Engineer — https://jobs.lever.co/acme/2", request)
-        self.assertEqual(self.tick(NOW + 13.5 * 3600), "")  # Claude hasn't written yet; nothing to say
-        self.claude_writes("note.md", "Platform Engineer: Bengaluru, backend-heavy. Worth a look.")
-        self.assertIn("🔎 Claude on jobs.lever.co/acme:\nPlatform Engineer: Bengaluru", self.tick(NOW + 14 * 3600))
-        self.assertEqual(self.tick(NOW + 14.5 * 3600), "")  # delivered once
+        self.assertIn("🔎 Platform Engineer: Bengaluru, senior. Worth a look.", news)
+        prompt = self.prompts[0]
+        self.assertIn("What I care about on this page: backend roles in India", prompt)
+        self.assertIn("About me: Founder; hiring backend engineers in India", prompt)
+        self.assertIn("Page text: Bengaluru · Senior · backend platform team", prompt)  # the page, without nav/script
+        self.assertNotIn("Menu", prompt)
+        self.assertEqual(self.issues, [])  # Claude is not asked about changes
+        self.assertEqual(self.tick(NOW + 26 * 3600), "")  # nothing new: no message, no model call
+        self.assertEqual(len(self.prompts), 1)
+        self.watch("notes 1 off")
+        self.jobs.append("Data Engineer")
+        self.assertNotIn("🔎", self.tick(NOW + 39 * 3600))
 
     def test_a_failing_or_empty_page_is_reported_once_and_never_looks_like_removals(self):
         self.config(fail_after=2)  # no handoff repo: Claude off

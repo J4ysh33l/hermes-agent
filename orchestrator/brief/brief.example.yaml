@@ -204,8 +204,9 @@ notes:
 # A script reads each page and tells you only when something is added. See orchestrator/watch/README.md.
 watch:
   every_hours: 12             # how often a new watch is read (/watch every <n> <hours> per watch)
-  claude: true                # Claude researches new pages and writes a note on each change (handoff repo)
+  claude: true                # Claude researches a new plain page for a steadier source (handoff repo)
+  notes: true                 # Gemini adds a note to each change: which new items matter to you and why
   # handoff_repo: you/hermes-handoff   # default: notes.handoff_repo
-  about: ""                   # a line on you and what matters, for Claude's notes (keep private details out)
+  about: ""                   # a line on you and what matters, for Gemini's notes (keep private details out)
   fail_after: 3               # failed reads in a row before you're told (once)
   max_lines: 15               # new items listed in one message

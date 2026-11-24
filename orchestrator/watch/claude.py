@@ -1,13 +1,9 @@
-"""Claude's two jobs for the watcher, through the handoff repo (``orchestrator.handoff``):
+"""Claude's job for the watcher, through the handoff repo (``orchestrator.handoff``): setup research.
 
-- **setup**: for a page the script reads as plain links, Claude finds the steadiest source for what
-  you care about (a job board's JSON feed, RSS, the page with a ``match`` filter) and writes
-  ``spec.json``. Hermes checks it (``sources.check_spec``), switches the watch over and reads it once.
-- **note**: when new items appear, Claude reads them (and the pages behind them, when it can) and
-  writes ``note.md``: what is new, what matters to you and why, in a few lines.
-
-Hermes never waits for Claude: the script's own message about a change goes out at once; Claude's
-note follows on a later run. The contract Claude follows is ``HANDOFF.md`` (copy it into the repo).
+For a page the script reads as plain links, Claude finds the steadiest source for what you care about
+(a job board's JSON feed, RSS, the JSON the page loads, the page with a ``match`` filter) and writes
+``spec.json``. Hermes checks it (``sources.check_spec``), switches the watch over and reads it once.
+Notes on changes are Gemini's (``note``), not Claude's. The contract Claude follows is ``HANDOFF.md``.
 """
 
 from __future__ import annotations
@@ -29,17 +25,6 @@ Find the steadiest machine-readable source for **what I care about** on this pag
 `{folder}/spec.json`, following `HANDOFF.md` § Setup. Then close this issue.
 """
 
-NOTE = """# Watch {number}: {name} — {count} new
-
-Page: {url}
-What I care about: {what}
-About me: {about}
-
-New since {since}:
-{new}
-{gone}
-Write `{folder}/note.md` following `HANDOFF.md` § Change note. Then close this issue.
-"""
 
 
 def folder(number: str, now: datetime, job: str) -> str:
@@ -54,20 +39,9 @@ def ask_setup(repo: Handoff, number: str, w: dict, count: int, now: datetime) ->
     return {"job": "setup", "folder": where, "issue": issue, "asked": now.isoformat()}
 
 
-def ask_note(repo: Handoff, number: str, w: dict, new: list[sources.Item], gone: int, about: str,
-             since: str, now: datetime) -> dict:
-    where = folder(number, now, "note")
-    body = NOTE.format(number=number, name=w["name"], url=w["url"], what=w["what"] or "anything new",
-                       about=about or "(not given)", count=len(new), since=since,
-                       new="\n".join(f"- {i.title} — {i.link}" for i in new),
-                       gone=f"\n{gone} items are gone since then.\n" if gone else "", folder=where)
-    issue = repo.send({f"{where}/request.md": body}, f"Watch {number}: {w['name']} — {len(new)} new", body)
-    return {"job": "note", "folder": where, "issue": issue, "asked": now.isoformat()}
-
-
 def answer(repo: Handoff, ask: dict) -> str | None:
     """Claude's file for this request, or None while it is not written."""
-    return repo.read(f"{ask['folder']}/{'spec.json' if ask['job'] == 'setup' else 'note.md'}")
+    return repo.read(f"{ask['folder']}/spec.json")
 
 
 def parse_spec(text: str) -> tuple[dict | None, list[str]]:

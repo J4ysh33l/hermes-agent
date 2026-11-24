@@ -2,15 +2,15 @@
 
 Tells you on Telegram when a page **adds** something: job openings on a careers page, documents on
 a notices page, posts on a blog. You only add pages; you never say what changed. A script reads and
-compares, every 30 minutes for whatever is due; it is not an agent running all the time and it uses
-no model. Claude (the default helper, through your handoff repo) does the judgment: it finds the best
-way to read a new page and writes a short note on each change.
+compares, every 30 minutes for whatever is due; it is not an agent running all the time. Gemini writes
+a short note on each change (one call, only when something is new); Claude, through your handoff
+repo, finds the best way to read a page you add.
 
 ```
 /watch add https://jobs.lever.co/acme backend roles in India
 /watch add https://www.example.gov.in/notices tenders for hospitals
 /watch list · check 2 · every 2 6 · match 2 engineer|developer · pause 2 · resume 2 · remove 2
-/watch claude 2 off · /watch ask 2
+/watch notes 2 off · /watch claude 2 off · /watch ask 2
 ```
 
 ## How a page is read
@@ -32,22 +32,26 @@ way to read a new page and writes a short note on each change.
 - Pages that need a login, or that draw their list with JavaScript, show few or no links. Claude's
   setup usually finds the JSON the page loads; otherwise such a page can't be watched yet.
 
-## What Claude does (default on; `watch.claude`)
+## Notes on changes: Gemini (`watch.notes`, default on)
 
-Through the handoff repo and your Claude scheduled task (set up once: `orchestrator/HANDOFF.md`).
-The contract Claude follows, with its rules, is `HANDOFF.md` in this folder.
+Each change message ends with Gemini's note: which new items match what you care about and why, with
+facts from their pages (location, seniority, deadline as stated). The script opens up to 5 new items'
+pages and passes their text (navigation and scripts stripped, 1,500 characters each); Gemini is told to
+use only that text and to say "page not read" otherwise. One call per change, none when nothing is new.
+`watch.about` tells it who you are. What it sees is public page text plus that line. If every model
+fails, the change still goes out with a line saying why there is no note. `/watch notes 2 off` turns it
+off for one watch.
 
-1. **Setup research**, when a page is read as plain links: Claude looks for the job board behind it,
-   a feed, or the JSON the page loads, tests it with a fetch, and writes a spec. Hermes checks the
-   spec, reads it once and switches over ("🔧 Watch 2 set up by Claude: Keka job feed, 9 roles"); if
-   it's wrong or can't be read, the page keeps being read as before and you're told why.
-   `/watch ask 2` asks again.
-2. **A note on each change:** the script's list goes out at once; Claude opens the new items' pages
-   and writes which matter to you and why (location, seniority, deadline as stated), in up to 10
-   lines. `watch.about` tells it who you are. A request Claude doesn't answer in 3 days is dropped
-   and you're told.
+## Setup research: Claude (`watch.claude`, default on)
 
-Without the handoff repo, or with `/watch claude 2 off`, you still get every change, just no note.
+Through the handoff repo and your Claude scheduled task (set up once: `orchestrator/HANDOFF.md`;
+the rules Claude follows are `HANDOFF.md` in this folder). When a page you add is read as plain links,
+Claude looks for the job board behind it, a feed, or the JSON the page loads, tests it with a fetch,
+and writes a spec. Hermes checks the spec, reads it once and switches over ("🔧 Watch 2 set up by
+Claude: Keka job feed, 9 roles"); if it's wrong or can't be read, the page keeps being read as before
+and you're told why. `/watch ask 2` asks again. A request Claude doesn't answer in 3 days is dropped
+and you're told. Without the handoff repo, or with `/watch claude 2 off`, the page is simply read
+as links.
 
 ## Setup
 
@@ -59,7 +63,8 @@ Without the handoff repo, or with `/watch claude 2 off`, you still get every cha
 ## Tested
 
 - **Fakes** (`tests/test_watch.py`): board, feed, JSON and link readers; baseline then only new items;
-  the change note asked of Claude and delivered once on a later run; a blocked page reported once and
+  Gemini's note written from the new item's page text (navigation stripped), no call when nothing is
+  new, off per watch; a blocked page reported once and
   never as removals; Claude's setup spec refused when invalid, kept off when unreadable, used when good;
   pause, every, match, remove.
 - **Live, 2026-11-24** (public pages, from the build container): a Greenhouse board (630 roles), an

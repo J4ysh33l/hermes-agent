@@ -5,8 +5,8 @@ Hermes commits the inputs and opens an issue; the **issue opened** event starts 
 task (claude.ai/code → Routines); Claude commits its answer and closes the issue; Hermes picks the
 answer up on its next run and sends it to you on Telegram. Code: `orchestrator/handoff.py`.
 
-Used by: Smriti (`/notes … claude`, contract `notes/HANDOFF.md`) and Watches (`/watch`, contract
-`watch/HANDOFF.md`).
+Used by: Smriti (`/notes … claude`, contract `notes/HANDOFF.md`) and Watches (`/watch` setup research
+for a new page, contract `watch/HANDOFF.md`; notes on changes are Gemini's, not Claude's).
 
 Facts below are from the Claude Code docs (code.claude.com/docs/en/routines, checked 2026-11-24;
 the feature is a research preview, so recheck if something doesn't match).
@@ -23,8 +23,8 @@ the feature is a research preview, so recheck if something doesn't match).
    - Repository: the handoff repo.
    - Trigger: **GitHub → Issues → opened** on that repo. (No schedule needed.)
    - Environment network access: **Full**, or Limited plus the sites you watch. The default Limited
-     list covers GitHub and package registries, not ordinary websites, and Watches need to open job
-     pages. Smriti alone needs no web access.
+     list covers GitHub and package registries, not ordinary websites, and Watches' setup research
+     opens the pages you add. Smriti alone needs no web access.
    - Model: pick it in the task's model selector (applies to every run). Sonnet is plenty for both
      jobs and uses less of your plan than Opus.
    - Prompt: paste the one below.
@@ -33,8 +33,8 @@ the feature is a research preview, so recheck if something doesn't match).
    own pushes to `main` in this repo.
 
 Runs use your plan's usage like an interactive session. Documented caps are hourly (GitHub-event
-runs have their own, unpublished cap); Hermes opens at most one issue per watch change and one per
-`/notes … claude` request.
+runs have their own, unpublished cap); Hermes opens one issue per new plain page you watch (or
+`/watch ask`) and one per `/notes … claude` request.
 
 ## The prompt to paste
 

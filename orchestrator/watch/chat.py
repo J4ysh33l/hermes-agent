@@ -1,5 +1,5 @@
-"""``/watch`` in Telegram: add, list and change watches. No model; Claude is asked through the
-handoff repo when a page needs research or a change needs a note."""
+"""``/watch`` in Telegram: add, list and change watches. The commands use no model; a change gets
+Gemini's note, and Claude is asked through the handoff repo when a new page needs research."""
 
 from __future__ import annotations
 
@@ -15,13 +15,14 @@ HELP = """**/watch** — tells you when a page adds something: job openings, new
 /watch add <link> [what you care about] — e.g. /watch add https://jobs.lever.co/acme backend roles in India
   Careers pages on Greenhouse, Lever, Ashby, SmartRecruiters or Workable are read from their job feed;
   RSS/Atom as a feed; any other page as its list of links. Claude then researches the page for a
-  steadier source (through your handoff repo).
-/watch list — every watch: how often, last change, Claude on/off
+  steadier source (through your handoff repo). Each change comes with Gemini's note on what matters.
+/watch list — every watch: how often, last change, notes on/off
 /watch check 2 — read it now · /watch check — all of them
 /watch every 2 6 — every 6 hours (default watch.every_hours, 12)
 /watch match 2 engineer|developer — keep only items that match · /watch match 2 off
 /watch pause 2 · resume 2 · remove 2
-/watch claude 2 off — no Claude notes for it (on to turn back) · /watch ask 2 — Claude researches it again
+/watch notes 2 off — changes without Gemini's note (on to turn back)
+/watch claude 2 off — no Claude setup research for it · /watch ask 2 — Claude researches it again
 A script checks; you hear only when something is new. /menu — all your commands"""
 
 URL = re.compile(r"https?://\S+")
@@ -56,14 +57,14 @@ def _list(ctx: work.Context, _rest: str) -> str:
     lines = ["**Watches**"]
     for number, w in ctx.store.watches.items():
         state = "⏸ paused" if w["paused"] else f"every {w['every']:g} h"
-        claude = "Claude on" if ctx.claude_for(w) else "Claude off"
+        claude = "notes on" if w.get("notes", True) and ctx.settings.notes else "notes off"
         lines.append(f"{number}. {w['name']}" + (f" — {w['what']}" if w["what"] else ""))
         lines.append(f"   {len(w['items'] or {})} items · {state} · changed {work.when(w['changed'])} · {claude}"
                      + (f" · match {w['spec']['match']}" if w["spec"].get("match") else "")
                      + (f" · ⚠️ {w['error']}" if w["error"] else ""))
     if ctx.settings.claude and not ctx.repo.ready:
-        lines.append("Claude notes need the handoff repo: watch.handoff_repo (or notes.handoff_repo) + "
-                     "GITHUB_HANDOFF_TOKEN.")
+        lines.append("Claude's setup research needs the handoff repo: watch.handoff_repo (or notes.handoff_repo) "
+                     "+ GITHUB_HANDOFF_TOKEN.")
     return "\n".join(lines)
 
 
@@ -136,7 +137,14 @@ def claude(_ctx, number: str, w: dict, more: str) -> str:
     if more.lower() not in ("on", "off"):
         return f"/watch claude {number} on · off"
     w["claude"] = more.lower() == "on"
-    return f"Claude notes for watch {number}: {more.lower()}."
+    return f"Claude's setup research for watch {number}: {more.lower()}."
+
+
+def notes(_ctx, number: str, w: dict, more: str) -> str:
+    if more.lower() not in ("on", "off"):
+        return f"/watch notes {number} on · off"
+    w["notes"] = more.lower() == "on"
+    return f"Gemini notes for watch {number}: {more.lower()}."
 
 
 def ask(ctx, number: str, _w: dict, _more: str) -> str:
@@ -145,7 +153,8 @@ def ask(ctx, number: str, _w: dict, _more: str) -> str:
 
 STEPS = {"add": _add, "list": _list, "show": _list, "check": _check, "every": _setter(every),
          "match": _setter(match), "pause": _setter(pause), "resume": _setter(resume), "remove": _setter(remove),
-         "delete": _setter(remove), "claude": _setter(claude), "ask": _setter(ask)}
+         "delete": _setter(remove), "claude": _setter(claude), "notes": _setter(notes),
+         "ask": _setter(ask)}
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 

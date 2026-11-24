@@ -14,9 +14,10 @@ from orchestrator.brief.settings import EXAMPLE
 @dataclass(frozen=True)
 class Settings:
     every_hours: float = 12  # a new watch is checked this often (/watch every <n> <hours> changes one)
-    claude: bool = True  # Claude researches new pages and explains changes, through the handoff repo
+    claude: bool = True  # Claude researches a new plain page for a steadier source, through the handoff repo
+    notes: bool = True  # Gemini adds a note to each change: which new items matter to you and why
     handoff_repo: str = ""  # owner/name; "" = notes.handoff_repo (one private repo for every handoff)
-    about: str = ""  # one or two lines on you and what matters to you; Claude reads it with every change
+    about: str = ""  # one or two lines on you and what matters to you; Gemini reads it with every change
     fail_after: int = 3  # failed checks in a row before you are told (once)
     max_lines: int = 15  # new items listed in one message; the rest are counted
 
@@ -30,6 +31,7 @@ def parse(raw: dict[str, Any]) -> Settings:
     return Settings(
         every_hours=float(watch.get("every_hours", base.every_hours)),
         claude=bool(watch.get("claude", base.claude)),
+        notes=bool(watch.get("notes", base.notes)),
         handoff_repo=str(watch.get("handoff_repo") or (raw.get("notes") or {}).get("handoff_repo") or ""),
         about=str(watch.get("about", base.about)).strip(),
         fail_after=int(watch.get("fail_after", base.fail_after)),

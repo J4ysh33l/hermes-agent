@@ -1,8 +1,8 @@
 """The watcher's run (the ``watch`` cron, every 30 minutes; prints nothing when nothing changed):
 
 1. every watch whose time has come is read (``sources.read``) and compared with what was seen last;
-   new items are listed for you at once (no model); with Claude on, Claude is also asked for a note;
-2. Claude's answers are collected: a better ``spec`` (setup) or a note on a change.
+   new items are listed for you at once, with Gemini's note on which matter (``note``, one call);
+2. Claude's answers to setup research are collected: a better ``spec`` for a page.
 
 A page that fails ``fail_after`` times in a row is reported once; it keeps being tried. A read that
 finds nothing where there were items counts as a failure, so a broken page never looks like
@@ -25,7 +25,7 @@ from orchestrator.brief.creds import Secrets
 from orchestrator.brief.net import Http, UrllibHttp
 from orchestrator.handoff import Handoff, HandoffError
 
-from . import claude, settings, sources
+from . import claude, note, settings, sources
 from .store import Store
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -48,8 +48,15 @@ class Context:
 
     @cached_property
     def repo(self) -> Handoff:
-        return Handoff(self.http, Secrets(self.home / ".env", self.home / "brief" / "tokens"),
-                       self.settings.handoff_repo)
+        return Handoff(self.http, self.secrets, self.settings.handoff_repo)
+
+    @cached_property
+    def secrets(self) -> Secrets:
+        return Secrets(self.home / ".env", self.home / "brief" / "tokens")
+
+    @property
+    def gemini_key(self) -> str:
+        return self.secrets.get("GEMINI_API_KEY", "GOOGLE_API_KEY")
 
     @property
     def local(self) -> datetime:
@@ -118,7 +125,6 @@ def check(ctx: Context, number: str) -> str:
         return f"👀 Watch {number} ({w['name']}): {len(items)} items now. You'll hear when one is added."
     new = [i for i in items if i.key not in w["items"]]
     gone = sum(1 for k in w["items"] if k not in now_items)
-    since = when(w["changed"] or w["checked"])
     w["items"] = now_items
     if not new:
         return ""
@@ -128,10 +134,8 @@ def check(ctx: Context, number: str) -> str:
     lines += [f"• {i.title}" + (f"\n  {i.link}" if i.link else "") for i in shown]
     if len(new) > len(shown):
         lines.append(f"…and {len(new) - len(shown)} more")
-    if ctx.claude_for(w):
-        note = _ask(ctx, number, w, lambda: claude.ask_note(ctx.repo, number, w, new, gone, ctx.settings.about,
-                                                             since, ctx.local))
-        lines.append(note or "Claude's note on these will follow.")
+    if w.get("notes", True) and ctx.settings.notes:
+        lines += ["", "🔎 " + note.write(ctx.http, ctx.gemini_key, w, new, ctx.settings.about)]
     lines.append(f"/watch list · /watch pause {number}")
     return "\n".join(lines)
 
@@ -160,8 +164,6 @@ def _collect(ctx: Context, number: str, w: dict) -> list[str]:
                 out.append(f"⌛ Watch {number}: Claude never answered issue #{ask['issue']}; dropped.")
             else:
                 still.append(ask)
-        elif ask["job"] == "note":
-            out.append(f"🔎 Claude on {w['name']}:\n{text.strip()}")
         else:
             out.append(_apply_spec(ctx, number, w, text))
     w["asks"] = still

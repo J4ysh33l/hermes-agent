@@ -1,15 +1,15 @@
 # Watches → Claude (copy this file to `watch/HANDOFF.md` in your handoff repo)
 
-Hermes watches web pages with a script and tells its owner on Telegram when something is added. It
-asks you for two kinds of help. Each issue names a folder `watch/<n>-<job>-<time>/` holding
-`request.md`. Do exactly one job per issue, write exactly one file in that folder, commit it to
-`main`, close the issue.
+Hermes watches web pages with a script and tells its owner on Telegram when something is added (with a
+note written by Gemini). It asks you for one kind of help: finding the best way to read a new page.
+Each issue names a folder `watch/<n>-setup-<time>/` holding `request.md`. Write exactly one file in
+that folder, `spec.json`, commit it to `main`, close the issue.
 
 General rules:
 - Use only what you can see on the pages. Never invent a job, a date, a salary, a location or a
   deadline. If a page won't open, say so.
 - Public pages only: don't sign in anywhere, don't submit forms.
-- Read `request.md` for the page, what the owner cares about and (for notes) who they are.
+- Read `request.md` for the page and what the owner cares about.
 
 ## Setup (`…-setup-…/request.md` → write `spec.json`)
 
@@ -51,17 +51,3 @@ with a `match` that keeps the relevant links. If the page can't be read at all, 
 `{"kind": "html", "url": "<the page>", "note": "Couldn't open it: <why>"}`.
 
 Hermes checks the spec (kind, url, a valid `match`), reads it once and keeps the old way if it fails.
-
-## Change note (`…-note-…/request.md` → write `note.md`)
-
-`request.md` lists the new items (title — link) and what the owner cares about. Open the links you
-can (one `curl -sL` each is enough; skip any that don't open quickly) and write a note for Telegram:
-
-- Plain text, no Markdown tables, at most 10 lines; it is read on a phone.
-- First the items that match what the owner cares about, one line each: the title, then why it
-  matters to them, then the facts you saw on its page that help decide (location or remote,
-  seniority, team, deadline, pay if stated).
-- Then one line for the rest: "Not relevant: 6 others (sales, US-only roles)".
-- If none matter: one line saying so and why.
-- Uploads or posts instead of jobs: one line each on what the document or post is about.
-- Write `Couldn't open` for an item whose page didn't load. Never fill a gap with a guess.
