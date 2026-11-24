@@ -314,7 +314,7 @@ def run(ctx: Any, now: datetime | None = None, force: bool = False, tools: Tools
                 said.append(_advance(ctx, job, tools, render))
             except STEP_ERRORS as exc:
                 job.data["error"] = str(exc)[:500]
-                job.log(f"failed: {str(exc)[:200]}", "failed")
+                job.log(f"failed: {(str(exc).splitlines() or [''])[0][:200]}", "failed")  # no HTML error pages
                 said.append(f"⚠️ studio job {job.id} failed: {str(exc)[:300]}")
     return "\n".join(s for s in said if s)
 
