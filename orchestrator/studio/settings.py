@@ -19,7 +19,7 @@ TEXT_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-fla
 
 SCRIPT_MODELS = (ModelChoice("gemini-3.5-flash-lite"), ModelChoice("gemini-3.1-flash-lite"))
 # Google Search on the free tier worked on these and not on the 3.x models (tested 2026-11-24)
-RESEARCH_MODELS = (ModelChoice("gemini-2.5-flash-lite"), ModelChoice("gemini-2.5-flash"))
+RESEARCH_MODELS = (ModelChoice("gemini-2.5-flash"), ModelChoice("gemini-2.5-flash-lite"))  # flash finds more
 ENGINES = ("kokoro", "edge")
 PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 

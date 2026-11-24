@@ -28,7 +28,7 @@ from .settings import Keys, Settings
 
 PROMPT = Path(__file__).with_name("prompts") / "research.md"
 HEADING = "Research"
-FACT = re.compile(r"^\s*[-*•]\s+(.+)$")
+FACT = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
 MAX_FACTS = 25
 
 
@@ -64,8 +64,17 @@ class Findings:
 
 
 def facts(answer: str) -> tuple[str, ...]:
-    found = [m.group(1).strip() for m in map(FACT.match, answer.splitlines()) if m]
-    return tuple(f for f in found if len(f.split()) >= 3)[:MAX_FACTS]
+    """The answer's fact lines, each once: a line saying what an earlier one said in other words is dropped."""
+    rows = [ln.strip() for ln in answer.splitlines() if ln.strip()]
+    bulleted = [m.group(1).strip() for m in map(FACT.match, rows) if m]
+    # some models drop the "- ": then every line that is a sentence (not a heading or a lead-in) is a fact
+    lines = bulleted or [ln for ln in rows if not ln.startswith("#") and not ln.endswith(":")]
+    kept: list[tuple[str, set[str]]] = []
+    for line in lines:
+        words = set(re.findall(r"\w{4,}", line.lower()))
+        if len(line.split()) >= 3 and not any(len(words & seen) >= 0.7 * len(words | seen) for _l, seen in kept):
+            kept.append((line, words))
+    return tuple(line for line, _w in kept)[:MAX_FACTS]
 
 
 def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, today: date) -> Findings:

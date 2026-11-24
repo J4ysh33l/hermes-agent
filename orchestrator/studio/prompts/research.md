@@ -12,6 +12,8 @@ $notes
 </notes>
 
 ## Find
+- First, what is happening now: the next or latest event, its date, who runs it, and the latest
+  numbers (how many, how much, who won), each as of today.
 - The current, exact facts: numbers, dates, names, places, prices, records, true as of today.
 - 3–5 surprising or little-known details that would make someone stop scrolling.
 - A short quote from a named person, word for word, if a good one exists.
@@ -23,4 +25,4 @@ $notes
 - Prefer official sources, then established news sites.
 - Each fact on its own line, as one plain sentence the writer can use as it is:
   - <the fact> (<site>, <the date it is true as of>)
-- 10–20 lines. Nothing else: no introduction, no headings, no conclusion, no advice.
+- Each fact once. 10–20 lines. Nothing else: no introduction, no headings, no conclusion, no advice.

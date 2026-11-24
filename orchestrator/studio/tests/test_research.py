@@ -58,7 +58,7 @@ class Researching(unittest.TestCase):
         self.brief("")
         (self.home / ".env").write_text("GEMINI_API_KEY=g\nTELEGRAM_BOT_TOKEN=t\nTELEGRAM_HOME_CHANNEL=42\n",
                                         encoding="utf-8")
-        self.searchers = {"gemini-2.5-flash-lite": FOUND}  # model → its answer; missing = may not search (429)
+        self.searchers = {"gemini-2.5-flash": FOUND}  # model → its answer; missing = may not search (429)
         self.writing = [RESEARCHED, SHOWN]
         self.http = FakeHttp().on("POST", GEMINI, self.gemini)
         for method in ("sendVideo", "sendPhoto", "sendMessage"):
@@ -88,7 +88,7 @@ class Researching(unittest.TestCase):
 
     def test_the_researchers_facts_reach_the_writer_the_checks_and_telegram(self):
         reply = chat.handle("make " + TOPIC, self.home, self.http)
-        self.assertIn("🔎 research: 2 facts by gemini-2.5-flash-lite from iimcat.ac.in, careers360.com", reply)
+        self.assertIn("🔎 research: 2 facts by gemini-2.5-flash from iimcat.ac.in, careers360.com", reply)
         search, script_ask = self.http.calls[0], self.prompts()[1]
         self.assertEqual(search.json_body["tools"], [{"google_search": {}}])
         self.assertIn("Studio research", search.json_body["contents"][0]["parts"][0]["text"])
@@ -105,19 +105,26 @@ class Researching(unittest.TestCase):
         self.assertIn("Facts researched from: iimcat.ac.in, careers360.com", message)
 
     def test_a_model_that_may_not_search_hands_over_and_without_any_the_notes_alone_are_used(self):
-        self.searchers = {"gemini-2.5-flash": FOUND}
+        self.searchers = {"gemini-2.5-flash-lite": FOUND}
         found = research.gather(self.http, settings.Keys("g"), settings.Settings(), TOPIC, 45, date(2026, 11, 24))
-        self.assertEqual((found.model, len(found.facts)), ("gemini-2.5-flash", 2))
+        self.assertEqual((found.model, len(found.facts)), ("gemini-2.5-flash-lite", 2))
         self.searchers = {}
         self.writing = [SCRIPT, BOARD]
         reply = chat.handle("make " + TOPIC + " Bun is a JavaScript runtime written in Zig by Jarred Sumner. It "
                             "installs packages up to 25 times faster than npm. Its test runner, bundler and package "
                             "manager ship in one binary. Jarred said: \"Bun is designed as a drop-in replacement for "
                             "Node.js.\"", self.home, self.http)
-        self.assertIn("research skipped (gemini-2.5-flash-lite: HTTP 429; gemini-2.5-flash: HTTP 429)", reply)
+        self.assertIn("research skipped (gemini-2.5-flash: HTTP 429; gemini-2.5-flash-lite: HTTP 429)", reply)
         self.assertIn("written by gemini-3.5-flash-lite", reply)
         job = queue.jobs(self.home)[-1]
         self.assertNotIn("Research", job.folder.joinpath("notes.txt").read_text(encoding="utf-8"))
+
+    def test_facts_are_read_with_or_without_bullets_and_each_is_kept_once(self):
+        plain = ("Here is what I found:\nCAT 2026 is on Sunday, November 29, 2026.\nIIM Indore conducts CAT 2026.\n"
+                 "CAT 2026 is held on Sunday, November 29, 2026.\n")  # 2.5 flash's shape: no "- ", one repeat
+        self.assertEqual(research.facts(plain), ("CAT 2026 is on Sunday, November 29, 2026.", "IIM Indore conducts CAT 2026."))
+        self.assertEqual(research.facts("Facts:\n- One fact here.\n2. Another fact here."),
+                         ("One fact here.", "Another fact here."))
 
     def test_research_can_be_switched_off(self):
         self.brief("  research: false\n")

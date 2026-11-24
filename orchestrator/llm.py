@@ -47,7 +47,7 @@ def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
 
 
 def gemini_search(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str,
-                  max_output_tokens: int = 4000) -> tuple[str, list[tuple[str, str]]]:
+                  max_output_tokens: int = 8000) -> tuple[str, list[tuple[str, str]]]:
     """One call with Google Search grounding: (the answer, its sources as (site, link) pairs). Plain text
     only (the API does not combine search with JSON mode); on the free tier only some models may search."""
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "tools": [{"google_search": {}}],
