@@ -256,10 +256,11 @@ A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering
 (`install.sh` prints the line; every 30 minutes) collects handoff answers and renders inside
 `studio.render_window`, one run at a time.
 
-- **Who writes:** `studio.claude_via` — `api` needs `ANTHROPIC_API_KEY`; `handoff` uses your Claude plan:
+- **Who writes:** `studio.claude_via` — `handoff` (the default, no API key) uses your Claude plan:
   Hermes commits `studio/<job>/request.md` to the handoff repo and opens an issue, the Claude scheduled task
   commits `storyboard.json` (and a `sceneNN.tsx` per custom scene) following `studio/HANDOFF.md`; any check
-  that fails goes back once as `fix-1.md`. `auto` = the API when the key is set.
+  that fails goes back once as `fix-1.md`. `api` needs `ANTHROPIC_API_KEY` (paid per call; it also lets
+  Claude look at frames of its custom scenes and fix them); `auto` = the API when the key is set.
 - **What renders:** the video with hook 1, and (`hook_clips`) hooks 2 and 3 as clips of the hook scene alone,
   plus the cover the writer chose.
 - **Sound:** the voice is brought to -14 LUFS (what platforms play shorts at; Kokoro speaks near -18) with

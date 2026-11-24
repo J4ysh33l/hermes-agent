@@ -97,7 +97,7 @@ class Settings:
     writer: str = "claude"  # who writes storyboards: claude (default; ANTHROPIC_API_KEY, paid) or gemini (free)
     claude_model: str = "claude-opus-5-5"  # writes storyboards and builds custom scenes (~$0.10–0.25 a storyboard)
     custom_review: bool = True  # Claude looks at frames of each custom scene it built and fixes what is off
-    claude_via: str = "auto"  # api (ANTHROPIC_API_KEY) | handoff (your Claude plan, via the handoff repo) | auto
+    claude_via: str = "handoff"  # handoff (your Claude plan, via the private handoff repo; default) | api | auto
     handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md); studio/HANDOFF.md is the contract
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
     hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram

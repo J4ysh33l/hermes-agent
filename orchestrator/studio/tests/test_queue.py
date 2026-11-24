@@ -96,8 +96,10 @@ class Queue(unittest.TestCase):
         self.env.stop()
         self.tmp.cleanup()
 
-    def brief(self, extra: str) -> None:
-        (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n" + extra, encoding="utf-8")
+    def brief(self, extra: str, via: str = "api") -> None:
+        """``via``: studio.claude_via ("" = the default, the handoff repo)."""
+        chosen = f"  claude_via: {via}\n" if via else ""
+        (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n" + chosen + extra, encoding="utf-8")
 
     def envfile(self, keys: str) -> None:
         (self.home / ".env").write_text("TELEGRAM_BOT_TOKEN=t\nTELEGRAM_HOME_CHANNEL=42\nGOOGLE_CLIENT_ID=c\n"
@@ -152,7 +154,7 @@ class Queue(unittest.TestCase):
 
     def test_without_an_api_key_claude_writes_through_the_handoff_repo(self):
         self.envfile("GITHUB_HANDOFF_TOKEN=g\n")
-        self.brief("  handoff_repo: me/hand\n")
+        self.brief("  handoff_repo: me/hand\n", via="")  # the default: no API key needed
         files: dict[str, str] = {}
         self.http.on("PUT", GH + "contents/", lambda c: files.update({c.url.split("contents/")[1]: "sent"}) or {})
         self.http.on("POST", GH + "issues", {"number": 7})
