@@ -48,7 +48,7 @@ sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/watch/launcher.py.templ
 mkdir -p "$HOME_DIR/watch" && chmod 700 "$HOME_DIR/watch"
 echo "wrote   $HOME_DIR/scripts/watch.py (Watches: new jobs, uploads and posts on pages you name)"
 
-echo "studio  run orchestrator/studio/install.sh once for /studio voice (Kokoro + Edge TTS, ~530 MB, CPU only)"
+echo "studio  run orchestrator/studio/install.sh once for /studio voice (Kokoro + Edge TTS, ~300 MB, CPU only)"
 
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"

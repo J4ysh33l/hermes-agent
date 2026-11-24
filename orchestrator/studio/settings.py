@@ -21,14 +21,14 @@ ENGINES = ("kokoro", "edge")
 @dataclass(frozen=True)
 class Settings:
     engine: str = "kokoro"  # kokoro (local, free, no limits) or edge (Microsoft's online voices, unofficial)
-    voice_en: str = "am_michael"  # Kokoro voice for English (/studio voices)
+    voice_en: str = "am_puck"  # Kokoro voice for English (/studio voices); your second pick: am_fenrir
     voice_hi: str = "hm_omega"  # Kokoro voice for Hindi (Devanagari text)
     edge_voice_en: str = "en-IN-PrabhatNeural"  # Edge voice for English (/studio voices edge)
     edge_voice_hi: str = "hi-IN-MadhurNeural"  # Edge voice for Hindi (Devanagari text)
     speed: float = 1.05  # 0.5 to 2.0
     pause: float = 0.25  # seconds of silence after each sentence
     threads: int = 2  # CPU threads Kokoro may use
-    kokoro_model: str = "kokoro-v1.0.onnx"  # full precision; kokoro-v1.0.int8.onnx is a third the size
+    kokoro_model: str = "kokoro-v1.0.int8.onnx"  # 88 MB, ~890 MB RAM; kokoro-v1.0.onnx (fp32) sounds the same, +250 MB RAM
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
     models_dir: str = ""  # "" = $HERMES_HOME/studio/models
     max_chars: int = 6000  # text spoken in one job

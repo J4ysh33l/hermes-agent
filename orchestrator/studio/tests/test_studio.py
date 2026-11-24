@@ -97,7 +97,7 @@ class Speaking(unittest.TestCase):
                             "sakti hai. नमस्ते दोस्तों।")
         lines = self.job()["lines"]
         self.assertEqual([(ln["voice"], ln["lang"]) for ln in lines],
-                         [("am_michael", "en-us"), ("hm_omega", "hi"), ("hm_omega", "hi")])
+                         [("am_puck", "en-us"), ("hm_omega", "hi"), ("hm_omega", "hi")])
         self.assertEqual(lines[1]["text"], "आज हम बात करेंगे कि छोटी टीम तेज़ी से प्रोडक्ट कैसे बना सकती है।")
         self.assertEqual(speech.rewritten, 1)
         self.assertEqual(len(speech.lines), 3)
