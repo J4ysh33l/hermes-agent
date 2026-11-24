@@ -83,12 +83,18 @@ def pixabay_photo(http: Http, key: str, query: str) -> list[Found]:
 
 MATCH = 0.6  # an Openverse photo must carry this share of the search's words
 MIN_SIDE = 1080  # and be at least this tall (a landscape photo is cropped to the middle of the frame)
+MIN_TALL = 1000  # a portrait one may be a little shorter: Openverse serves Flickr photos at 1024 px at most
+
+
+def _big_enough(result: dict) -> bool:
+    height, width = result.get("height") or 0, result.get("width") or 0
+    return height >= MIN_SIDE or (height > width and height >= MIN_TALL)
 
 
 def openverse_photo(http: Http, _key: str, query: str) -> list[Found]:
     """CC0/public-domain photos that carry the words: best match first, then tall ones, then the biggest."""
     found = [r for r in openverse.search(http, "images", query)
-             if (r.get("height") or 0) >= MIN_SIDE and openverse.relevance(r, query) >= MATCH]
+             if _big_enough(r) and openverse.relevance(r, query) >= MATCH]
     found.sort(key=lambda r: (openverse.relevance(r, query), (r.get("height") or 0) > (r.get("width") or 0),
                               r.get("height") or 0), reverse=True)
     return [Found(r["url"], ".png" if str(r.get("filetype", "")).lower() == "png" else ".jpg",

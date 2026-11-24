@@ -108,6 +108,13 @@ class BrollTest(unittest.TestCase):
         _, notes = broll.resolve(FakeHttp(), Keys(), self.home, self.board, profile.load("quiet", self.home))
         self.assertIn("b-roll is off", notes[0])
 
+    def test_flickr_sized_portraits_pass_but_small_landscapes_do_not(self):
+        # Openverse serves Flickr photos at 1024 px at most: a portrait one fills the frame well enough
+        tall = {**TRAIN, "url": "https://flickr/tall.jpg", "width": 683, "height": 1024}
+        wide = {**TRAIN, "url": "https://flickr/wide.jpg", "width": 1024, "height": 683}
+        found = broll.openverse_photo(FakeHttp().on("GET", OPENVERSE, {"results": [wide, tall]}), "-", "bullet train")
+        self.assertEqual([f.url for f in found], ["https://flickr/tall.jpg"])
+
     def test_stock_is_for_image_scenes_only(self):
         with self.assertRaises(storyboard.StoryboardError):
             storyboard.parse({"scenes": [{"type": "meme", "say": "x.", "src": "stock:cat", "top": "a", "bottom": "b"}]},
