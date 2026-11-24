@@ -26,6 +26,7 @@ import hashlib
 import subprocess
 import zlib
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +74,7 @@ class Plan:
 
 def _cut_cues(scenes: list[dict], motion: dict) -> list[Cue]:
     out = []
-    for scene, following in zip(scenes, scenes[1:]):
+    for scene, following in pairwise(scenes):
         name = ON_TRANSITION.get(scene.get("transition") or motion["transition"])
         if name:  # the peak lands halfway through the overlap
             peak = following["start"] + motion["transition_frames"] / FPS / 2
@@ -183,7 +184,7 @@ def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path) -> Pat
     inputs, chains, beds = ["-i", str(voice)], [f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur={seconds:.3f}[v]"], []
     for n, cue in enumerate(chosen.cues, start=1):
         inputs += ["-i", str(effect(home, cue.name))]
-        delay = int(round(cue.at * 1000))
+        delay = round(cue.at * 1000)
         chains.append(f"[{n}:a]volume={LEVEL[cue.name]}dB,adelay={delay}|{delay}[s{n}]")
         beds.append(f"[s{n}]")
     voices = "[v]"
