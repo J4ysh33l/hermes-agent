@@ -1,4 +1,6 @@
-# Smriti → Claude handoff (copy this file into your private handoff repo)
+# Smriti → Claude handoff (copy this file to `smriti/HANDOFF.md` in your handoff repo)
+
+Setting up the repo and the Claude scheduled task: `orchestrator/HANDOFF.md`.
 
 Hermes opens an issue in this repo for every `/notes … claude` request. Your Claude scheduled task
 starts on the **issue opened** event and does this:

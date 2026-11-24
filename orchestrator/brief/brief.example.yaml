@@ -199,3 +199,13 @@ notes:
   models: [gemini-3.1-flash-lite, gemini-3.5-flash-lite]   # must take audio (Gemma does not)
   handoff_repo: ""            # owner/name of your private repo for "claude" (GITHUB_HANDOFF_TOKEN in .env)
   max_attempts: 3             # a document failing this often is reported instead of retried
+
+# ---------------------------------------------------------------- Watches (/watch)
+# A script reads each page and tells you only when something is added. See orchestrator/watch/README.md.
+watch:
+  every_hours: 12             # how often a new watch is read (/watch every <n> <hours> per watch)
+  claude: true                # Claude researches new pages and writes a note on each change (handoff repo)
+  # handoff_repo: you/hermes-handoff   # default: notes.handoff_repo
+  about: ""                   # a line on you and what matters, for Claude's notes (keep private details out)
+  fail_after: 3               # failed reads in a row before you're told (once)
+  max_lines: 15               # new items listed in one message

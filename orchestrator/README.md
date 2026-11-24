@@ -41,6 +41,8 @@ not upstream Hermes code and never touches Hermes' core.
 | `notes/` | Smriti (`/notes`): asks after each Teams meeting you organised what to make; transcribes the recording with Gemini (Hindi in Latin script, paced, audio only), then summaries, task lists, PRDs or any document, by Gemini or by Claude through the handoff repo. |
 | `recap/` | The 20:00 deadline recap (`/recap now`): approvals waiting or expired unapproved (until redone or dropped; `/resume 2` brings one back after a safety check), HR mail with no reply, To Do tasks and bills due, calendar deadlines. No model. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
+| `watch/` | Watches (`/watch`): a script reads job-board feeds, RSS or a page's links and tells you only when something is added; Claude researches new pages and writes notes on changes through the handoff repo. `watch/README.md`. |
+| `handoff.py`, `HANDOFF.md` | Work for Claude through your private GitHub repo: Hermes opens an issue, a Claude scheduled task answers. How to set the repo and the task up, and the prompt to paste. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 
 Each workflow will get its own folder here and ship as a Hermes profile distribution.

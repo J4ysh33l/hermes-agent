@@ -44,6 +44,10 @@ sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/notes/launcher.py.templ
 mkdir -p "$HOME_DIR/notes" && chmod 700 "$HOME_DIR/notes"
 echo "wrote   $HOME_DIR/scripts/smriti.py (Smriti: meeting notes; needs ffmpeg and the Teams permissions)"
 
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/watch/launcher.py.template" > "$HOME_DIR/scripts/watch.py"
+mkdir -p "$HOME_DIR/watch" && chmod 700 "$HOME_DIR/watch"
+echo "wrote   $HOME_DIR/scripts/watch.py (Watches: new jobs, uploads and posts on pages you name)"
+
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
 ln -sfn "$REPO_ROOT/orchestrator/plugin" "$HOME_DIR/plugins/orchestrator"
@@ -65,5 +69,7 @@ Next (run these yourself):
       --script deadline_recap.py --deliver telegram --name deadline-recap
   hermes cron create "*/15 * * * *" --timezone Asia/Kolkata --no-agent \\
       --script smriti.py --deliver telegram --name smriti
+  hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script watch.py --deliver telegram --name watch
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

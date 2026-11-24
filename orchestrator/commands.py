@@ -108,6 +108,18 @@ def _notes_help() -> str:
     return HELP
 
 
+def _watch(args: str) -> str:
+    from orchestrator.watch.chat import handle
+
+    return handle(args)
+
+
+def _watch_help() -> str:
+    from orchestrator.watch.chat import HELP
+
+    return HELP
+
+
 def _recap_help() -> str:
     from orchestrator.recap.cli import HELP
 
@@ -147,6 +159,8 @@ def table() -> tuple[ChatCommand, ...]:
                     _recap),
         ChatCommand("notes", "Smriti: summaries, tasks, PRDs and docs from your Teams meetings", _notes_help(),
                     _notes),
+        ChatCommand("watch", "Tells you when a page adds something: job openings, uploads, posts", _watch_help(),
+                    _watch),
         ChatCommand("resume", "Bring back an approval that expired without your yes", _resume_help(), _resume),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),
