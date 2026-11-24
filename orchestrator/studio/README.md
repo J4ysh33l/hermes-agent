@@ -28,8 +28,9 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
   return the same number of lines, all in Devanagari, or nothing is spoken.
 - **Each sentence goes to its script's voice** (`voice_en`/`voice_hi`, or `edge_voice_en`/`edge_voice_hi`),
   with `studio.pause` seconds after it (the silence each engine leaves around a line is trimmed first, so
-  the pause alone sets the gap). Defaults `speed 1.0`, `pause 0.15`: 196 words a minute measured
-  (`1.15`/`0.12` gives 217, Fireship's pace; your pick was ~198). Each line's start and end come back, for captions and cuts.
+  the pause alone sets the gap). The default profile speaks at `speed 1.15`, `pause 0.10`: about 196 words a
+  minute on a real script. Plain sentences at `1.0` measured 196, but a real 55 s short with voice directions
+  came out at 167 (too slow), so the speed went up and the writer's budget (`writer.WPM`) came down to 170 at 1.0. Each line's start and end come back, for captions and cuts.
   (Whisper on a mixed clip dropped the Hindi lines, so captions for generated voiceovers come from
   the known script and these times, not from a fresh transcript.)
 - **Kokoro model:** fp16 (`kokoro-v1.0.fp16.onnx`, 169 MB) by default, at your request. It was faster
@@ -130,7 +131,7 @@ once as a list ("fix these"), then the next model starts fresh:
 
 - **Evidence comes only from your notes:** a stat's or chart's numbers, a quote, a headline, a post's
   text must appear in them, so give it the facts you want on screen.
-- Length within 20% of the target (196 wpm × voice speed); sentences ≤ 24 words; a picture says at most
+- Length within 20% of the target (170 wpm × voice speed, ~196 at the default 1.15); sentences ≤ 24 words; a picture says at most
   ~6 s unless it has parts, one sentence per part; the hook's first sentence ≤ 12 words, no greeting.
 - None of the profile's `avoid` phrases (plus "in this video", "welcome back" …); only scene types the
   profile allows; no image/meme scenes until b-roll exists; maps name countries only.

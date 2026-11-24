@@ -215,7 +215,7 @@ A brand kit from you (name, 2 colours, font, logo) overrides any preset.
 
 | Layer | Spec |
 |---|---|
-| **Voice** | Target **190–220 wpm**. Ours: **196 wpm** with Kokoro `speed 1.0`, `pause 0.15`, each line's own silence trimmed (your choice; `speed 1.15`/`pause 0.12` gives 217, Fireship's pace, which you found too fast). Measured: 0.99 → 195, 1.00 → 196, 1.01 → 200, 1.03 → 204, 1.08 → 208 wpm at pause 0.15. |
+| **Voice** | Target **190–220 wpm**. Ours: **~196 wpm on real scripts** with Kokoro `speed 1.15`, `pause 0.10` (2026-11-24: `1.0` came out at 167 wpm on a real 55 s short, voice directions included, and read slow). Plain-sentence measurements below: each line's own silence trimmed (your choice; `speed 1.15`/`pause 0.12` gives 217, Fireship's pace, which you found too fast). Measured: 0.99 → 195, 1.00 → 196, 1.01 → 200, 1.03 → 204, 1.08 → 208 wpm at pause 0.15. |
 | **Music** | One bed per video, chosen by mood tag; ducked to about −18 to −24 dB under the voice, rising in gaps; normalised mix at −14 LUFS. Free sources: Pixabay Music, YouTube Audio Library (YouTube only), Kevin MacLeod (CC-BY, credit required, as OverSimplified did). |
 | **SFX** | whoosh before each cut; pop on text/item entrance; riser into the reveal; impact on the key word or number; click/typing under code; sparse for data/maps, dense for comedy. Pixabay SFX, Mixkit (check each licence). |
 

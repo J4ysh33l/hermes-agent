@@ -77,7 +77,7 @@ class Settings:
     voice_hi: str = "hm_omega"  # Kokoro voice for Hindi (Devanagari text)
     edge_voice_en: str = "en-IN-PrabhatNeural"  # Edge voice for English (/studio voices edge)
     edge_voice_hi: str = "hi-IN-MadhurNeural"  # Edge voice for Hindi (Devanagari text)
-    speed: float = 1.0  # 0.5 to 2.0; 1.0 with pause 0.15 ≈ 196 words a minute (1.15/0.12 ≈ 217)
+    speed: float = 1.0  # 0.5 to 2.0; a page profile's voice.speed wins (default profile: 1.15 ≈ 196 wpm on real scripts)
     pause: float = 0.15  # seconds of silence after each sentence
     profile: str = "default"  # the page profile videos use unless one is named (studio/profiles)
     threads: int = 2  # CPU threads Kokoro may use

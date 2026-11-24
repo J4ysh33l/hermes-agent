@@ -37,9 +37,10 @@ from .settings import Keys, Settings
 from .voice import sentences
 
 PLAYBOOK = Path(__file__).with_name("PLAYBOOK.md")
-WPM = 196  # measured at voice speed 1.0, pause 0.15 (README); scales with the profile's speed
+WPM = 170  # words a minute at voice speed 1.0 with directions and pauses, measured on a real 55 s short
+# (152 words); scales with the profile's speed (1.15 by default → ~196)
 MAX_SENTENCE = 24
-SCENE_WORDS = 20  # ~6 s at 196 wpm
+SCENE_WORDS = 20  # ~6 s at the default ~196 wpm
 CUSTOM_WORDS = 40  # a custom scene animates through its own sentences
 PART_WORDS = 16  # per list item / bar / box / event
 HOOK_WORDS = 12  # the hook's first sentence

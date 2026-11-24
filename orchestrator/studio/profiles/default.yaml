@@ -40,8 +40,8 @@ voice:                      # this page's voice (overrides studio: in brief.yaml
   engine: kokoro
   voice_en: am_puck
   voice_hi: hm_omega
-  speed: 1.0                # with pause 0.15: 196 words a minute (measured)
-  pause: 0.15
+  speed: 1.15               # ~196 words a minute with directions (1.0 measured 167-170 on a 55 s short: too slow)
+  pause: 0.10
 
 writing:                    # for script → storyboard
   format: explainer         # explainer | news | how-it-works | business-case | hindi-explainer

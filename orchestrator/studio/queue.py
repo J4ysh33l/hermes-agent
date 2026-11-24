@@ -19,6 +19,7 @@ from __future__ import annotations
 import fcntl
 import json
 import subprocess
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
@@ -188,24 +189,44 @@ def _board(job: Job, hook: int) -> storyboard.Storyboard:
     return storyboard.load(job.folder / name)
 
 
+def _pace(board: storyboard.Storyboard, made: video.Video) -> str:
+    words = sum(len(writer.spoken(scene.say).split()) for scene in board.scenes)
+    return (f"{made.seconds:.1f} s, {words} words = {words / max(made.seconds, 1) * 60:.0f} wpm · voice "
+            f"{made.voice_took:.0f} s · render {made.render_took:.0f} s · {made.job.name}")
+
+
+def _clips(ctx: Any, job: Job, tools: Tools) -> dict[str, str]:
+    """Hooks 2 and 3 as clips of the opening alone, to pick from (not once a hook was picked)."""
+    if not ctx.settings.hook_clips or job.data["picked"]:
+        return {}
+    out = {}
+    for n in (2, 3):
+        clip = _board(job, n)
+        clip = replace(clip, scenes=clip.scenes[:1])
+        done = tools.video(ctx.http, ctx.keys, ctx.settings, ctx.home, clip, job.folder / f"hook{n}.mp4",
+                           job.data["profile"])
+        job.log(f"hook {n} clip: {_pace(clip, done)}")
+        out[str(n)] = str(done.path)
+    return out
+
+
 def _render(ctx: Any, job: Job, tools: Tools) -> None:
     board = _board(job, job.data["hook"])
     made = tools.video(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "video.mp4", job.data["profile"])
-    out = {"video": str(made.path), "seconds": made.seconds, "notes": list(made.notes), "hooks": {}}
-    if ctx.settings.hook_clips and not job.data["picked"]:
-        for n in (2, 3):
-            clip = _board(job, n)
-            done = tools.video(ctx.http, ctx.keys, ctx.settings, ctx.home, replace(clip, scenes=clip.scenes[:1]),
-                               job.folder / f"hook{n}.mp4", job.data["profile"])
-            out["hooks"][str(n)] = str(done.path)
+    job.log(f"video (hook {job.data['hook']}): {_pace(board, made)}")
+    for note in made.notes:
+        job.log(f"  {note}")
+    out = {"video": str(made.path), "seconds": made.seconds, "notes": list(made.notes),
+           "hooks": _clips(ctx, job, tools)}
     pick = json.loads((job.folder / "storyboard.cover.json").read_text(encoding="utf-8"))
+    started = time.monotonic()
     out["cover"] = str(tools.cover(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "cover.png",
-                                   pick["scene"],
-                                   pick["words"], job.data["profile"]))
+                                   pick["scene"], pick["words"], job.data["profile"]))
+    job.log(f"cover: scene {pick['scene']}, \"{pick['words']}\" · {time.monotonic() - started:.0f} s")
     report = tools.qc(made.path, made.seconds, longest_pause(board))
     out.update(qc=report.summary(), passed=report.passed)
     job.data["outputs"] = out
-    job.log(f"rendered: {made.seconds:.1f} s, {'QC passed' if report.passed else 'QC failed'}", "rendered")
+    job.log(report.summary().replace("\n", " · "), "rendered")
 
 
 def _small(path: Path) -> Path:
