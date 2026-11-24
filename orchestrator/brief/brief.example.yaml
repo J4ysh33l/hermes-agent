@@ -243,5 +243,9 @@ studio:
   claude_via: handoff             # handoff (default: your Claude plan via the private handoff repo, no API key) | api | auto
   handoff_repo: ""                # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
   direction_retries: 2            # a storyboard that fails its checks goes back to the director this many times
+  research: true                  # before the script, a researcher finds current facts with Google Search
+  # research_models:              # Gemini models that may search on your tier, tried in order
+  #   - id: gemini-2.5-flash-lite
+  #   - id: gemini-2.5-flash
   render_window: "00:30-07:00"    # local time the queue may render in; /studio run renders now
   hook_clips: true                # also render hooks 2 and 3 as short clips, to pick one on Telegram

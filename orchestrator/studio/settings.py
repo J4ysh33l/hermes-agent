@@ -18,6 +18,8 @@ TEXT_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-fla
 
 
 SCRIPT_MODELS = (ModelChoice("gemini-3.5-flash-lite"), ModelChoice("gemini-3.1-flash-lite"))
+# Google Search on the free tier worked on these and not on the 3.x models (tested 2026-11-24)
+RESEARCH_MODELS = (ModelChoice("gemini-2.5-flash-lite"), ModelChoice("gemini-2.5-flash"))
 ENGINES = ("kokoro", "edge")
 PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 
@@ -100,6 +102,8 @@ class Settings:
     claude_via: str = "handoff"  # handoff (your Claude plan, via the private handoff repo; default) | api | auto
     handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
     direction_retries: int = 2  # a storyboard that fails its checks goes back to the director this many times
+    research: bool = True  # before the script, a researcher finds current facts with Google Search (research.py)
+    research_models: tuple[ModelChoice, ...] = RESEARCH_MODELS  # Gemini models that may search, tried in order
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
     hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram
     claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
@@ -142,6 +146,9 @@ def parse(raw: dict[str, Any]) -> Settings:
         claude_via=_choice("claude_via", str(studio.get("claude_via", base.claude_via)), VIAS),
         handoff_repo=str(studio.get("handoff_repo", "") or (raw.get("notes") or {}).get("handoff_repo", "")),
         direction_retries=min(5, max(0, int(studio.get("direction_retries", base.direction_retries)))),
+        research=bool(studio.get("research", base.research)),
+        research_models=tuple(ModelChoice(str(m["id"])) for m in studio["research_models"])
+        if studio.get("research_models") else base.research_models,
         render_window=_window(str(studio.get("render_window", base.render_window))),
         hook_clips=bool(studio.get("hook_clips", base.hook_clips)),
         custom_review=bool(studio.get("custom_review", base.custom_review)),

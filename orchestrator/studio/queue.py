@@ -9,7 +9,8 @@ A job is a folder ``$HERMES_HOME/studio/queue/<id>/`` with ``job.json`` and ever
     done      the preview went to Telegram, and to Drive when the check passed and Drive is signed in
     failed    a step failed; the reason is in job.json and was sent to you
 
-Through the API (Gemini, or Claude with a key) ``/studio make`` writes the script, direction and components
+First the researcher adds current facts to your notes (``research.py``). Through the API (Gemini, or
+Claude with a key) ``/studio make`` writes the script, direction and components
 at once. Through the handoff repo (Claude on your plan) each call is an issue: the queue reads the answer
 once Claude closes it, checks it (``rules.py``), and opens the next call's issue or a fix request (the script
 once, direction ``studio.direction_retries`` times). Either way, ``verify`` puts every component through
@@ -40,7 +41,7 @@ from orchestrator.handoff import Handoff, HandoffError
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import audio, brief, cover, custom, direction, drive, handoff, profile, qc, rules, storyboard, video, voice, writer
+from . import audio, brief, cover, custom, direction, drive, handoff, profile, qc, research, rules, storyboard, video, voice, writer
 from .text import said_words, sentences
 
 PROXY_MB = 48  # Telegram bots may upload 50 MB
@@ -124,11 +125,14 @@ def add(ctx: Any, notes: str, who: str = "", seconds: float = 0) -> Job:
     look = profile.load(ctx.settings.profile, ctx.home)
     how = route(ctx, who)
     folder = _new_folder(root(ctx.home), f"{datetime.now():%Y%m%d-%H%M%S}")
+    folder.joinpath("asked.txt").write_text(notes, encoding="utf-8")  # yours; notes.txt adds the research
+    notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes, brief.seconds_of(look, seconds), folder)
     folder.joinpath("notes.txt").write_text(notes, encoding="utf-8")
     job = Job(folder, {"id": folder.name, "created": datetime.now().isoformat(timespec="seconds"),
                        "profile": look.name, "seconds": seconds, "hook": 1, "picked": False, "via": how,
                        "writer": "claude (handoff)" if how == "handoff" else how, "stage": "script", "round": 0, "fixes": 0, "calls": 0, "wishes": [],
-                       "state": "writing", "outputs": {}})
+                       "state": "writing", "outputs": {}, "research": research.summary(found)})
+    job.log(research.summary(found))
     if how == "handoff":
         prompt = brief.script(look, notes, seconds, job.id, True)
         job.data["issue"] = handoff.start(_hand(ctx), job.id, brief.params(look, notes, seconds), prompt)
@@ -388,6 +392,9 @@ def _deliver(ctx: Any, job: Job) -> None:
                         "cover": drive.upload(ctx.http, ctx.secrets, Path(out["cover"]), f"{title} ({job.id}) cover.png",
                                               "image/png")}
     lines = [out["qc"], *out.get("notes", [])]
+    sites = research.Findings.load(job.folder).sites()
+    if sites:
+        lines.append(f"Facts researched from: {', '.join(sites[:8])}")
     if out.get("drive"):
         lines.append(f"Drive: {out['drive']['video']}")
     elif out["passed"]:

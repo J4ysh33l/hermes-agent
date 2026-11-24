@@ -16,7 +16,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import audio, brief, chat, cover, drive, profile, queue, reference, sound, storyboard, video, voice, writer
+from . import audio, brief, chat, cover, drive, profile, queue, reference, research, sound, storyboard, video, voice, writer
 
 
 def _video(home: Path, words: list[str]) -> int:
@@ -74,6 +74,9 @@ def _write(home: Path, words: list[str]) -> int:
     try:
         notes = " ".join(args.text) + ("\n" + args.notes.read_text(encoding="utf-8") if args.notes else "")
         look = profile.load(args.profile or ctx.settings.profile, home)
+        notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes,
+                                       brief.seconds_of(look, args.seconds), args.out.parent)
+        print(research.summary(found))
         draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, args.seconds, args.out.parent,
                              writer.choose(ctx.settings, args.claude, args.gemini))
     except (OSError, writer.WriterError, profile.ProfileError) as exc:

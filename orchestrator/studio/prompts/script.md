@@ -25,6 +25,8 @@ $beats
 ## Hooks
 Write 3 hooks, each from a different family, preferring: $families.
 $hook_bank
+Put your strongest hook first: it opens the video. The other two come as short clips the owner can
+pick instead.
 A hook is a 3-second opening, not an intro:
 - the first sentence is 6–9 words, never more than 9, and says the topic or the claim at once;
 - the whole hook is at most 2 sentences and 16 words;

@@ -89,6 +89,16 @@ def component(name: str, code: str) -> str:
     return f"```tsx\n// file: {name}\n{code}```"
 
 
+FINDINGS = ("- Bun 1.2 added a built-in Postgres client in 2025 (bun.sh, January 2025).\n"
+            "- Bun's mascot is a bun with a face (bun.sh, 2025).")
+
+
+def research_answer() -> dict:
+    """What Gemini with Google Search answers: the facts, and the pages it read."""
+    return {"candidates": [{"content": {"parts": [{"text": FINDINGS}]},
+                            "groundingMetadata": {"groundingChunks": [{"web": {"title": "bun.sh", "uri": "https://r/1"}}]}}]}
+
+
 def answer(raw: object) -> dict:
     text = raw if isinstance(raw, str) else json.dumps(raw)
     return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
@@ -102,7 +112,8 @@ class Writing(unittest.TestCase):
         self.env.start()
         self.look = profile.load("default", self.home)
         self.answers: list[object] = []
-        self.http = FakeHttp().on("POST", GEMINI, lambda _call: answer(self.answers.pop(0)))
+        self.http = FakeHttp().on("POST", GEMINI, lambda call: research_answer() if "tools" in call.json_body
+                                  else answer(self.answers.pop(0)))
         self.job = self.home / "job1"
 
     def tearDown(self):

@@ -15,7 +15,7 @@ from orchestrator.brief.store import default_state_dir
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import brief, profile, queue, settings, voice, writer
+from . import brief, profile, queue, research, settings, voice, writer
 
 HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio voice <text> — read aloud with studio.engine and sent to you as a voice message
@@ -108,6 +108,7 @@ def _write(ctx: Context, text: str) -> str:
         return "What is the video about? /studio write <notes or a draft script>"
     look = profile.load(ctx.settings.profile, ctx.home)
     folder = ctx.home / "studio" / "write" / f"{datetime.now():%Y%m%d-%H%M%S}"
+    notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes, brief.seconds_of(look, 0), folder)
     draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, 0, folder, who)
     saved = writer.save(draft, folder / "storyboard.json", look.name)
     if draft.wishes:
@@ -117,7 +118,7 @@ def _write(ctx: Context, text: str) -> str:
     extra = [f"⚠️ {n}" for n in draft.notes] + [f"💭 wish: {w}" for w in draft.wishes]
     return "\n".join([f"🎬 **{draft.title}** · {draft.words()} words (~{draft.words() / brief.WPM * 60:.0f} s) · "
                       f"{draft.model}", "", "**Hooks**", *hooks, "", "**Script** (after the hook)", *body,
-                      *([""] + extra if extra else []), "", f"Saved: {saved[0].parent} (storyboard.json = hook 1, "
+                      *([""] + extra if extra else []), "", f"🔎 {research.summary(found)}", f"Saved: {saved[0].parent} (storyboard.json = hook 1, "
                       f".hook2/.hook3 = the others)"])
 
 
@@ -125,11 +126,15 @@ def _make(ctx: Context, text: str) -> str:
     first, _, rest = text.strip().partition(" ")
     who = first.lower() if first.lower() in settings.WRITERS else ""
     job = queue.add(ctx, rest if who else text, who)
-    if job.state == "writing":
-        return (f"✍️ Job {job.id}: Claude is writing it through the handoff repo (issue #{job.data['issue']}). "
+    found = f"🔎 {job.data['research']}\n"
+    if job.state == "writing" and job.data["via"] == "handoff":
+        return (f"{found}✍️ Job {job.id}: Claude is writing it through the handoff repo (issue #{job.data['issue']}). "
                 f"It renders in {ctx.settings.render_window} once written; /studio queue to check.")
+    if job.state == "writing":  # written; its custom scenes are checked by the next queue run
+        return (f"{found}✍️ Job {job.id} written by {job.data['writer']}; its custom scenes are checked next, then it "
+                f"renders in {ctx.settings.render_window} (or /studio run now).")
     script = job.folder.joinpath("storyboard.txt").read_text(encoding="utf-8")
-    return (f"✍️ Job {job.id} written by {job.data['writer']}; renders in {ctx.settings.render_window} "
+    return (f"{found}✍️ Job {job.id} written by {job.data['writer']}; renders in {ctx.settings.render_window} "
             f"(or /studio run now). You get the video, the cover and hooks 2–3 as clips; /studio pick "
             f"{job.id} <n> re-renders with another hook.\n\n{script}")
 

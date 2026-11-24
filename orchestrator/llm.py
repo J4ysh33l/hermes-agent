@@ -43,6 +43,22 @@ def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
             config["responseSchema"] = schema
     parts = [{"file_data": {"mime_type": mime, "file_uri": uri}} for mime, uri in files] + [{"text": prompt}]
     body = {"contents": [{"role": "user", "parts": parts}], "generationConfig": config}
+    return _text(_gemini_call(http, api_key, model, body, workflow, step))
+
+
+def gemini_search(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str,
+                  max_output_tokens: int = 4000) -> tuple[str, list[tuple[str, str]]]:
+    """One call with Google Search grounding: (the answer, its sources as (site, link) pairs). Plain text
+    only (the API does not combine search with JSON mode); on the free tier only some models may search."""
+    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens}}
+    data = _gemini_call(http, api_key, model, body, workflow, step)
+    chunks = ((data.get("candidates") or [{}])[0].get("groundingMetadata") or {}).get("groundingChunks") or []
+    sources = [(str(c["web"].get("title") or ""), str(c["web"].get("uri") or "")) for c in chunks if c.get("web")]
+    return _text(data), list(dict.fromkeys(sources))
+
+
+def _gemini_call(http, api_key: str, model: str, body: dict[str, Any], workflow: str, step: str) -> dict[str, Any]:
     started = time.monotonic()
     try:
         data = http.request("POST", GEMINI.format(model=model), headers={"x-goog-api-key": api_key},
@@ -56,7 +72,7 @@ def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
                    input_tokens=meta.get("promptTokenCount", 0), output_tokens=meta.get("candidatesTokenCount", 0),
                    cached=meta.get("cachedContentTokenCount", 0), reasoning=meta.get("thoughtsTokenCount", 0),
                    ms=int((time.monotonic() - started) * 1000))
-    return _text(data)
+    return data
 
 
 def claude(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str, max_tokens: int = 16000,

@@ -266,6 +266,12 @@ A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` → `ready` → `
 `failed` with the reason sent to you. The `studio` cron (`install.sh` prints the line; every 5 minutes)
 moves writing jobs on and renders inside `studio.render_window`, one run at a time.
 
+- **Research first** (`research.py`, `prompts/research.md`): a researcher finds the current facts on the
+  topic with Google Search (Gemini, `studio.research_models`: on the free tier the 2.5 models could search,
+  the 3.x ones could not, 2026-11-24), one line each with its site. They are added to your notes under
+  "Research", so the writer and director use them and the evidence checks count them; the sites go to
+  Telegram with the video. When no model can search, the video is written from your notes alone and the
+  reply says why. `studio.research: false` turns it off. Your own words are kept as `asked.txt`.
 - **Three writing calls, one job each** (`writer.py`, prompts in `prompts/`, filled by `brief.py`):
   1. **Script** (`prompts/script.md`): the words only. Title, 3 hooks from 3 families, the lines after
      the hook; the page's tone and humour, the format's beats, how to write for a text-to-speech voice.
@@ -275,7 +281,8 @@ moves writing jobs on and renders inside `studio.render_window`, one run at a ti
   3. **Animation** (`prompts/animation.md`, only with custom scenes): every custom scene's component in
      one answer, knowing the look and every scene around it.
   Each answer is checked in code (`rules.py`): a failing script goes back once, a failing storyboard
-  `studio.direction_retries` times (default 2). Then every component goes through TypeScript and a test
+  `studio.direction_retries` times (default 2); a busy model (429/503) hands the call to the next one in
+  `studio.script_models`, keeping what was written. Then every component goes through TypeScript and a test
   render (`custom.verify`); failures go back once, then are drawn as their fallback library scene.
 - **Who writes:** `studio.claude_via` — `handoff` (the default, no API key) uses your Claude plan: each call
   is an issue in the handoff repo whose body is the whole prompt (`orchestrator/HANDOFF.md`); Hermes commits
