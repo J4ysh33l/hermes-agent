@@ -1,4 +1,4 @@
-import {geoCentroid, geoInterpolate, geoMercator, geoPath} from "d3-geo";
+import {geoCentroid, geoMercator, geoPath} from "d3-geo";
 import type {Feature, FeatureCollection, Geometry} from "geojson";
 import React, {useMemo} from "react";
 import {Easing, interpolate, useCurrentFrame} from "remotion";
@@ -55,8 +55,11 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
   const theme = useTheme();
   const frame = useCurrentFrame();
   const lit = scene.highlight.map(country).filter(Boolean) as Country[];
-  const focus = (scene.focus ? [country(scene.focus)!] : lit.length ? lit : COUNTRIES);
-  const end = useMemo(() => target(focus), [scene.focus, scene.highlight.join()]);
+  const stops = scene.route.map(country).filter(Boolean) as Country[];
+  // The camera frames the focus, else everything highlighted or on the route (so both ends are on screen).
+  const framed = [...new Set([...lit, ...stops])];
+  const focus = scene.focus ? [country(scene.focus)!] : framed.length ? framed : COUNTRIES;
+  const end = useMemo(() => target(focus), [scene.focus, scene.highlight.join(), scene.route.join()]);
   const flyEnd = Math.min(45, frames * 0.4);
   const fly = interpolate(frame, [0, flyEnd], [0, 1], {extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic)});
   const startScale = W / (2 * Math.PI);
@@ -68,13 +71,21 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
   // 241 country outlines are the slow part: once the camera stops they are drawn once and reused.
   const outlines = useMemo(() => COUNTRIES.map((c) => path(c) ?? ""), [projection]);
   const fill = interpolate(frame, [flyEnd - 6, flyEnd + 8], [0, 1], {extrapolateLeft: "clamp", extrapolateRight: "clamp"});
-  const stops = scene.route.map(country).filter(Boolean) as Country[];
   const routeAt = flyEnd + 10;
   const draw = interpolate(frame, [routeAt, routeAt + Math.max(20, frames * 0.25)], [0, 1], {extrapolateLeft: "clamp",
     extrapolateRight: "clamp", easing: Easing.inOut(Easing.quad)});
+  // Each leg is a curved flight arc drawn on the flat map, between the two countries' centres as they
+  // appear on screen. (A great circle, the shortest path on the globe, runs off one edge of a flat map
+  // and back on the other: USA → India went over the pole and was drawn as a line across the whole map.)
   const arcs = stops.slice(1).map((stop, i) => {
-    const between = geoInterpolate(geoCentroid(stops[i]), geoCentroid(stop));
-    return Array.from({length: 41}, (_, k) => projection(between(k / 40))!);
+    const [ax, ay] = projection(geoCentroid(stops[i]))!;
+    const [bx, by] = projection(geoCentroid(stop))!;
+    const lift = Math.min(260, Math.hypot(bx - ax, by - ay) * 0.3);
+    const [cx, cy] = [(ax + bx) / 2, Math.min(ay, by) - lift];
+    return Array.from({length: 41}, (_, k) => {
+      const t = k / 40;
+      return [(1 - t) ** 2 * ax + 2 * (1 - t) * t * cx + t * t * bx, (1 - t) ** 2 * ay + 2 * (1 - t) * t * cy + t * t * by];
+    });
   });
   const names = scene.labels ? (lit.length ? lit : focus.slice(0, 1)) : [];
   return (
