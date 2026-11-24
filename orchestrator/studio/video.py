@@ -16,18 +16,18 @@ render.log) so a render can be looked at or redone.
 
 from __future__ import annotations
 
+import difflib
 import json
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from orchestrator.brief.net import Http
-
-from dataclasses import replace
 
 from . import profile as profiles
 from . import voice
@@ -74,12 +74,21 @@ def word_times(marked: str, start: float, end: float) -> list[dict[str, Any]]:
 
 
 def _asset(board: Storyboard, job: Path, n: int, src: str) -> str:
-    if src.startswith("https://"):
+    if not src or src.startswith("https://"):
         return src
     name = f"assets/{n:02d}-{Path(src).name}"
     (job / "assets").mkdir(exist_ok=True)
     shutil.copyfile(board.folder / src, job / name)
     return name
+
+
+def _with_assets(value: Any, copy: Any) -> Any:
+    """The scene's fields as JSON, each ``src`` (nested ones too) copied into the job folder."""
+    if isinstance(value, dict):
+        return {k: copy(v) if k == "src" else _with_assets(v, copy) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_with_assets(v, copy) for v in value]
+    return value
 
 
 def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> dict[str, Any]:
@@ -91,13 +100,12 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
         used += len(said)
         for text, (_spoken, start, end) in zip(said, mine):
             words += word_times(text, start, end)
-        fields = json.loads(json.dumps(dict(scene.fields), default=dict))
-        if "src" in fields:
-            fields["src"] = _asset(board, job, n, fields["src"])
+        fields = _with_assets(json.loads(json.dumps(dict(scene.fields), default=dict)),
+                              lambda src, n=n: _asset(board, job, n, src))
         start = 0.0 if n == 0 else mine[0][1]
         beats = [round(s - start, 3) for _t, s, _e in mine]  # each sentence's start, from the scene's start
         scenes.append({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats,
-                       "enter": scene.enter, "exit": scene.exit, **fields})
+                       "enter": scene.enter, "exit": scene.exit, "emoji": scene.emoji, **fields})
     if used != len(spans):
         raise VideoError(f"The voice gave {len(spans)} sentences for {used}; nothing rendered")
     return {"profile": look.render_props(), "audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}
@@ -115,6 +123,36 @@ def render_args(settings: Settings, job: Path, out: Path) -> list[str]:
     return args
 
 
+WORLD = PROJECT / "node_modules/world-atlas/countries-50m.json"
+ALIASES = {"usa": "United States of America", "us": "United States of America", "america": "United States of America",
+           "uk": "United Kingdom", "britain": "United Kingdom", "uae": "United Arab Emirates",
+           "russia": "Russia", "south korea": "South Korea", "korea": "South Korea"}
+
+
+def check_countries(board: Storyboard, world: Path = WORLD) -> Storyboard:
+    """Map scenes' country names → the map data's spelling (aliases like USA/UK allowed); a name it does
+    not have is refused with the closest matches, before anything is spoken."""
+    names = {g["properties"]["name"].lower(): g["properties"]["name"]
+             for g in json.loads(world.read_text(encoding="utf-8"))["objects"]["countries"]["geometries"]}
+    def fix(n: int, name: str) -> str:
+        found = names.get(ALIASES.get(name.lower(), name).lower())
+        if not found:
+            near = difflib.get_close_matches(name.lower(), names, n=3, cutoff=0.6)
+            hint = f"; did you mean {', '.join(names[c] for c in near)}?" if near else ""
+            raise VideoError(f"scene {n + 1}: no country called {name!r} on the map{hint}")
+        return found
+    scenes = []
+    for n, scene in enumerate(board.scenes):
+        if scene.type == "map":
+            f = dict(scene.fields)
+            f["focus"] = fix(n, f["focus"]) if f["focus"] else ""
+            f["highlight"] = tuple(fix(n, c) for c in f["highlight"])
+            f["route"] = tuple(fix(n, c) for c in f["route"])
+            scene = replace(scene, fields=MappingProxyType(f))
+        scenes.append(scene)
+    return replace(board, scenes=tuple(scenes))
+
+
 def voiced(settings: Settings, look: Profile) -> Settings:
     """The studio settings with the page profile's voice in place of studio.engine/voice/speed/pause."""
     v = look.section("voice")
@@ -128,6 +166,7 @@ def make(http: Http, key: str, settings: Settings, home: Path, board: Storyboard
     look = profiles.load(profile_name or board.profile or settings.profile, home)
     if not (PROJECT / "node_modules/.bin/remotion").is_file():
         raise VideoError("Remotion is not installed: run orchestrator/studio/install.sh (needs Node 18+)")
+    board = check_countries(board)
     job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second
     job.mkdir(parents=True)
     started = time.monotonic()

@@ -59,7 +59,7 @@ class StoryboardTest(unittest.TestCase):
         self.assertEqual(board.scenes[1].fields["items"], ("No GC", "Safe threads"))
 
     def test_mistakes_are_refused_before_anything_is_made(self):
-        self.refused({"scenes": [{"type": "chart", "say": "x."}]}, "type must be one of")
+        self.refused({"scenes": [{"type": "hologram", "say": "x."}]}, "type must be one of")
         self.refused({"scenes": [{"type": "title", "say": "x.", "text": "t", "colour": "red"}]}, "unknown key 'colour'")
         self.refused({"scenes": [{"type": "title", "text": "t"}]}, "scene 1.say is required")
         self.refused({"scenes": [{"type": "stat", "say": "x.", "value": "lots", "label": "l"}]}, "must be a number")
@@ -68,6 +68,48 @@ class StoryboardTest(unittest.TestCase):
         self.refused({"scenes": []}, "at least one scene")
         self.refused({"scenes": [{"type": "title", "say": "A *big deal.", "text": "t"}]}, "not closed")
         self.refused({"scenes": [{"type": "title", "say": "x.", "text": "t", "exit": "explode"}]}, "must be one of")
+
+    def test_the_newer_scene_types_are_checked_too(self):
+        (self.folder / "messy.jpg").write_bytes(b"jpg")
+        board = storyboard.parse({"scenes": [
+            {"type": "terminal", "say": "Run it.", "lines": ["$ docker run nginx", "ok"]},
+            {"type": "chart", "say": "Growth.", "labels": ["a", "b"], "values": [1, 2]},
+            {"type": "diagram", "say": "Flow.", "nodes": ["A", "B"]},
+            {"type": "quote", "say": "Quote.", "text": "Ship it."},
+            {"type": "timeline", "say": "History.", "events": [{"when": "2013", "what": "x"}, {"when": "2014", "what": "y"}]},
+            {"type": "clipping", "say": "News.", "source": "Daily", "headline": "A big shift", "highlight": "BIG shift"},
+            {"type": "post", "say": "Post.", "name": "Priya", "text": "hi"},
+            {"type": "meme", "say": "Meme.", "src": "crab.jpg", "bottom": "me"},
+            {"type": "beforeafter", "say": "Before. After.", "before": {"label": "old", "src": "messy.jpg"},
+             "after": {"label": "new"}},
+            {"type": "logo", "say": "Docker.", "name": "Docker"}]}, self.folder)
+        chart = board.scenes[1].fields
+        self.assertEqual((chart["kind"], chart["highlight"]), ("bar", -1))  # defaults: bars, the largest lit
+        self.assertEqual(storyboard.files(board.scenes[8].fields), ["messy.jpg"])  # nested files are found
+
+    def test_the_newer_scene_types_refuse_what_cannot_be_drawn(self):
+        self.refused({"scenes": [{"type": "chart", "say": "x.", "labels": ["a", "b"], "values": [1, 2, 3]}]},
+                     "must pair up")
+        self.refused({"scenes": [{"type": "chart", "say": "x.", "labels": ["a", "b"], "values": [1, 2],
+                                  "kind": "pie"}]}, "must be one of")
+        self.refused({"scenes": [{"type": "clipping", "say": "x.", "source": "s", "headline": "A big shift",
+                                  "highlight": "huge"}]}, "not in the headline")
+        self.refused({"scenes": [{"type": "beforeafter", "say": "x.", "before": {"label": "a", "src": "gone.jpg"},
+                                  "after": {"label": "b"}}]}, "not found")
+        self.refused({"scenes": [{"type": "timeline", "say": "x.", "events": [{"when": "1", "what": "a", "who": "b"},
+                                                                             {"when": "2", "what": "c"}]}]},
+                     "unknown key 'who'")
+
+    def test_maps_name_countries_and_any_scene_may_carry_an_emoji(self):
+        board = storyboard.parse({"scenes": [
+            {"type": "map", "say": "India to Japan.", "highlight": ["India", "Japan"], "route": ["india", "Japan"],
+             "emoji": "🔥"}]}, self.folder)
+        self.assertEqual(board.scenes[0].emoji, "🔥")
+        self.assertEqual(storyboard.countries(board.scenes[0].fields), ["India", "Japan", "india", "Japan"])
+        self.refused({"scenes": [{"type": "map", "say": "x."}]}, "needs a focus, highlight or route")
+        self.refused({"scenes": [{"type": "map", "say": "x.", "route": ["India"]}]}, "at least two")
+        self.refused({"scenes": [{"type": "title", "say": "x.", "text": "t", "emoji": "this is not an emoji"}]},
+                     "one emoji")
 
     def test_emphasis_is_captioned_but_never_spoken(self):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "It is *really fast* now.", "text": "t",
@@ -106,6 +148,16 @@ class PropsTest(unittest.TestCase):
         self.assertTrue((self.job / "assets/04-crab.jpg").is_file())
         self.assertGreater(out["seconds"], 10.0)
 
+    def test_nested_files_travel_with_the_job(self):
+        (self.folder / "messy.jpg").write_bytes(b"jpg")
+        board = storyboard.parse({"scenes": [{"type": "beforeafter", "say": "Before. After.",
+                                              "before": {"label": "old", "src": "messy.jpg"},
+                                              "after": {"label": "new"}}]}, self.folder)
+        out = video.props(board, self.job, fake_speech(self.job, ["Before.", "After."]), DEFAULT)
+        self.assertEqual(out["scenes"][0]["before"]["src"], "assets/00-messy.jpg")
+        self.assertEqual(out["scenes"][0]["after"]["src"], "")
+        self.assertTrue((self.job / "assets/00-messy.jpg").is_file())
+
     def test_captions_show_the_script_as_written_in_order(self):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "Doston yeh bahut important hai.",
                                               "text": "t"}]}, self.folder)
@@ -120,6 +172,29 @@ class PropsTest(unittest.TestCase):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "One. Two.", "text": "t"}]}, self.folder)
         with self.assertRaises(video.VideoError):
             video.props(board, self.job, fake_speech(self.job, ["One."]), DEFAULT)
+
+
+class CountryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        self.world = self.folder / "world.json"
+        names = ["India", "Japan", "United States of America", "Pakistan"]
+        self.world.write_text(json.dumps({"objects": {"countries": {"geometries": [
+            {"properties": {"name": n}} for n in names]}}}), encoding="utf-8")
+
+    def board(self, **map_fields):
+        return storyboard.parse({"scenes": [{"type": "map", "say": "x.", **map_fields}]}, self.folder)
+
+    def test_names_take_the_map_spelling_and_common_short_forms_work(self):
+        fixed = video.check_countries(self.board(focus="india", route=["USA", "japan"]), self.world)
+        self.assertEqual(fixed.scenes[0].fields["focus"], "India")
+        self.assertEqual(fixed.scenes[0].fields["route"], ("United States of America", "Japan"))
+
+    def test_an_unknown_country_is_refused_with_the_closest_names(self):
+        with self.assertRaises(video.VideoError) as caught:
+            video.check_countries(self.board(highlight=["Pakistn"]), self.world)
+        self.assertIn("did you mean Pakistan", str(caught.exception))
 
 
 class ProfileTest(unittest.TestCase):

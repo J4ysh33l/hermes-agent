@@ -154,18 +154,18 @@ words; never more than 4 s without something moving.
 | Big number counting up | Think School, Dhruv | ✅ `stat` |
 | Full-screen image/clip, slow push + caption card | all | ✅ `image` |
 | Two cards with VS | Fireship, Think School | ✅ `compare` |
-| Terminal with commands | Fireship | ◻️ |
-| Logo / name reveal (subject logo big as it is said) | Fireship | ◻️ |
-| Box-and-arrow diagram (nodes connect on their sentence) | Fireship, Kurzgesagt | ◻️ |
-| Bar / line / pie chart from data | Think School, Wendover | ◻️ |
-| Headline clipping with highlighter sweep (rebuilt as a card) | Dhruv, Think School, Vox | ◻️ |
-| Tweet / post card | Varun Mayya, Code Report | ◻️ |
-| Map: zoom to region, highlight, route draws on, labels | Dhruv, Vox, Harris, Wendover | ◻️ (d3-geo + Natural Earth, no API key) |
-| Meme card (text over a CC0 image) | Fireship | ◻️ |
-| Timeline (dates slide past) | history channels | ◻️ |
-| Quote card | all | ◻️ |
-| Emoji / icon burst on a key word | Hormozi | ◻️ |
-| Before → after split | all | ◻️ |
+| Terminal with commands | Fireship | ✅ `terminal` |
+| Logo / name reveal (subject logo big as it is said) | Fireship | ✅ `logo` |
+| Box-and-arrow diagram (nodes connect on their sentence) | Fireship, Kurzgesagt | ✅ `diagram` (a chain, top to bottom) |
+| Bar / line chart from data | Think School, Wendover | ✅ `chart` |
+| Headline clipping with highlighter sweep (rebuilt as a card) | Dhruv, Think School, Vox | ✅ `clipping` |
+| Tweet / post card (generic, no platform branding) | Varun Mayya, Code Report | ✅ `post` |
+| Map: zoom to region, highlight, route draws on, labels | Dhruv, Vox, Harris, Wendover | ✅ `map` (d3-geo + Natural Earth, no API key; countries only, ~2× render time) |
+| Meme card (text over a CC0 image) | Fireship | ✅ `meme` |
+| Timeline (dates slide past) | history channels | ✅ `timeline` |
+| Quote card | all | ✅ `quote` |
+| Emoji / icon burst on a key word | Hormozi | ✅ `"emoji"` on any scene |
+| Before → after split | all | ✅ `beforeafter` (wipe) |
 
 ---
 

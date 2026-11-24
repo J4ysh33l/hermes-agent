@@ -1,12 +1,24 @@
 import React from "react";
 import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from "remotion";
 import {Captions} from "./Captions";
+import {Emoji} from "./Emoji";
 import {Camera, SceneFrame} from "./motion";
 import {Bullets} from "./scenes/Bullets";
 import {Code} from "./scenes/Code";
 import {Compare} from "./scenes/Compare";
 import {Picture} from "./scenes/Picture";
 import {Stat} from "./scenes/Stat";
+import {BeforeAfter} from "./scenes/BeforeAfter";
+import {Chart} from "./scenes/Chart";
+import {Clipping} from "./scenes/Clipping";
+import {Diagram} from "./scenes/Diagram";
+import {Logo} from "./scenes/Logo";
+import {WorldMap} from "./scenes/Map";
+import {Meme} from "./scenes/Meme";
+import {Post} from "./scenes/Post";
+import {Quote} from "./scenes/Quote";
+import {Terminal} from "./scenes/Terminal";
+import {Timeline} from "./scenes/Timeline";
 import {Title} from "./scenes/Title";
 import {ProfileProvider, Theme, useTheme} from "./theme";
 import type {Scene, ShortProps} from "./types";
@@ -21,6 +33,17 @@ const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}> = {
   stat: {view: Stat as SceneView, fullBleed: false},
   image: {view: Picture as SceneView, fullBleed: true},
   compare: {view: Compare as SceneView, fullBleed: false},
+  terminal: {view: Terminal as SceneView, fullBleed: false},
+  chart: {view: Chart as SceneView, fullBleed: false},
+  diagram: {view: Diagram as SceneView, fullBleed: false},
+  quote: {view: Quote as SceneView, fullBleed: false},
+  timeline: {view: Timeline as SceneView, fullBleed: false},
+  clipping: {view: Clipping as SceneView, fullBleed: false},
+  post: {view: Post as SceneView, fullBleed: false},
+  meme: {view: Meme as SceneView, fullBleed: false},
+  beforeafter: {view: BeforeAfter as SceneView, fullBleed: false},
+  logo: {view: Logo as SceneView, fullBleed: false},
+  map: {view: WorldMap as SceneView, fullBleed: false},
 };
 
 const GRID = "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)";
@@ -57,8 +80,14 @@ const Progress: React.FC = () => {
     width: `${interpolate(frame, [0, durationInFrames], [0, 100])}%`}} />;
 };
 
+// The emoji lands on the scene's first emphasised word, else just after the scene starts (frames from its start).
+const emojiAt = (scene: Scene, words: ShortProps["words"], fps: number) => {
+  const hit = words.find((w) => w.emphasis && w.start >= scene.start && w.start < scene.end);
+  return Math.round(((hit ? hit.start : scene.start + 0.3) - scene.start) * fps);
+};
+
 const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
-  const {fps} = useVideoConfig();
+  const {fps, durationInFrames} = useVideoConfig();
   const theme = useTheme();
   const Background = BACKGROUNDS[theme.background];
   return (
@@ -67,7 +96,8 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
       <Camera hits={words.filter((w) => w.emphasis).map((w) => w.start)}>
         {scenes.map((scene, n) => {
           const from = Math.round(scene.start * fps);
-          const until = n + 1 < scenes.length ? Math.round(scenes[n + 1].start * fps) : Math.round(scene.end * fps);
+          // the last scene holds to the end of the video (no empty tail after the last word)
+          const until = n + 1 < scenes.length ? Math.round(scenes[n + 1].start * fps) : durationInFrames;
           const frames = Math.max(1, until - from);
           const {view: View, fullBleed} = SCENES[scene.type];
           return (
@@ -76,6 +106,7 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
                 fullBleed={fullBleed}>
                 <View scene={scene as never} frames={frames} />
               </SceneFrame>
+              {scene.emoji ? <Emoji char={scene.emoji} at={emojiAt(scene, words, fps)} /> : null}
             </Sequence>
           );
         })}

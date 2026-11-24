@@ -39,6 +39,7 @@ if [ "${KOKORO_FP32:-0}" = 1 ]; then   # optional: studio.kokoro_model: kokoro-v
 fi
 fetch voices-v1.0.bin bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 command -v ffmpeg >/dev/null || echo "note    install ffmpeg (Edge TTS audio and Telegram voice messages need it)"
+fc-list 2>/dev/null | grep -qi emoji || echo "note    install an emoji font for video emoji: sudo apt install fonts-noto-color-emoji"
 
 # Video: the Remotion project next to this script (exact versions in package.json) and Chrome's headless
 # shell, which Remotion downloads for itself (~100 MB). Needs Node 18+; skipped without it.

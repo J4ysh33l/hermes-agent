@@ -61,8 +61,15 @@ A storyboard is a list of scenes; each has `say` (the narration) and what is on 
 at the top of `storyboard.py`. Types: **title** (punch line landing word by word), **bullets** (a list,
 each item appearing when its sentence starts), **code** (an editor typing itself out), **stat** (a big
 number counting up), **image** (a full-screen image or clip with a slow push and a caption card),
-**compare** (two cards with VS). Every scene punches in (scale + blur) and keeps a slow push; captions
-are 2–3 words at a time, the word being said in yellow; a progress bar runs along the top.
+**compare** (two cards with VS), **terminal** (commands type, output prints), **chart** (bars grow or a
+line draws; the largest lit), **diagram** (boxes and arrows, top to bottom), **quote**, **timeline**,
+**clipping** (a newspaper headline rebuilt as a card, a highlighter sweeping over the key words), **post**
+(a generic social post card), **meme** (your CC0 image, top/bottom text), **beforeafter** (a wipe from
+before to after), **logo** (the subject named big), **map** (the camera flies from the world to the
+countries, they fill in, a route draws itself, names pop; Natural Earth data, no API key). Any scene can
+add `"emoji": "🔥"`, which pops on its first emphasised word. Every scene punches in and keeps a slow
+push; captions are 2–3 words at a time, the word being said in the accent; a progress bar runs along
+the top. Parts of a scene (list items, bars, boxes, events, "after") arrive on the sentence that says them.
 
 - **Page profiles** (`profile.py`, one YAML per page): theme (colours, fonts, background), motion
   (spring feel, default entrance and exit, punch-in strength, drift, optional 12 fps handmade look),
@@ -91,6 +98,8 @@ are 2–3 words at a time, the word being said in yellow; a progress bar runs al
 | Job | Voice | Render | Peak memory | File |
 |---|---|---|---|---|
 | 6 scenes, 29.8 s (`crf 17`, `slow`) | 13 s (Kokoro fp16) | 138 s (4.6 s per s of video) | ~1.9 GB over idle | 11.4 MB, 2.7 Mb/s video |
+| 10 newer scenes, 38.5 s | 19 s | 172 s (4.5 s per s) | — | — |
+| 3 scenes with 2 maps, 10.5 s | 5 s | 88 s (8.4 s per s: maps draw 241 country outlines a frame) | — | — |
 
 On the 2-core host expect roughly twice the render time; renders are meant for the overnight queue.
 
@@ -101,7 +110,8 @@ On the 2-core host expect roughly twice the render time; renders are meant for t
    `$HERMES_HOME/studio/models` (~200 MB, SHA-256 checked). Hermes' own environment is not touched.
 2. `studio:` in `brief.yaml` (see `brief.example.yaml`): engine, voices, speed, pause, threads.
 3. `ffmpeg` on the host: Edge's audio is decoded with it, and clips go to Telegram as voice messages.
-4. Videos: Node 18+ on the host, then `install.sh` again (it installs `remotion/` and Chrome's headless
+4. Videos: Node 18+ on the host and an emoji font (`sudo apt install fonts-noto-color-emoji`), then
+   `install.sh` again (it installs `remotion/` and Chrome's headless
    shell, ~100 MB). Chrome also needs the usual shared libraries (`npx remotion browser ensure` names any missing).
 
 ## Tested
