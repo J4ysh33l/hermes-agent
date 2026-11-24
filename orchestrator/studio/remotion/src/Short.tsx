@@ -52,7 +52,14 @@ export const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}
 function CustomHost({scene, frames}: {scene: CustomScene; frames: number}) {
   const View = customView(scene.key);
   if (!View) throw new Error(`custom scene ${scene.key} has no component (the job's entry did not register it)`);
-  return <View scene={scene} frames={frames} />;
+  if (scene.full_bleed) return <View scene={scene} frames={frames} />;
+  // The promised box: the safe area inside SceneFrame's padding. Positioned, so a component that fills
+  // itself (AbsoluteFill, the usual Remotion way) fills this box, not the padded frame around it.
+  return (
+    <div style={{position: "relative", width: "100%", height: "100%", overflow: "visible"}}>
+      <View scene={scene} frames={frames} />
+    </div>
+  );
 }
 
 export const fills = (scene: Scene) => (scene.type === "custom" ? scene.full_bleed : SCENES[scene.type].fullBleed);

@@ -3,7 +3,8 @@ import {AbsoluteFill, useVideoConfig} from "remotion";
 import {Emoji} from "./Emoji";
 import {SceneFrame} from "./motion";
 import {BACKGROUNDS, SCENES, fills} from "./Short";
-import {FONTS, ProfileProvider, SAFE, useProfile, useTheme} from "./theme";
+import {textWidth} from "./fit";
+import {CaptionStyle, FONTS, ProfileProvider, SAFE, useProfile, useTheme} from "./theme";
 import type {CoverProps, ProbeProps} from "./types";
 
 // A cover (thumbnail): one scene of the video, fully arrived, under 2-4 huge words in the caption font,
@@ -17,10 +18,14 @@ const Body: React.FC<CoverProps> = ({scene, words}) => {
   const fullBleed = fills(scene);
   const list = words.split(/\s+/).filter(Boolean);
   const size = list.join(" ").length > 18 ? 150 : 180;
+  // The scene goes just under the words (their wrapped height estimated), shrunk only if it would not fit.
+  const top = SAFE.top - 60 + lines(list, size, captions) * size * 1.02 + 40;
+  const scale = Math.min(1, (1920 - 120 - top) / (1920 - SAFE.top - 120));
   return (
     <AbsoluteFill style={{background: theme.bg}}>
       <Background />
-      <AbsoluteFill style={{transform: "translateY(330px)"}}>
+      <AbsoluteFill style={{transformOrigin: "top center",
+        transform: `translateY(${top - SAFE.top * scale}px) scale(${scale})`}}>
         {/* frames past the still's frame: the scene has arrived and has not started leaving */}
         <SceneFrame frames={durationInFrames + 60} enter={scene.enter || undefined} fullBleed={fullBleed}>
           <View scene={scene as never} frames={durationInFrames} />
@@ -46,6 +51,25 @@ const Body: React.FC<CoverProps> = ({scene, words}) => {
       ) : null}
     </AbsoluteFill>
   );
+};
+
+const WORDS_WIDTH = 1080 - 2 * (SAFE.side - 30);
+
+// How many lines the cover words wrap to (greedy, as the browser wraps them).
+const lines = (list: string[], size: number, captions: CaptionStyle) => {
+  let count = 1;
+  let used = 0;
+  for (const word of list) {
+    const wide = textWidth(word, size, captions.font, captions.upper) + 2 * (captions.stroke + 4);
+    const gap = used ? size * 0.3 : 0;
+    if (used && used + gap + wide > WORDS_WIDTH) {
+      count += 1;
+      used = wide;
+    } else {
+      used += gap + wide;
+    }
+  }
+  return count;
 };
 
 export const Cover: React.FC<CoverProps> = (props) => (

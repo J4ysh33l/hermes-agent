@@ -100,7 +100,7 @@ class BrollTest(unittest.TestCase):
         nothing = FakeHttp().on("GET", OPENVERSE, {"results": [PREMIERE]})
         board, notes = broll.resolve(nothing, Keys(), self.home, self.board, self.look)
         self.assertEqual((board.scenes[0].type, board.scenes[0].fields["text"]), ("title", "Mumbai"))
-        self.assertIn("nothing found", notes[0])
+        self.assertIn("nothing fitting found", notes[0])
         offline = FakeHttp().on("GET", OPENVERSE, http_error(429))
         self.assertEqual(broll.resolve(offline, Keys(), self.home, self.board, self.look)[0].scenes[0].type, "title")
         (self.home / "studio/profiles").mkdir(parents=True)
