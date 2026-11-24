@@ -14,8 +14,9 @@ Modules:
 - ``video``           storyboard → voice → word captions → Remotion render (1080×1920, 30 fps).
 - ``cover``           a storyboard scene + 2–5 big words → a 1080×1920 cover PNG (Remotion still).
 - ``audio``           the soundtrack at -14 LUFS (gain + limiter, measured with loudnorm).
-- ``sound``           effects made from formulas on the cuts, licensed music ducked under the voice.
-- ``broll``           ``stock:`` image scenes → Pexels/Pixabay footage, downloaded once and credited.
+- ``sound``           effects made from formulas on the cuts; your or CC0 music, levelled and ducked under the voice.
+- ``broll``           ``stock:`` image scenes → CC0 photos (or Pexels/Pixabay clips with a key), credited.
+- ``openverse``       the Creative Commons search (no key): CC0/public-domain images and music only.
 - ``reference``       a page profile measured from a video you like (cut rate, palette, length, pauses).
 - ``qc``              the finished file checked with ffprobe/ffmpeg (format, length, clipping, loudness, dead air).
 - ``drive``           uploads to the user's Drive folder "Hermes Studio" (scope drive.file).

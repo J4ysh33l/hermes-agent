@@ -16,7 +16,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import audio, chat, cover, drive, profile, queue, reference, storyboard, video, voice, writer
+from . import audio, chat, cover, drive, profile, queue, reference, sound, storyboard, video, voice, writer
 
 
 def _video(home: Path, words: list[str]) -> int:
@@ -145,7 +145,22 @@ def _profile(home: Path, words: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"video": _video, "queue": _queue, "cover": _cover, "write": _write, "profile": _profile}
+def _music(home: Path, words: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="python -m orchestrator.studio music")
+    parser.add_argument("action", choices=["fetch", "list"])
+    parser.add_argument("query", nargs="*", help='fetch: what to look for, e.g. "calm piano"')
+    parser.add_argument("--count", type=int, default=3, help="fetch: how many tracks (default 3)")
+    args = parser.parse_args(words)
+    if args.action == "fetch":
+        added = sound.fetch_music(chat.Context(home).http, home, " ".join(args.query) or "lofi chill", args.count)
+        print("\n".join(f"+ {t.path.name}: {t.credit}" for t in added) or "Nothing new found (or Openverse unreachable).")
+    for entry in sound.library(home):
+        print(f"  {entry.path.name}: {entry.credit}" if isinstance(entry, sound.Track)
+              else f"  ✗ {entry[0]}: {entry[1]} (not used)")
+    return 0
+
+
+COMMANDS = {"video": _video, "queue": _queue, "cover": _cover, "write": _write, "profile": _profile, "music": _music}
 
 
 def main(argv: list[str] | None = None) -> int:

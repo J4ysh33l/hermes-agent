@@ -21,11 +21,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
+
+from fakes import FakeHttp
 
 from hermes_platform.resolver import locate_command
 from orchestrator.studio import profile, sound
 
 HAS_FFMPEG = locate_command("ffmpeg").found
+
+OPENVERSE = "https://api.openverse.org/v1/audio/"
+SONG = {"id": "abc123", "url": "https://cdn/loop.mp3", "duration": 95000, "license": "cc0", "provider": "freesound",
+        "title": "Lofi chill loop", "tags": [{"name": "lofi"}], "creator": "holizna", "foreign_landing_url": "https://fs/1",
+        "filetype": "mp3"}
+SPOKEN = {**SONG, "id": "talk1", "title": "Lofi chill podcast intro", "url": "https://cdn/talk.mp3"}
+SHORT = {**SONG, "id": "blip", "duration": 4000, "url": "https://cdn/blip.mp3"}
 
 PROPS = {
     "profile": {"motion": {"transition": "push", "transition_frames": 8}},
@@ -63,6 +73,7 @@ class CueTest(unittest.TestCase):
 class MusicLibraryTest(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
+        self.http = FakeHttp().on("GET", OPENVERSE, {"results": []})
         self.addCleanup(shutil.rmtree, self.home)
         self.folder = self.home / "studio/music"
         self.folder.mkdir(parents=True)
@@ -78,16 +89,28 @@ class MusicLibraryTest(unittest.TestCase):
         listed = sound.library(self.home)
         refused = dict(t for t in listed if isinstance(t, tuple))
         self.assertEqual(refused, {"nolicence.mp3": "no licence given", "missing.mp3": "file not found in the music folder"})
-        chosen = sound.plan(self.home, look(self.home, "mine", "auto", "auto"), PROPS, "a title")
+        chosen = sound.plan(self.http, self.home, look(self.home, "mine", "auto", "auto"), PROPS, "a title")
         self.assertEqual(chosen.music.path.name, "free.mp3")  # paperonly is for the paper profile
         self.assertEqual(chosen.notes, ("music: Free Song by Someone (CC0)",))
 
+    def test_with_no_library_a_cc0_track_is_found_for_the_page_and_kept(self):
+        (self.folder / "music.yaml").unlink()
+        self.http = (FakeHttp().on("GET", OPENVERSE, {"results": [SPOKEN, SHORT, SONG]})
+                     .on("GET", "https://cdn/loop.mp3", b"song"))
+        chosen = sound.plan(self.http, self.home, look(self.home, "mine", "auto", "auto"), PROPS, "t")
+        self.assertEqual(chosen.music.path.read_bytes(), b"song")  # not the talk, not the 4 s blip
+        self.assertIn('Music "Lofi chill loop" by holizna via Openverse/freesound, CC0', chosen.notes[0])
+        self.assertIn("lofi chill", self.http.calls[0].url.replace("+", " "))  # the default profile's music_query
+        again = sound.plan(self.http, self.home, look(self.home, "mine", "auto", "auto"), PROPS, "t")
+        self.assertEqual(again.music.path, chosen.music.path)
+        self.assertEqual(self.http.count(OPENVERSE), 1)  # kept in music.yaml: searched once
+
     def test_no_library_means_no_music_and_always_says_so(self):
         (self.folder / "music.yaml").unlink()
-        self.assertEqual(sound.plan(self.home, look(self.home, "a", "auto", "auto"), PROPS, "t").notes, ())
-        said = sound.plan(self.home, look(self.home, "b", "auto", "always"), PROPS, "t").notes
+        self.assertEqual(sound.plan(self.http, self.home, look(self.home, "a", "auto", "auto"), PROPS, "t").notes, ())
+        said = sound.plan(self.http, self.home, look(self.home, "b", "auto", "always"), PROPS, "t").notes
         self.assertIn("no music", said[0])
-        self.assertIsNone(sound.plan(self.home, look(self.home, "c", "off", "off"), PROPS, "t").music)
+        self.assertIsNone(sound.plan(self.http, self.home, look(self.home, "c", "off", "off"), PROPS, "t").music)
 
 
 def _loudness(path: Path, start: float, length: float, only: str = "") -> float:
@@ -101,6 +124,7 @@ def _loudness(path: Path, start: float, length: float, only: str = "") -> float:
 class MixTest(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
+        self.http = FakeHttp().on("GET", OPENVERSE, {"results": []})
         self.addCleanup(shutil.rmtree, self.home)
         music = self.home / "studio/music"
         music.mkdir(parents=True)
@@ -113,7 +137,7 @@ class MixTest(unittest.TestCase):
                         "aevalsrc='0.5*sin(2*PI*2000*t)*(lt(t,2)+gte(t,4))':s=24000:d=5", str(self.voice)], check=True)
 
     def test_the_music_ducks_under_the_voice_and_the_track_lasts_the_video(self):
-        chosen = sound.plan(self.home, look(self.home, "m", "off", "auto"), PROPS, "t")
+        chosen = sound.plan(self.http, self.home, look(self.home, "m", "off", "auto"), PROPS, "t")
         out = sound.mix(self.home, self.voice, chosen, 6.0, self.home / "mix.wav")
         seconds = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
                                         "csv=p=0", str(out)], capture_output=True, text=True, check=True).stdout)
@@ -125,7 +149,7 @@ class MixTest(unittest.TestCase):
         self.assertGreater(_loudness(out, 2.6, 1.2, song) - _loudness(out, 0.5, 1.2, song), 6)  # ducked under words
 
     def test_effects_are_made_once_and_mixed_where_planned(self):
-        chosen = sound.plan(self.home, look(self.home, "s", "auto", "off"), PROPS, "t")
+        chosen = sound.plan(self.http, self.home, look(self.home, "s", "auto", "off"), PROPS, "t")
         out = sound.mix(self.home, self.voice, chosen, 6.0, self.home / "mix.wav")
         made = sorted(p.name.split("-")[0] for p in (self.home / "studio/sfx").iterdir())
         self.assertEqual(made, ["hit", "pop", "whoosh"])
@@ -136,7 +160,7 @@ class MixTest(unittest.TestCase):
         self.assertLess(_loudness(out, 3.0, 0.9), -80)
 
     def test_nothing_to_add_leaves_the_voice_as_it_is(self):
-        chosen = sound.plan(self.home, look(self.home, "q", "off", "off"), PROPS, "t")
+        chosen = sound.plan(self.http, self.home, look(self.home, "q", "off", "off"), PROPS, "t")
         out = sound.mix(self.home, self.voice, chosen, 6.0, self.home / "mix.wav")
         self.assertEqual(out.read_bytes(), self.voice.read_bytes())
 

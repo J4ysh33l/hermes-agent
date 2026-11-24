@@ -59,10 +59,10 @@ def answer_name(round_: int) -> str:
 
 
 def ask(hand: Handoff, job: str, look: Profile, notes: str, seconds: float, round_: int = 0,
-        problems: list[str] | None = None, previous: Any = None, stock: bool = False) -> int:
+        problems: list[str] | None = None, previous: Any = None) -> int:
     """Commits the request (or a fix request) and opens its issue; returns the issue number."""
     seconds = seconds or float(look.section("writing")["seconds"])
-    text = writer.prompt(look, notes, seconds, writer.target_words(look, seconds), stock)
+    text = writer.prompt(look, notes, seconds, writer.target_words(look, seconds))
     if round_:
         text = writer.REPAIR.format(problems="\n".join(f"- {p}" for p in problems or []),
                                     draft=json.dumps(previous, ensure_ascii=False, indent=1))

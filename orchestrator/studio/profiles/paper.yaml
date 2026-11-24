@@ -40,5 +40,6 @@ writing:
 
 elements:
   music: auto
+  music_query: calm piano
   sfx: auto
   memes: off

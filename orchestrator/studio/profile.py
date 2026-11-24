@@ -99,7 +99,8 @@ SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
     "writing": {"format": _choice("explainer", "news", "how-it-works", "business-case", "hindi-explainer"),
                 "language": _choice("en", "hi", "hinglish"), "hooks": _texts, "humour": _text, "tone": _text,
                 "avoid": _texts, "examples": _texts, "seconds": _number(10, 180)},
-    "elements": {"music": USE, "sfx": USE, "broll": USE, "memes": USE, "scenes": _texts},
+    "elements": {"music": USE, "music_query": _text, "sfx": USE, "broll": USE, "memes": USE,
+                 "scenes": _texts},
 }
 RENDERED = ("theme", "motion", "captions")
 

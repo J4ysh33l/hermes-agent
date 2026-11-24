@@ -193,7 +193,8 @@ class Writing(unittest.TestCase):
         self.assertIn('"X in N seconds" explainer', ask)  # the format's beats from PLAYBOOK
         self.assertIn(NOTES, ask)
         library = ask.split("The library types (")[1].split(")")[0]
-        self.assertNotIn("image", library)  # no image files yet
+        self.assertNotIn("meme", library)  # no meme files; image scenes come as stock b-roll
+        self.assertIn("image", library)
         self.assertNotIn("custom", library)  # custom is not a library type: it is anything else
         self.assertIn("Nothing here limits your ideas except the real", ask)
         self.assertIn("Not possible: photoreal people", ask)

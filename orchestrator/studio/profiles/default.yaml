@@ -55,6 +55,7 @@ writing:                    # for script → storyboard
 
 elements:                   # off | auto (only where it helps; never forced) | always
   music: auto
+  music_query: lofi chill     # what to search Openverse for when your music library has nothing for this page
   sfx: auto
   broll: auto
   memes: off

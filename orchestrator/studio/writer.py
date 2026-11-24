@@ -11,8 +11,8 @@ Checks (each refusal names the scene):
 - Length within 20% of the profile's ``seconds`` at the voice's pace; no sentence over 24 words; a scene
   says at most ~6 s unless it has parts (list items, bars, boxes, events), one sentence per part.
 - No phrase from the profile's ``avoid`` (plus the usual "in this video", "welcome back" …).
-- Only scene types the profile allows; image scenes only as stock b-roll (``stock:`` src) when a Pexels or
-  Pixabay key is set and the page allows b-roll; never meme scenes or files.
+- Only scene types the profile allows; image scenes only as stock b-roll (``stock:`` src, broll.py) when the
+  page allows b-roll; never meme scenes or files.
 - **Evidence comes from the notes:** a stat's or chart's numbers, a quote, a headline or a post's text
   must appear in what you gave it. The model may not invent proof.
 - Map scenes name countries the map has (cities are refused: the map draws countries only).
@@ -31,7 +31,7 @@ from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 from orchestrator.brief.settings import ModelChoice
 
-from . import broll, custom, direction, storyboard, video
+from . import custom, direction, storyboard, video
 from .profile import Profile
 from .settings import Keys, Settings
 from .voice import sentences
@@ -57,7 +57,7 @@ HOOKS = {
 ALWAYS_AVOID = ("in this video", "welcome back", "hey guys", "hi guys", "let's dive in", "let's get started",
                 "smash that like", "don't forget to subscribe")
 GREETINGS = re.compile(r"^(hi|hey|hello|namaste|welcome)\b", re.IGNORECASE)
-NEEDS_FILE = ("image", "meme")  # image comes back as stock b-roll when a key is set (broll.py)
+NEEDS_FILE = ("image", "meme")  # image comes back as stock b-roll when the page allows it (broll.py)
 PARTS = {"bullets": "items", "terminal": "lines", "chart": "labels", "diagram": "nodes", "timeline": "events"}
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
@@ -108,21 +108,23 @@ def _rules() -> str:
     return found.group(0).strip() if found else ""
 
 
-def allowed_scenes(look: Profile, stock: bool = False) -> list[str]:
+def allowed_scenes(look: Profile) -> list[str]:
     """The library types this page uses (all unless its profile lists some), plus custom, always; image
-    scenes too when stock b-roll can be searched (``stock``) and the page allows it."""
+    scenes (as stock b-roll) when the page allows b-roll."""
     elements = look.section("elements")
     listed = list(elements["scenes"]) or [s for s in storyboard.SCHEMA if s != "custom"]
-    footage = stock and elements["broll"] != "off"
+    footage = _footage(look)
     return [s for s in listed if s in storyboard.SCHEMA and s != "custom"
             and (s not in NEEDS_FILE or (footage and s == "image"))] + ["custom"]
 
 
 MEDIA = {
     False: '- No "src" fields: there are no image files, so no image or meme scenes (a custom scene can draw instead).',
-    True: '- Image scenes are stock footage: "src": "stock:<what the clip shows, 2–6 plain words>" (e.g. "stock:busy '
-          'mumbai street at night"), searched on Pexels/Pixabay; a portrait clip fills the screen under the caption. '
-          'Use it where real footage beats a graphic (places, people, things), at most 1 in 3 scenes. No other "src".',
+    True: '- Image scenes are stock photos: "src": "stock:<2–4 plain words naming a common subject>" (e.g. '
+          '"stock:bullet train", "stock:city street at night"), searched among public-domain photos (Openverse) and '
+          'shown full screen with a slow push. Name things that are photographed often, not moments ("stock:train '
+          'cleaning crew" finds nothing); add a "caption". At most 1 in 3 scenes; a scene with nothing found becomes '
+          'a title card. No other "src".',
 }
 
 
@@ -215,7 +217,11 @@ Your storyboard:
 {draft}"""
 
 
-def prompt(look: Profile, notes: str, seconds: float, words: int, stock: bool = False) -> str:
+def _footage(look: Profile) -> bool:
+    return look.section("elements")["broll"] != "off"
+
+
+def prompt(look: Profile, notes: str, seconds: float, words: int) -> str:
     w = look.section("writing")
     examples = "".join(f"\nAn example script this page liked:\n<example>\n{e}\n</example>\n" for e in w["examples"])
     families = _families(look)
@@ -224,8 +230,8 @@ def prompt(look: Profile, notes: str, seconds: float, words: int, stock: bool = 
         humour=w["humour"] or "none", avoid=", ".join(f'"{a}"' for a in (*w["avoid"], *ALWAYS_AVOID)),
         examples=examples, rules=_rules(), beats=_format_beats(w["format"]), families=", ".join(families[:3]),
         hook_bank="\n".join(f"- {name}: {template}" for name, template in HOOKS.items()),
-        hook_words=HOOK_WORDS, scenes=", ".join(s for s in allowed_scenes(look, stock) if s != "custom"), scene_help=SCENE_HELP,
-        media=MEDIA[stock and look.section("elements")["broll"] != "off"],
+        hook_words=HOOK_WORDS, scenes=", ".join(s for s in allowed_scenes(look) if s != "custom"), scene_help=SCENE_HELP,
+        media=MEDIA[_footage(look)],
         max_sentence=MAX_SENTENCE, scene_words=SCENE_WORDS, custom_words=CUSTOM_WORDS, words=words,
         notes=notes.strip(), limits=custom.LIMITS)
 
@@ -317,8 +323,8 @@ def _length(words: int, target: int) -> list[str]:
                                             f"(about {target}) to fit the length"]
 
 
-def _types(scenes: list[dict[str, Any]], look: Profile, stock: bool) -> list[str]:
-    allowed = allowed_scenes(look, stock)
+def _types(scenes: list[dict[str, Any]], look: Profile) -> list[str]:
+    allowed = allowed_scenes(look)
     return [f"scene {n}: type {s.get('type')!r} is not allowed here (allowed: {', '.join(allowed)})"
             for n, s in enumerate(scenes, 1) if s.get("type") not in allowed]
 
@@ -339,7 +345,7 @@ def _parsed(scenes: list[dict[str, Any]], folder: Path, stock: bool) -> list[str
     return []
 
 
-def check(raw: Any, look: Profile, notes: str, target: int, folder: Path, stock: bool = False) -> list[str]:
+def check(raw: Any, look: Profile, notes: str, target: int, folder: Path) -> list[str]:
     """Every problem with a model's answer (empty = usable)."""
     if not isinstance(raw, dict) or not isinstance(raw.get("scenes"), list) or not isinstance(raw.get("hooks"), list):
         return ['answer {"title": ..., "hooks": [3 hooks], "scenes": [...]} only']
@@ -352,7 +358,7 @@ def check(raw: Any, look: Profile, notes: str, target: int, folder: Path, stock:
     problems = _hooks(hooks)
     for h in hooks:
         scenes = [h["scene"], *body]
-        problems += _parsed(scenes, folder, stock) + _types(scenes, look, stock)
+        problems += _parsed(scenes, folder, _footage(look)) + _types(scenes, look)
     if any(not p.startswith("hook ") and "different families" not in p for p in problems):
         return list(dict.fromkeys(problems))  # unparsable scenes: the content checks below would misfire
     first = [raw["hooks"][0]["scene"], *body]
@@ -464,8 +470,7 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
         raise WriterError("Give it something to work from: a topic with a few facts, or a draft script")
     seconds = seconds or float(look.section("writing")["seconds"])
     words = target_words(look, seconds)
-    stock = broll.available(keys)
-    ask = prompt(look, notes, seconds, words, stock)
+    ask = prompt(look, notes, seconds, words)
     tried, rounds = [], 0
     for model in chosen:
         question, answer = ask, ""
@@ -477,7 +482,7 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
             except (HttpError, ValueError) as exc:
                 tried.append(f"{model.id}: {str(exc)[:100]}")
                 break
-            accepted = accept(raw, look, notes, words, folder, model.id, rounds, stock)
+            accepted = accept(raw, look, notes, words, folder, model.id, rounds)
             if isinstance(accepted, Draft):
                 return accepted
             problems = accepted
@@ -488,10 +493,10 @@ def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str,
 
 
 def accept(raw: Any, look: Profile, notes: str, words: int, folder: Path, model: str,
-           rounds: int, stock: bool = False) -> Draft | list[str]:
+           rounds: int) -> Draft | list[str]:
     """A model's answer → a Draft, or the problems to send back (wishes are taken out either way)."""
     wishes = _wishes(raw)
-    problems = check(raw, look, notes, words, folder, stock)
+    problems = check(raw, look, notes, words, folder)
     cover = raw.get("cover") if isinstance(raw, dict) else None
     scenes = 1 + len(raw.get("scenes") or []) if isinstance(raw, dict) else 0
     if cover is not None and not (isinstance(cover, dict) and isinstance(cover.get("scene"), int)

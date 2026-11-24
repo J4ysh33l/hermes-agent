@@ -211,22 +211,30 @@ Profile `elements.sfx` / `elements.music`: `off`, `auto` or `always`.
   whoosh on push/whip/zoom transitions, a hit on a flash, a riser into a burn, a pop when an emoji lands,
   and with `always` a tick as each list item appears. Each peaks where the eye expects it (mid-overlap).
   Made once into `$HERMES_HOME/studio/sfx/`.
-- **Music is yours, with its licence:** put tracks in `$HERMES_HOME/studio/music/` and list them in
-  `music.yaml` (`file`, `licence`, `credit`, optional `profiles: [paper]`). A file not listed, or listed
-  without a licence, is never used. The same video always gets the same track; it is looped or cut to
+- **Music:** your tracks first: `$HERMES_HOME/studio/music/music.yaml` (`file`, `licence`, `credit`, optional
+  `profiles: [paper]`; a file not listed, or without a licence, is never used). When it has nothing for the
+  page, one **CC0** track is found on Openverse (Freesound's public-domain music, 30 s–10 min, no vocals) for
+  the profile's `elements.music_query` (default "lofi chill", bold "energetic electronic beat", paper "calm
+  piano"), downloaded and added to `music.yaml` with its credit. Stock up and review with
+  `python -m orchestrator.studio music fetch "calm piano" --count 5` and `... music list`; delete a line to stop
+  using a track. Every bed is brought to the same level (-33 LUFS) before ducking. The same video always gets the same track; it is looped or cut to
   the video, faded, and ducked under the voice (sidechain: it dips under words and comes back in pauses,
   measured >6 dB in the test). The credit goes into the job's notes, so it is in the Telegram message.
-  No library: no music (`always` says so in the notes).
+  Nothing to be had: no music (`always` says so in the notes).
 - The mix is brought to -14 LUFS as one track (`audio.py`).
 
-## B-roll: stock footage for image scenes
+## B-roll: open-source photos for image scenes
 
-With `PEXELS_API_KEY` and/or `PIXABAY_API_KEY` in `$HERMES_HOME/.env` (both free) and `elements.broll` not
-`off`, the writer may use image scenes as footage: `"src": "stock:busy mumbai street at night"`. Before the
-render, `broll.py` searches Pexels then Pixabay (portrait clips at least 1280 px tall and 3 s long first,
-then photos), downloads the match once into `$HERMES_HOME/studio/broll/`, and credits it in the notes
-("Video by … on Pexels (link)"). No key, b-roll off, or nothing found: the scene becomes a title card with
-its caption, and the notes say why. Without a key the writer is not offered image scenes at all.
+Image scenes say what to show, `"src": "stock:bullet train"`, plus a caption. Before the render, `broll.py`
+searches Openverse (`openverse.py`, the Creative Commons search engine, no key) for **CC0 and public-domain**
+photos only: no permission to track and no attribution owed (each is credited in the notes anyway). Search is
+by title and tag words, so results drift (a "bullet train" search tops with the film's premiere): a photo
+must carry most of the search's words and be at least 1080 px tall, tall ones first. Found once, kept in
+`$HERMES_HOME/studio/broll/`. Nothing fitting, Openverse unreachable, or `elements.broll: off`: the scene is a
+title card with its caption, and the notes say why; a video never fails over b-roll. The writer is told to
+name commonly photographed things ("stock:city street at night"), not moments ("train cleaning crew" finds
+nothing). Pexels/Pixabay clips are still tried first if their keys are ever set. Limits: 20 searches a
+minute, 200 a day without a key; a video uses a few, once.
 
 ## A profile from a video you like
 
@@ -285,8 +293,9 @@ A job is a folder `$HERMES_HOME/studio/queue/<id>/`: `writing` (Claude answering
 
 ## Tested
 
-- **B-roll** (`tests/test_broll.py`, fake Pexels/Pixabay): the right file is fetched once and credited; Pixabay
-  when Pexels is down; a title card (and the reason) without footage; the writer offers footage only with a key.
+- **B-roll** (`tests/test_broll.py`, fake Pexels/Pixabay/Openverse): the right file is fetched once and credited;
+  Pixabay when Pexels is down; with no key a CC0 photo that carries the search's words (not the premiere photo
+  that tops "bullet train"); a title card and the reason without one; footage only where the page allows it.
 - **Reference profiles** (`tests/test_reference.py`, ffmpeg-made videos): fast cutting → hard cuts, slow → fades;
   the dark background and vivid accent carry over; the written profile loads and is not overwritten.
 

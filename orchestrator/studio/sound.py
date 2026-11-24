@@ -6,8 +6,10 @@ track, and the same on every host. Each is placed so its peak lands where the ey
 on a push/whip/zoom transition, a hit on a flash, a riser into a burn, a pop when an emoji lands, and
 (``always``) a tick as each list item appears. Made once into ``$HERMES_HOME/studio/sfx/``.
 
-Music is yours: ``$HERMES_HOME/studio/music/music.yaml`` lists the tracks you may use, each with its
-licence and the credit to show; a file not listed (or listed without a licence) is never used::
+Music comes from ``$HERMES_HOME/studio/music/music.yaml``: the tracks you may use, each with its licence
+and the credit to show; a file not listed (or listed without a licence) is never used. When it has nothing
+for the page, one CC0 track is found on Openverse for the profile's ``elements.music_query`` (``fetch_music``,
+or ``python -m orchestrator.studio music fetch "<words>"`` to stock up) and added to it; yours always win::
 
     - file: calm-pulse.mp3
       licence: CC0                     # or "Pixabay Content License", "CC BY 4.0", ...
@@ -15,7 +17,8 @@ licence and the credit to show; a file not listed (or listed without a licence) 
       profiles: [paper]                # optional: only for these profiles
       mood: calm                       # optional, free text
 
-The track is looped or cut to the video, faded in and out, and ducked under the voice (sidechain
+The track is brought to one bed level (so a quiet and a loud track sit alike), looped or cut to the video,
+faded in and out, and ducked under the voice (sidechain
 compression: it dips while words are spoken and comes back up in the pauses). The credit goes into the
 job's notes, which travel with the preview.
 """
@@ -23,6 +26,7 @@ job's notes, which travel with the preview.
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import zlib
 from dataclasses import dataclass
@@ -32,7 +36,10 @@ from typing import Any
 
 import yaml
 
-from .audio import TIMEOUT, AudioError
+from orchestrator.brief.net import Http, HttpError
+
+from . import openverse
+from .audio import TIMEOUT, AudioError, measure
 from .profile import Profile
 
 FPS = 30
@@ -47,7 +54,9 @@ EFFECTS: dict[str, tuple[str, float, float]] = {
 # What each transition sounds like (none, cut and fade are quiet).
 ON_TRANSITION = {"push": "whoosh", "whip": "whoosh", "zoom": "whoosh", "flash": "hit", "burn": "riser"}
 LEVEL = {"whoosh": -16.0, "hit": -14.0, "riser": -18.0, "pop": -18.0, "tick": -24.0}  # dB under full scale
-MUSIC_DB = -20.0  # the bed under the voice, before ducking
+BED_LUFS = -33.0  # the music under the voice (Kokoro speaks near -18 LUFS), before ducking
+MUSIC_SECONDS = (30, 600)  # a found track long enough to loop well, short enough to fetch quickly
+NOT_MUSIC = re.compile(r"\b(vocals?|voice|speech|talk|podcast|spoken|sing(ing|er)?|acapella)\b", re.IGNORECASE)
 FADE_IN, FADE_OUT = 0.6, 1.2
 
 
@@ -150,19 +159,60 @@ def library(home: Path) -> list[Track | tuple[str, str]]:
     return out
 
 
-def plan(home: Path, look: Profile, props: dict[str, Any], title: str) -> Plan:
-    """The effects and music for one video. ``auto`` music: a track when the library has one for this
-    profile, else none; ``always``: the same, but its absence is named in the notes."""
+def _yours(home: Path, look: Profile) -> list[Track]:
+    return [t for t in library(home) if isinstance(t, Track) and (not t.profiles or look.name in t.profiles)]
+
+
+def _is_music(result: dict[str, Any], query: str) -> bool:
+    seconds = (result.get("duration") or 0) / 1000
+    tags = " ".join(str(t.get("name", "")) for t in result.get("tags") or [] if isinstance(t, dict))
+    return (MUSIC_SECONDS[0] <= seconds <= MUSIC_SECONDS[1] and not NOT_MUSIC.search(f"{result.get('title', '')} {tags}")
+            and openverse.relevance(result, query) >= 0.5)
+
+
+def fetch_music(http: Http, home: Path, query: str, count: int = 1) -> list[Track]:
+    """Up to ``count`` CC0/public-domain tracks for ``query`` from Openverse, downloaded into the music
+    folder and listed in music.yaml (with licence, credit and where they came from)."""
+    folder = home / "studio" / "music"
+    listing = folder / "music.yaml"
+    entries = (yaml.safe_load(listing.read_text(encoding="utf-8")) or []) if listing.is_file() else []
+    known = {str(e.get("openverse")) for e in entries if isinstance(e, dict)}
+    added: list[Track] = []
+    for result in openverse.search(http, "audio", f"{query} music"):
+        if len(added) >= count:
+            break
+        if str(result.get("id")) in known or not _is_music(result, query):
+            continue
+        try:
+            body = http.request("GET", result["url"]).body
+        except HttpError:
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"ov-{str(result['id'])[:12]}.{result.get('filetype') or 'mp3'}"
+        path.write_bytes(body)
+        licence = openverse.LICENCE_NAMES[str(result["license"]).lower()]
+        entries.append({"file": path.name, "licence": licence, "credit": openverse.credit(result, "Music"),
+                        "mood": query, "openverse": str(result["id"])})
+        added.append(Track(path, licence, entries[-1]["credit"], ()))
+    if added:
+        listing.write_text(yaml.safe_dump(entries, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return added
+
+
+def plan(http: Http, home: Path, look: Profile, props: dict[str, Any], title: str) -> Plan:
+    """The effects and music for one video. Music (``auto``/``always``): a track from your library for this
+    profile, else one found for its ``music_query``; none to be had: no music (``always`` says so)."""
     elements = look.section("elements")
     found = cues(props, elements["sfx"])
     if elements["music"] == "off":
         return Plan(tuple(found), None, ())
-    tracks = [t for t in library(home) if isinstance(t, Track) and (not t.profiles or look.name in t.profiles)]
+    tracks = _yours(home, look) or fetch_music(http, home, elements["music_query"] or "calm")
     if not tracks:
-        why = "no music: add licensed tracks to studio/music/music.yaml (sound.py)"
+        why = "no music: nothing in studio/music/music.yaml and none found on Openverse (sound.py)"
         return Plan(tuple(found), None, (why,) if elements["music"] == "always" else ())
     track = tracks[zlib.crc32(title.encode("utf-8")) % len(tracks)]  # the same video gets the same track
-    return Plan(tuple(found), track, (f"music: {track.credit} ({track.licence})",))
+    return Plan(tuple(found), track, (f"music: {track.credit}" + ("" if track.licence in track.credit
+                                                                     else f" ({track.licence})"),))
 
 
 def _ffmpeg(args: list[str]) -> None:
@@ -173,6 +223,12 @@ def _ffmpeg(args: list[str]) -> None:
         raise AudioError(f"ffmpeg failed: {exc}") from None
     if done.returncode != 0:
         raise AudioError(f"ffmpeg failed: {done.stderr.strip()[-300:]}")
+
+
+def _bed_gain(track: Path) -> float:
+    """dB that bring the track to the bed level (a silent track gets none)."""
+    level = float(measure(track)["input_i"])
+    return 0.0 if level < -70 else max(-40.0, min(20.0, BED_LUFS - level))
 
 
 def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path) -> Path:
@@ -193,7 +249,7 @@ def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path) -> Pat
         inputs += ["-stream_loop", "-1", "-i", str(chosen.music.path)]
         chains += ["[v]asplit=2[vk][vm]",
                    f"[{m}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:{seconds:.3f},"
-                   f"volume={MUSIC_DB}dB,afade=t=in:d={FADE_IN},afade=t=out:st={max(0.0, seconds - FADE_OUT):.3f}:"
+                   f"volume={_bed_gain(chosen.music.path):.2f}dB,afade=t=in:d={FADE_IN},afade=t=out:st={max(0.0, seconds - FADE_OUT):.3f}:"
                    f"d={FADE_OUT}[bed]",
                    "[bed][vk]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=350[ducked]"]
         voices, beds = "[vm]", [*beds, "[ducked]"]

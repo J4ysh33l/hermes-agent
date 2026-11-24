@@ -1,12 +1,11 @@
-"""Stock b-roll for image scenes: ``"src": "stock:<what the footage shows>"`` is searched on Pexels, then
-Pixabay (portrait clips first, then photos), downloaded once into ``$HERMES_HOME/studio/broll/`` and
-credited in the job's notes ("Video by … on Pexels (link)"), which travel with the preview.
+"""Stock b-roll for image scenes: ``"src": "stock:<what the footage shows>"`` is searched, downloaded once
+into ``$HERMES_HOME/studio/broll/`` and credited in the job's notes, which travel with the preview.
 
-Keys in ``$HERMES_HOME/.env``: ``PEXELS_API_KEY`` and/or ``PIXABAY_API_KEY`` (both free). Without a key,
-with ``elements.broll: off``, or when nothing is found, the scene is drawn as a title card with its
-caption (or the search words), and the notes say why: a video never fails over b-roll.
-
-Both licences allow use in videos without attribution; we credit anyway (Pexels asks for it where possible).
+Sources, in order: Pexels and Pixabay clips and photos when their keys are in ``$HERMES_HOME/.env``
+(``PEXELS_API_KEY``, ``PIXABAY_API_KEY``), then Openverse (openverse.py): CC0 and public-domain photos, no
+key needed, kept only when they carry most of the search's words and are big enough for a 1080×1920 frame.
+With ``elements.broll: off``, or when nothing fits, the scene is drawn as a title card with its caption (or
+the search words), and the notes say why: a video never fails over b-roll.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from typing import Any
 
 from orchestrator.brief.net import Http, HttpError
 
+from . import openverse
 from .profile import Profile
 from .settings import Keys
 from .storyboard import STOCK, Storyboard
@@ -81,18 +81,32 @@ def pixabay_photo(http: Http, key: str, query: str) -> Found | None:
     return None
 
 
-# Tried in order: moving footage first, Pexels before Pixabay. Each entry: (which key, search).
+MATCH = 0.6  # an Openverse photo must carry this share of the search's words
+MIN_SIDE = 1080  # and be at least this tall (a landscape photo is cropped to the middle of the frame)
+
+
+def openverse_photo(http: Http, _key: str, query: str) -> Found | None:
+    """The CC0/public-domain photo that matches the words best, tall ones first, then the biggest."""
+    found = [r for r in openverse.search(http, "images", query)
+             if (r.get("height") or 0) >= MIN_SIDE and openverse.relevance(r, query) >= MATCH]
+    if not found:
+        return None
+    best = max(found, key=lambda r: (openverse.relevance(r, query), (r.get("height") or 0) > (r.get("width") or 0),
+                                     r.get("height") or 0))
+    ext = ".png" if str(best.get("filetype", "")).lower() == "png" else ".jpg"
+    return Found(best["url"], ext, openverse.credit(best, "Photo"))
+
+
+# Tried in order: moving footage first, Pexels before Pixabay, then Openverse. Each entry: (which key — "" =
+# none needed, search).
 SOURCES: tuple[tuple[str, Callable[[Http, str, str], Found | None]], ...] = (
-    ("pexels", pexels_video), ("pixabay", pixabay_video), ("pexels", pexels_photo), ("pixabay", pixabay_photo))
-
-
-def available(keys: Keys) -> bool:
-    return bool(keys.pexels or keys.pixabay)
+    ("pexels", pexels_video), ("pixabay", pixabay_video), ("pexels", pexels_photo), ("pixabay", pixabay_photo),
+    ("", openverse_photo))
 
 
 def search(http: Http, keys: Keys, query: str) -> Found | None:
     for which, find in SOURCES:
-        key = getattr(keys, which)
+        key = getattr(keys, which) if which else "-"
         if not key:
             continue
         try:
@@ -138,8 +152,7 @@ def resolve(http: Http, keys: Keys, home: Path, board: Storyboard, look: Profile
         if not src.startswith(STOCK):
             continue
         query = src[len(STOCK):].strip()
-        why = "b-roll is off for this page" if use == "off" else "" if available(keys) else \
-            "no PEXELS_API_KEY or PIXABAY_API_KEY"
+        why = "b-roll is off for this page" if use == "off" else ""
         got = None if why else fetch(http, keys, home, query)
         if got:
             scenes[n] = replace(scene, fields=MappingProxyType({**scene.fields, "src": str(got[0])}))

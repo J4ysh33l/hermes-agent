@@ -32,7 +32,7 @@ from orchestrator.handoff import HandoffError
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import audio, broll, cover, custom, direction, drive, handoff, profile, qc, storyboard, video, voice, writer
+from . import audio, cover, custom, direction, drive, handoff, profile, qc, storyboard, video, voice, writer
 
 PROXY_MB = 48  # Telegram bots may upload 50 MB
 STEP_ERRORS = (video.VideoError, cover.CoverError, qc.QcError, writer.WriterError, HandoffError, NotesError,
@@ -120,7 +120,7 @@ def add(ctx: Any, notes: str, who: str = "", seconds: float = 0) -> Job:
                        "writer": how, "state": "writing", "outputs": {}})
     if how == "handoff":
         job.data["issue"] = handoff.ask(handoff.repo(ctx.http, ctx.secrets, ctx.settings.handoff_repo), job.id,
-                                        look, notes, seconds, stock=broll.available(ctx.keys))
+                                        look, notes, seconds)
         job.log(f"handoff issue #{job.data['issue']} opened")
         return job
     draft = writer.write(ctx.http, ctx.keys, ctx.settings, look, notes, seconds, folder, how == "claude-api")
@@ -162,15 +162,14 @@ def _collect(ctx: Any, job: Job) -> bool:
     notes = job.folder.joinpath("notes.txt").read_text(encoding="utf-8")
     seconds = job.data["seconds"] or float(look.section("writing")["seconds"])
     accepted = writer.accept(raw, look, notes, writer.target_words(look, seconds), job.folder, "claude (handoff)",
-                             job.data["round"] + 1, broll.available(ctx.keys))
+                             job.data["round"] + 1)
     if isinstance(accepted, writer.Draft):
         _keep(ctx, job, accepted)
         return True
     if job.data["round"] >= handoff.FIXES:
         raise writer.WriterError("Claude's storyboard still failed the checks: " + "; ".join(accepted[:3]))
     job.data["round"] += 1
-    job.data["issue"] = handoff.ask(hand, job.id, look, notes, seconds, job.data["round"], accepted, raw,
-                                    broll.available(ctx.keys))
+    job.data["issue"] = handoff.ask(hand, job.id, look, notes, seconds, job.data["round"], accepted, raw)
     job.log(f"checks failed ({len(accepted)}): fix request #{job.data['issue']}")
     return True
 
