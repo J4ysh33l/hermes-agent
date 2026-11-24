@@ -231,3 +231,7 @@ studio:
   video_audio_bitrate: 320k   # AAC
   video_concurrency: 1        # frames drawn at once; each needs ~0.5–1 GB (the host has 4 GB)
   video_browser: ""           # a Chrome headless shell to use; "" = the one install.sh downloaded
+  # Notes → storyboard (python -m orchestrator.studio write). Tried in order; a stronger model writes better scripts.
+  script_models:
+    - {id: gemini-3.5-flash-lite}
+    - {id: gemini-3.1-flash-lite}

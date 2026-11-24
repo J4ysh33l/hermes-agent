@@ -15,6 +15,7 @@ TEXT_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-fla
                ModelChoice("gemma-4-31b-it", False))
 
 
+SCRIPT_MODELS = (ModelChoice("gemini-3.5-flash-lite"), ModelChoice("gemini-3.1-flash-lite"))
 ENGINES = ("kokoro", "edge")
 PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 
@@ -48,6 +49,7 @@ class Settings:
     video_concurrency: int = 1  # frames drawn at once; each Chrome tab needs ~0.5–1 GB
     video_browser: str = ""  # Chrome headless shell to use; "" = the one Remotion downloaded (install.sh)
     text_models: tuple[ModelChoice, ...] = TEXT_MODELS  # small text jobs (Hinglish → Devanagari)
+    script_models: tuple[ModelChoice, ...] = SCRIPT_MODELS  # notes → storyboard (writer.py); a stronger model writes better
 
 
 def parse(raw: dict[str, Any]) -> Settings:
@@ -57,6 +59,7 @@ def parse(raw: dict[str, Any]) -> Settings:
     if unknown:
         raise ValueError(f"brief.yaml: unknown key {min(unknown)!r} under studio")
     models = studio.get("text_models")
+    script = studio.get("script_models")
     engine = str(studio.get("engine", base.engine))
     if engine not in ENGINES:
         raise ValueError(f"brief.yaml: studio.engine must be one of {', '.join(ENGINES)}")
@@ -82,6 +85,8 @@ def parse(raw: dict[str, Any]) -> Settings:
         video_browser=str(studio.get("video_browser", base.video_browser)),
         text_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in models)
         if models else base.text_models,
+        script_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in script)
+        if script else base.script_models,
     )
 
 

@@ -1,8 +1,8 @@
 # Studio (`/studio`): video, audio, b-roll and images
 
 Made on your server; posting them is another workflow's job. Built so far: **voice** (Kokoro, Edge TTS)
-and **video from a storyboard** (Remotion, 6 scene types, word captions). Next: the scene library,
-script → storyboard, music/SFX, stock b-roll, thumbnails, edits of your own raw clips. Style reference:
+**video from a storyboard** (Remotion, 17 scene types, word captions) and **notes → storyboard** with 3
+hooks (Gemini). Next: music/SFX, stock b-roll, thumbnails, edits of your own raw clips. Style reference:
 `PLAYBOOK.md`. Plan and decisions: the checkpoint notes and the conversation log.
 
 ## Voice: Kokoro (default) or Edge TTS
@@ -102,6 +102,30 @@ the top. Parts of a scene (list items, bars, boxes, events, "after") arrive on t
 | 3 scenes with 2 maps, 10.5 s | 5 s | 88 s (8.4 s per s: maps draw 241 country outlines a frame) | — | — |
 
 On the 2-core host expect roughly twice the render time; renders are meant for the overnight queue.
+
+## Writing: notes → storyboard with 3 hooks
+
+```
+python -m orchestrator.studio write "Bun: a JS runtime in Zig, 25x faster installs ..." --out bun.json [--notes notes.txt] [--profile bold] [--seconds 45]
+python -m orchestrator.studio video bun.json --out bun.mp4          # or bun.hook2.json / bun.hook3.json
+```
+
+Gemini (`studio.script_models`, tried in order) writes the narration and picks the scenes, prompted
+from the page profile's `writing:` (format, hooks, humour, tone, words to avoid, example scripts,
+length) and `PLAYBOOK.md` (the ten rules, the format's beats, the hook bank). It writes **3 hooks from 3
+different families**; `bun.json` opens with hook 1, `bun.hook2.json`/`bun.hook3.json` with the others, and
+`bun.txt` is the script to read over. The answer is checked in code; problems go back to the same model
+once as a list ("fix these"), then the next model starts fresh:
+
+- **Evidence comes only from your notes:** a stat's or chart's numbers, a quote, a headline, a post's
+  text must appear in them, so give it the facts you want on screen.
+- Length within 20% of the target (196 wpm × voice speed); sentences ≤ 24 words; a picture says at most
+  ~6 s unless it has parts, one sentence per part; the hook's first sentence ≤ 12 words, no greeting.
+- None of the profile's `avoid` phrases (plus "in this video", "welcome back" …); only scene types the
+  profile allows; no image/meme scenes until b-roll exists; maps name countries only.
+
+The models are the free flash-lite ones by default; a stronger model writes better scripts (set
+`script_models` in brief.yaml). **Not run against the real API yet.**
 
 ## Setup
 
