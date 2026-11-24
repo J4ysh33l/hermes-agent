@@ -17,12 +17,13 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 
+from . import direction
 from .settings import Settings
 
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
@@ -50,14 +51,19 @@ class Line:
     text: str
     voice: str
     lang: str
+    sentence: int = 0  # which sentence this part belongs to (a direction can split one into parts)
+    speed: float = 1.0  # × the page's speed ([slow] / [fast])
+    pause: float = 0.0  # extra silence after it ([beat], [pause 0.8])
+    last: bool = True  # the sentence's last part: the usual pause between sentences follows
 
 
 @dataclass(frozen=True)
 class Speech:
     path: Path
     seconds: float
-    lines: tuple[tuple[str, float, float], ...]  # (text spoken, start, end) for captions and cuts
+    lines: tuple[tuple[str, float, float], ...]  # (text spoken, start, end) per sentence, for captions and cuts
     rewritten: int  # Hinglish sentences put into Devanagari by Gemini
+    parts: tuple[tuple[tuple[float, float], ...], ...] = ()  # per sentence: each part's (start, end)
 
 
 def sentences(text: str) -> list[str]:
@@ -105,12 +111,25 @@ def plan(http: Http, key: str, settings: Settings, text: str, engine: str = "") 
         raise VoiceError("Nothing to say.")
     if sum(map(len, said)) > settings.max_chars:
         raise VoiceError(f"That's over {settings.max_chars} characters; split it (studio.max_chars).")
-    hinglish = [n for n, s in enumerate(said) if is_hinglish(s)]
+    for n, s in enumerate(said):
+        wrong = direction.problems(s)
+        if wrong:
+            raise VoiceError(f"Sentence {n + 1}: {wrong[0]}")
+    directed = [direction.parse(s) for s in said]
+    hinglish = [n for n, d in enumerate(directed) if is_hinglish(d.text)]
     if hinglish:
-        for n, fixed in zip(hinglish, to_devanagari(http, key, settings, [said[n] for n in hinglish])):
-            said[n] = fixed
+        # The rewrite returns plain sentences: a Hinglish line keeps its pause before and after, not inside.
+        for n, fixed in zip(hinglish, to_devanagari(http, key, settings, [directed[n].text for n in hinglish])):
+            d = directed[n]
+            directed[n] = direction.Directed(d.lead, (direction.Part(fixed, d.parts[0].speed, d.parts[-1].pause),))
     en, hi = _voices_for(settings, engine or settings.engine)
-    lines = [Line(s, hi, "hi") if DEVANAGARI.search(s) else Line(s, en, "en-us") for s in said]
+    lines: list[Line] = []
+    for n, d in enumerate(directed):
+        if lines and d.lead:
+            lines[-1] = replace(lines[-1], pause=lines[-1].pause + d.lead)
+        for k, part in enumerate(d.parts):
+            voice, lang = (hi, "hi") if DEVANAGARI.search(part.text) else (en, "en-us")
+            lines.append(Line(part.text, voice, lang, n, part.speed, part.pause, k == len(d.parts) - 1))
     return lines, len(hinglish)
 
 
@@ -129,8 +148,9 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
     out.parent.mkdir(parents=True, exist_ok=True)
     job = {"engine": engine, "model": str(models / settings.kokoro_model), "voices": str(models / "voices-v1.0.bin"),
            "threads": settings.threads, "out": str(out),
-           "lines": [{"text": ln.text, "voice": ln.voice, "lang": ln.lang, "speed": settings.speed,
-                      "pause": settings.pause} for ln in lines]}
+           "lines": [{"text": ln.text, "voice": ln.voice, "lang": ln.lang,
+                      "speed": round(min(2.0, settings.speed * ln.speed), 3),
+                      "pause": round((settings.pause if ln.last else 0.0) + ln.pause, 3)} for ln in lines]}
     worker = Path(__file__).with_name("voice_worker.py")
     try:
         done = subprocess.run([str(python), str(worker)], input=json.dumps(job), capture_output=True, text=True,
@@ -141,8 +161,23 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
         tail = (done.stderr or "").strip().splitlines()[-1:] or ["no error text"]
         raise VoiceError(f"{engine} failed: {tail[0][:200]}")
     result = json.loads(done.stdout.strip().splitlines()[-1])
-    spans = tuple((ln.text, float(a), float(b)) for ln, (a, b) in zip(lines, result["lines"]))
-    return Speech(out, float(result["seconds"]), spans, rewritten)
+    lines_, parts = _sentences(lines, result["lines"])
+    return Speech(out, float(result["seconds"]), lines_, rewritten, parts)
+
+
+def _sentences(lines: list[Line], spans: list[list[float]]) -> tuple[tuple, tuple]:
+    """Parts back into sentences: (text, start, end) each, and each sentence's parts' times."""
+    joined: list[tuple[str, float, float]] = []
+    parts: list[tuple[tuple[float, float], ...]] = []
+    for ln, (a, b) in zip(lines, spans):
+        if parts and len(parts) > ln.sentence:
+            text, start, _end = joined[-1]
+            joined[-1] = (f"{text} {ln.text}", start, float(b))
+            parts[-1] += ((float(a), float(b)),)
+        else:
+            joined.append((ln.text, float(a), float(b)))
+            parts.append(((float(a), float(b)),))
+    return tuple(joined), tuple(parts)
 
 
 VOICE_LISTS = {

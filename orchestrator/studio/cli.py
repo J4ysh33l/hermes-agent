@@ -1,6 +1,7 @@
 """On the host, no Telegram:
   python -m orchestrator.studio voice "text" --out speech.wav
   python -m orchestrator.studio write "notes or a draft script" --out sb.json [--notes notes.txt] [--profile bold] [--seconds 45]
+  python -m orchestrator.studio wishes        (visuals the writer wanted but we cannot make yet, most wanted first)
   python -m orchestrator.studio video storyboard.json --out short.mp4 [--profile bold]   (storyboard.py: format)
 or any ``/studio`` words (``python -m orchestrator.studio voices``)."""
 
@@ -56,6 +57,10 @@ def _write(home: Path, words: list[str]) -> int:
         print(f"  hook {n} ({hook.family}): {hook.scene['say']}")
     for note in draft.notes:
         print(f"  note: {note}")
+    for wish in draft.wishes:
+        print(f"  wish: {wish}")
+    if draft.wishes:
+        writer.remember(draft, home, notes)
     print("Saved: " + ", ".join(map(str, saved)))
     return 0
 
@@ -67,6 +72,10 @@ def main(argv: list[str] | None = None) -> int:
         return _video(home, words[1:])
     if words[:1] == ["write"]:
         return _write(home, words[1:])
+    if words[:1] == ["wishes"]:
+        found = writer.wishlist(home)
+        print("\n".join(f"{n:4d}  {w}" for n, w in found) or "No wishes yet (they come from `write`).")
+        return 0
     if words[:1] == ["voice"] and "--out" in words:
         parser = argparse.ArgumentParser(prog="python -m orchestrator.studio voice")
         parser.add_argument("text", nargs="+")

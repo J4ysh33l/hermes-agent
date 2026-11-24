@@ -30,7 +30,7 @@ from typing import Any
 from orchestrator.brief.net import Http
 
 from . import profile as profiles
-from . import voice
+from . import direction, voice
 from .profile import Profile
 from .settings import Settings
 from .storyboard import Storyboard
@@ -73,6 +73,15 @@ def word_times(marked: str, start: float, end: float) -> list[dict[str, Any]]:
     return out
 
 
+def _caption(marked: str, start: float, end: float, times: tuple[tuple[float, float], ...]) -> list[dict[str, Any]]:
+    """A sentence's caption words; split by its directions, each part over its own time (a [beat] stays silent
+    on screen too). A Hinglish sentence spoken as one part is spread over the whole sentence."""
+    texts = [p.text for p in direction.parse(marked).parts]
+    if len(times) == len(texts) > 1:
+        return [w for text, (a, b) in zip(texts, times) for w in word_times(text, a, b)]
+    return word_times(direction.strip(marked), start, end)
+
+
 def _asset(board: Storyboard, job: Path, n: int, src: str) -> str:
     if not src or src.startswith("https://"):
         return src
@@ -98,8 +107,9 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
         said = voice.sentences(scene.marked)
         mine = spans[used:used + len(said)]
         used += len(said)
-        for text, (_spoken, start, end) in zip(said, mine):
-            words += word_times(text, start, end)
+        parts = speech.parts[used - len(said):used] if speech.parts else [()] * len(said)
+        for text, (_spoken, start, end), times in zip(said, mine, parts):
+            words += _caption(text, start, end, times)
         fields = _with_assets(json.loads(json.dumps(dict(scene.fields), default=dict)),
                               lambda src, n=n: _asset(board, job, n, src))
         start = 0.0 if n == 0 else mine[0][1]

@@ -168,6 +168,21 @@ class PropsTest(unittest.TestCase):
         self.assertAlmostEqual(times[-1][1], 1.0, places=2)
         self.assertTrue(all(a[1] <= b[0] + 1e-6 for a, b in pairwise(times)))
 
+    def test_a_beat_stays_silent_on_screen_and_directions_are_never_captioned(self):
+        board = storyboard.parse({"scenes": [{"type": "title", "say": "And the winner is [beat] *India*.",
+                                              "text": "t"}]}, self.folder)
+        self.assertEqual(board.scenes[0].say, "And the winner is [beat] India.")  # the voice gets the direction
+        speech = voice.Speech(self.job / "voice.wav", 2.0, (("And the winner is India.", 0.0, 1.8),), 0,
+                              (((0.0, 1.0), (1.4, 1.8)),))  # the voice paused 1.0 → 1.4
+        words = video.props(board, self.job, speech, DEFAULT)["words"]
+        self.assertEqual([w["text"] for w in words], ["And", "the", "winner", "is", "India."])
+        self.assertAlmostEqual(words[3]["end"], 1.0, places=3)
+        self.assertEqual((words[4]["start"], words[4]["emphasis"]), (1.4, True))
+
+    def test_a_misspelt_direction_is_refused(self):
+        with self.assertRaisesRegex(storyboard.StoryboardError, r"\[beet\] is not a direction"):
+            storyboard.parse({"scenes": [{"type": "title", "say": "Wait [beet] for it.", "text": "t"}]}, self.folder)
+
     def test_a_voice_that_lost_sentences_stops_the_render(self):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "One. Two.", "text": "t"}]}, self.folder)
         with self.assertRaises(video.VideoError):

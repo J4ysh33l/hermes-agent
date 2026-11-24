@@ -30,7 +30,8 @@ says them when ``say`` has one sentence per item (after any intro sentences).
 
 ``say`` is the narration for the scene (the scene lasts as long as it takes to say); wrap words in
 ``*asterisks*`` to emphasise them (caption colour + a camera punch-in; the voice never hears the
-asterisks). The other keys are what is on screen, plus optional ``enter`` (pop, rise, slide, drop, zoom,
+asterisks). Voice directions go in ``say`` too: ``[beat]`` (a 0.4 s pause), ``[pause 0.8]``, and
+``[slow]`` / ``[fast]`` for the rest of a sentence (direction.py); captions never show them. The other keys are what is on screen, plus optional ``enter`` (pop, rise, slide, drop, zoom,
 fade) and ``exit`` (lift, fade, whip, zoom, cut) to override the profile's motion for that scene.
 ``profile`` names the page profile (default: studio.profile). ``src`` is a file next to the storyboard,
 or an https URL. Unknown types or keys are refused, so a typo fails here and not halfway through a render.
@@ -45,6 +46,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from . import direction
 from .profile import SCHEMA as PROFILE_SCHEMA
 from .profile import ProfileError
 from .voice import sentences
@@ -60,8 +62,8 @@ class StoryboardError(ValueError):
 @dataclass(frozen=True)
 class Scene:
     type: str
-    say: str  # what the voice reads (no asterisks)
-    marked: str  # the narration as written, *emphasis* kept, for captions
+    say: str  # what the voice reads (no asterisks; [directions] kept for the voice)
+    marked: str  # the narration as written, *emphasis* and [directions] kept
     fields: Mapping[str, Any]  # what is on screen, per SCHEMA[type]
     enter: str  # "" = the profile's
     exit: str
@@ -226,8 +228,11 @@ def _scene(n: int, raw: Any) -> Scene:
     marked = _text(True)(f"{where}.say", raw.get("say", MISSING))
     if marked.count("*") % 2:
         raise StoryboardError(f"{where}.say: an *emphasis* is not closed")
+    wrong = direction.problems(marked)
+    if wrong:
+        raise StoryboardError(f"{where}.say: {wrong[0]}")
     say = marked.replace("*", "")
-    if not sentences(say):
+    if not sentences(direction.strip(say)):
         raise StoryboardError(f"{where}.say has nothing to say")
     motion = {}
     for key in ("enter", "exit"):

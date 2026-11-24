@@ -122,6 +122,17 @@ class Speaking(unittest.TestCase):
         (self.home / "brief/brief.yaml").write_text("studio:\n  engine: edge\n", encoding="utf-8")
         self.assertIn("🔊 Sent (edge)", chat.handle("voice Ship it.", self.home, self.http))  # the default now
 
+    def test_directions_set_each_parts_pause_and_pace_and_come_back_as_one_sentence(self):
+        speech = self.speak("And the winner is [beat] India. [pause 1.2] [slow] Three years later, it won again.")
+        lines = self.job()["lines"]
+        self.assertEqual([(ln["text"], ln["speed"], ln["pause"]) for ln in lines],
+                         [("And the winner is", 1.0, 0.4), ("India.", 1.0, 1.35),
+                          ("Three years later, it won again.", 0.9, 0.15)])
+        self.assertEqual([t for t, _a, _b in speech.lines],
+                         ["And the winner is India.", "Three years later, it won again."])
+        self.assertEqual([len(p) for p in speech.parts], [2, 1])
+        self.assertAlmostEqual(speech.parts[0][1][0] - speech.parts[0][0][1], 0.4, places=2)
+
     def test_english_only_needs_no_model(self):
         self.speak("Most teams don't fail because the code is bad. They wait too long.")
         self.assertEqual(self.http.count(GEMINI), 0)

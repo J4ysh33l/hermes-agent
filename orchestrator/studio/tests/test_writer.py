@@ -88,6 +88,20 @@ class Writing(unittest.TestCase):
         self.assertTrue(all(len(b.scenes) == 5 and b.scenes[1].type == "logo" for b in boards))
         self.assertIn("Hook 2 (contrarian): Everyone thinks Node is fast enough.", saved[3].read_text())
 
+    def test_wishes_are_taken_out_logged_and_counted_and_directions_are_not_words(self):
+        wishing = copy.deepcopy(GOOD)
+        wishing["scenes"][0]["wish"] = "a 3D bun bouncing out of an oven"
+        wishing["scenes"][2]["say"] = "One binary ships three tools. [beat] A test runner. A bundler. A package manager."
+        self.answers = [wishing, copy.deepcopy(wishing)]
+        draft = self.write()
+        self.assertEqual(draft.wishes, ("logo: a 3D bun bouncing out of an oven",))
+        self.assertNotIn("wish", draft.scenes[0])
+        self.assertEqual(draft.words(), self.write().words())
+        writer.remember(draft, self.home, NOTES)
+        writer.remember(draft, self.home, NOTES)
+        self.assertEqual(writer.wishlist(self.home), [(2, "a 3d bun bouncing out of an oven")])
+        storyboard.load(writer.save(draft, self.home / "w.json", "default")[0])  # the video step accepts it
+
     def test_invented_evidence_goes_back_as_named_problems_and_the_fix_is_used(self):
         bad = copy.deepcopy(GOOD)
         bad["scenes"][1]["value"] = 40  # not in the notes

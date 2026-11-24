@@ -22,13 +22,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 
-from . import storyboard, video
+from . import direction, storyboard, video
 from .profile import Profile
 from .settings import Settings
 from .voice import sentences
@@ -76,6 +77,7 @@ class Draft:
     model: str
     rounds: int  # model calls it took
     notes: tuple[str, ...]  # soft warnings, shown, not refused
+    wishes: tuple[str, ...] = ()  # visuals the model wanted but we cannot make yet (scene type: wish)
 
     def storyboard(self, hook: int, profile: str) -> dict[str, Any]:
         return {"title": self.title, "profile": profile, "scenes": [self.hooks[hook].scene, *self.scenes]}
@@ -84,7 +86,7 @@ class Draft:
         return "\n".join(s["say"] for s in (self.hooks[hook].scene, *self.scenes))
 
     def words(self, hook: int = 0) -> int:
-        return len(self.script(hook).replace("*", "").split())
+        return len(spoken(self.script(hook)).split())
 
 
 # ---------------------------------------------------------------- the prompt
@@ -151,6 +153,13 @@ same type in a row unless it is the point. The format and fields:
   quotes or headlines.
 - Total narration: about {words} words (hooks included, one hook counted).
 - Optional "emoji" on at most 2 scenes.
+- Voice directions inside "say" (spoken, never shown): [beat] = a 0.4 s pause, e.g. before a reveal
+  ("And the winner is [beat] India."); [pause 0.8] = an exact pause; [slow] or [fast] = the rest of the
+  sentence slower or faster. Use them where a human narrator would: 1–4 per video, never decoration.
+  Punctuation directs too: "?" lifts, "..." hesitates, "—" breaks.
+- WISHES: if a scene would be clearly better with a visual we cannot make yet (an animation, an
+  illustration, footage, a sound), still pick the best allowed scene AND add "wish": "<that visual, in
+  at most 15 words>" to it. At most 3 wishes; they tell us what to build next.
 
 # The notes (the only source of facts)
 <notes>
@@ -186,6 +195,11 @@ def prompt(look: Profile, notes: str, seconds: float, words: int) -> str:
 # ---------------------------------------------------------------- the checks
 
 
+def spoken(say: Any) -> str:
+    """What the voice says: no *emphasis* marks, no [directions]."""
+    return direction.strip(str(say).replace("*", ""))
+
+
 def _squash(text: str) -> str:
     return re.sub(r"[^\w%₹$.,]+", " ", text.lower()).strip()
 
@@ -208,7 +222,7 @@ def _evidence(n: int, scene: dict[str, Any], notes: str) -> list[str]:
 
 
 def _pacing(n: int, scene: dict[str, Any]) -> list[str]:
-    where, said = f"scene {n}", sentences(str(scene.get("say", "")).replace("*", ""))
+    where, said = f"scene {n}", sentences(spoken(scene.get("say", "")))
     problems = [f"{where}: a sentence has {len(s.split())} words (at most {MAX_SENTENCE}): {s[:60]!r}"
                 for s in said if len(s.split()) > MAX_SENTENCE]
     words = sum(len(s.split()) for s in said)
@@ -236,7 +250,7 @@ def _hooks(hooks: list[dict[str, Any]]) -> list[str]:
     if len(set(families)) != 3:
         problems.append("the 3 hooks must come from 3 different families")
     for n, h in enumerate(hooks, 1):
-        first = (sentences(str(h["scene"].get("say", "")).replace("*", "")) or [""])[0]
+        first = (sentences(spoken(h["scene"].get("say", ""))) or [""])[0]
         if len(first.split()) > HOOK_WORDS:
             problems.append(f"hook {n}: first sentence has {len(first.split())} words (at most {HOOK_WORDS})")
         if GREETINGS.match(first):
@@ -293,7 +307,7 @@ def check(raw: Any, look: Profile, notes: str, target: int, folder: Path) -> lis
     problems += [f"hook {n}: {p}" for n, h in enumerate(raw["hooks"][1:], 2)
                  for p in _pacing(1, h["scene"]) + _evidence(1, h["scene"], notes)]
     problems += _avoided(first + [h["scene"] for h in raw["hooks"][1:]], look)
-    problems += _length(sum(len(str(s["say"]).replace("*", "").split()) for s in first), target)
+    problems += _length(sum(len(spoken(s["say"]).split()) for s in first), target)
     return list(dict.fromkeys(problems))
 
 
@@ -317,6 +331,47 @@ def _json(text: str) -> Any:
     if not found:
         raise ValueError("no JSON in the answer")
     return json.loads(found.group(0))
+
+
+def _wishes(raw: Any) -> list[str]:
+    """Takes every scene's "wish" out (the storyboard has no such key) → "type: wish" lines."""
+    if not isinstance(raw, dict):
+        return []
+    scenes = [h.get("scene") for h in raw.get("hooks") or [] if isinstance(h, dict)] + list(raw.get("scenes") or [])
+    found = []
+    for scene in scenes:
+        if isinstance(scene, dict) and "wish" in scene:
+            wish = " ".join(str(scene.pop("wish")).split()[:20])
+            if wish:
+                found.append(f"{scene.get('type', '?')}: {wish}")
+    return list(dict.fromkeys(found))
+
+
+def remember(draft: Draft, home: Path, topic: str) -> Path:
+    """Wishes go to $HERMES_HOME/studio/wishes.jsonl, one line each: what to build next, by demand."""
+    path = home / "studio" / "wishes.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for wish in draft.wishes:
+            scene, _, text = wish.partition(": ")
+            f.write(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "title": draft.title,
+                                "topic": topic[:120], "instead_of": scene, "wish": text}, ensure_ascii=False) + "\n")
+    return path
+
+
+def wishlist(home: Path, top: int = 20) -> list[tuple[int, str]]:
+    """The most wished-for visuals, most first (same words counted together)."""
+    path = home / "studio" / "wishes.jsonl"
+    if not path.is_file():
+        return []
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            wish = str(json.loads(line)["wish"]).strip().lower().rstrip(".")
+        except (ValueError, KeyError, TypeError):
+            continue
+        counts[wish] = counts.get(wish, 0) + 1
+    return sorted(((n, w) for w, n in counts.items()), key=lambda x: (-x[0], x[1]))[:top]
 
 
 def target_words(look: Profile, seconds: float) -> int:
@@ -348,11 +403,12 @@ def write(http: Http, key: str, settings: Settings, look: Profile, notes: str, s
             except (HttpError, ValueError) as exc:
                 tried.append(f"{model.id}: {str(exc)[:100]}")
                 break
+            wishes = _wishes(raw)
             problems = check(raw, look, notes, words, folder)
             if not problems:
                 hooks = tuple(Hook(h["family"], h["scene"]) for h in raw["hooks"])
                 return Draft(str(raw.get("title") or "").strip(), hooks, tuple(raw["scenes"]), model.id, rounds,
-                             tuple(soft_notes([hooks[0].scene, *raw["scenes"]])))
+                             tuple(soft_notes([hooks[0].scene, *raw["scenes"]])), tuple(wishes))
             tried.append(f"{model.id} (try {attempt + 1}): {'; '.join(problems[:3])}")
             question = REPAIR.format(problems="\n".join(f"- {p}" for p in problems),
                                      draft=json.dumps(raw, ensure_ascii=False, indent=1))
