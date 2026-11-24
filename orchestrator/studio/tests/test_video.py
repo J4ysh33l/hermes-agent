@@ -27,7 +27,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from orchestrator.studio import profile, settings, storyboard, video, voice
+from orchestrator.studio import cover, profile, settings, storyboard, video, voice
 
 DEFAULT = profile.load("default", Path("/nowhere"))
 
@@ -187,6 +187,33 @@ class PropsTest(unittest.TestCase):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "One. Two.", "text": "t"}]}, self.folder)
         with self.assertRaises(video.VideoError):
             video.props(board, self.job, fake_speech(self.job, ["One."]), DEFAULT)
+
+
+class CoverTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        (self.folder / "crab.jpg").write_bytes(b"jpg")
+        self.board = storyboard.parse(ALL_TYPES, self.folder)
+
+    def test_the_chosen_scene_arrives_whole_with_its_file(self):
+        job = self.folder / "job"
+        job.mkdir()
+        out = cover.props(self.board, 1, "No GC needed", job, DEFAULT)
+        self.assertEqual((out["scene"]["type"], out["words"]), ("bullets", "No GC needed"))
+        self.assertEqual(out["scene"]["beats"], [0.0, 0.0, 0.0])  # every item already said
+        self.assertEqual(cover.props(self.board, 4, "Meet Ferris", job, DEFAULT)["scene"]["src"], "assets/04-crab.jpg")
+        args = cover.still_args(settings.Settings(video_browser="/x/chrome"), job, self.folder / "c.png")
+        self.assertIn("still", args)
+        self.assertIn(f"--frame={cover.FRAMES - 1}", args)
+        self.assertIn("--browser-executable=/x/chrome", args)
+
+    def test_too_many_words_or_a_missing_scene_are_refused_before_rendering(self):
+        with self.assertRaisesRegex(cover.CoverError, "At most 5 words"):
+            cover.make(settings.Settings(), self.folder, self.board, self.folder / "c.png", 1, "one two three four five six")
+        with self.assertRaisesRegex(cover.CoverError, "Scene 9\\?"):
+            cover.make(settings.Settings(), self.folder, self.board, self.folder / "c.png", 9, "Rust")
+        self.assertFalse((self.folder / "c.png").exists())
 
 
 class CountryTest(unittest.TestCase):

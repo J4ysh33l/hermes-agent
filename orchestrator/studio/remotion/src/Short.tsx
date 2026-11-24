@@ -26,7 +26,7 @@ import type {Scene, ShortProps} from "./types";
 type SceneView = React.FC<{scene: never; frames: number}>;
 
 // Scene type → component, and whether it fills the screen itself (no safe-area padding).
-const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}> = {
+export const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}> = {
   title: {view: Title as SceneView, fullBleed: false},
   bullets: {view: Bullets as SceneView, fullBleed: false},
   code: {view: Code as SceneView, fullBleed: false},
@@ -49,7 +49,7 @@ const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}> = {
 const GRID = "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)";
 
 // The background never sits still: a glow drifting, optionally a grid scrolling under it.
-const BACKGROUNDS: Record<Theme["background"], React.FC> = {
+export const BACKGROUNDS: Record<Theme["background"], React.FC> = {
   "glow-grid": () => {
     const frame = useCurrentFrame();
     return (

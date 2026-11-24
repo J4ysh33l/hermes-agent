@@ -162,3 +162,10 @@ export interface ShortProps extends Record<string, unknown> {
   scenes: Scene[];
   words: Word[];
 }
+
+// cover.py's props: one scene (start 0, every part already said) and the cover's words.
+export type CoverProps = {
+  profile: Profile;
+  scene: Scene;
+  words: string;
+};

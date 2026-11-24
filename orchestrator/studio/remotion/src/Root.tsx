@@ -1,8 +1,9 @@
 import React from "react";
 import {Composition} from "remotion";
+import {Cover} from "./Cover";
 import {Short} from "./Short";
 import {DEFAULT_PROFILE, FPS, HEIGHT, WIDTH} from "./theme";
-import type {ShortProps} from "./types";
+import type {CoverProps, ShortProps} from "./types";
 
 const preview: ShortProps = {
   profile: DEFAULT_PROFILE,
@@ -12,7 +13,12 @@ const preview: ShortProps = {
   scenes: [{type: "title", start: 0, end: 4, beats: [0], enter: "", exit: "", emoji: "", text: "Open props.json in a job folder", kicker: "studio"}],
 };
 
+const coverPreview: CoverProps = {profile: DEFAULT_PROFILE, scene: preview.scenes[0], words: "Cover words here"};
+
+export const COVER_FRAMES = FPS * 4; // the still is the last frame: every scene has arrived by then
+
 export const RemotionRoot: React.FC = () => (
+  <>
   <Composition
     id="Short"
     component={Short}
@@ -23,4 +29,7 @@ export const RemotionRoot: React.FC = () => (
     defaultProps={preview}
     calculateMetadata={({props}) => ({durationInFrames: Math.max(1, Math.ceil(props.seconds * FPS))})}
   />
+  <Composition id="Cover" component={Cover} width={WIDTH} height={HEIGHT} fps={FPS} durationInFrames={COVER_FRAMES}
+    defaultProps={coverPreview} />
+  </>
 );

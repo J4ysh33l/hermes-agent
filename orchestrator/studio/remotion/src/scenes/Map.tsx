@@ -1,10 +1,11 @@
-import {geoCentroid, geoMercator, geoPath} from "d3-geo";
-import type {Feature, FeatureCollection, Geometry} from "geojson";
+import {geoArea, geoCentroid, geoDistance, geoMercator, geoPath} from "d3-geo";
+import type {Feature, FeatureCollection, Geometry, MultiPolygon, Position} from "geojson";
 import React, {useMemo} from "react";
 import {Easing, interpolate, useCurrentFrame} from "remotion";
 import {feature} from "topojson-client";
 import type {GeometryCollection, Topology} from "topojson-specification";
 import world from "world-atlas/countries-50m.json";
+import coarseWorld from "world-atlas/countries-110m.json";
 import {Arrive, usePop} from "../motion";
 import {useTheme} from "../theme";
 import type {MapScene} from "../types";
@@ -13,15 +14,44 @@ const W = 900;
 const H = 1100;
 type Country = Feature<Geometry, {name: string}>;
 
-const COUNTRIES: Country[] = (feature(world as unknown as Topology,
-  (world as unknown as Topology).objects.countries as GeometryCollection<{name: string}>) as FeatureCollection<Geometry, {name: string}>).features;
+const load = (data: unknown): Country[] => (feature(data as Topology, (data as Topology).objects.countries as
+  GeometryCollection<{name: string}>) as FeatureCollection<Geometry, {name: string}>).features;
+const COUNTRIES = load(world); // 50 m detail: zoomed in
+const COARSE = load(coarseWorld); // 110 m detail, ~5× fewer points: zoomed out, where detail cannot be seen
+const COARSE_BELOW = 700; // projection scale (the whole world is ~143)
 const BY_NAME = new Map(COUNTRIES.map((c) => [c.properties.name.toLowerCase(), c]));
 export const country = (name: string) => BY_NAME.get(name.toLowerCase());
+
+// A country's main landmass with the islands near it, for framing and labels: the USA without Alaska
+// and Hawaii, France without French Guiana, Norway without Svalbard. Highlighting still fills all of it.
+const NEAR = 0.5; // radians (~30°) from the largest piece's centre
+const mainland = (c: Country): Country => {
+  if (c.geometry.type !== "MultiPolygon") return c;
+  const pieces = c.geometry.coordinates.map((rings) => ({rings, shape: {type: "Polygon" as const, coordinates: rings}}));
+  const largest = pieces.reduce((a, b) => (geoArea(b.shape) > geoArea(a.shape) ? b : a));
+  const centre = geoCentroid(largest.shape);
+  const kept: Position[][][] = pieces.filter((p) => geoDistance(geoCentroid(p.shape), centre) <= NEAR).map((p) => p.rings);
+  const geometry: MultiPolygon = {type: "MultiPolygon", coordinates: kept};
+  return {...c, geometry};
+};
+const MAINLAND = new Map<Country, Country>();
+const core = (c: Country) => MAINLAND.get(c) ?? MAINLAND.set(c, mainland(c)).get(c)!;
+
+// The largest single piece, where a name label or a route end goes (Norway's label on Norway, not in the
+// sea between it and Svalbard).
+const largest = (c: Country): Country => {
+  if (c.geometry.type !== "MultiPolygon") return c;
+  const rings = c.geometry.coordinates.reduce((a, b) =>
+    (geoArea({type: "Polygon", coordinates: b}) > geoArea({type: "Polygon", coordinates: a}) ? b : a));
+  return {...c, geometry: {type: "Polygon", coordinates: rings}};
+};
+const ANCHOR = new Map<Country, Country>();
+const anchor = (c: Country) => ANCHOR.get(c) ?? ANCHOR.set(c, largest(c)).get(c)!;
 
 // Where the camera ends: the focus country (or all highlighted ones) filling the frame with a margin.
 // The centre comes from the fitted projection itself (a bounding box breaks across the date line: Alaska).
 const target = (shapes: Country[]) => {
-  const collection = {type: "FeatureCollection" as const, features: shapes};
+  const collection = {type: "FeatureCollection" as const, features: shapes.map(core)};
   const fitted = geoMercator().fitExtent([[90, 120], [W - 90, H - 120]], collection);
   const scale = Math.min(fitted.scale(), 6000);
   const centre = fitted.invert!([W / 2, H / 2]) as [number, number];
@@ -59,6 +89,7 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
   // The camera frames the focus, else everything highlighted or on the route (so both ends are on screen).
   const framed = [...new Set([...lit, ...stops])];
   const focus = scene.focus ? [country(scene.focus)!] : framed.length ? framed : COUNTRIES;
+  const litNames = new Set(lit.map((c) => c.properties.name));
   const end = useMemo(() => target(focus), [scene.focus, scene.highlight.join(), scene.route.join()]);
   const flyEnd = Math.min(45, frames * 0.4);
   const fly = interpolate(frame, [0, flyEnd], [0, 1], {extrapolateRight: "clamp", easing: Easing.inOut(Easing.cubic)});
@@ -66,10 +97,12 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
   const projection = useMemo(() => geoMercator()
     .center([end.centre[0] * fly, interpolate(fly, [0, 1], [25, end.centre[1]])])
     .scale(Math.exp(interpolate(fly, [0, 1], [Math.log(startScale), Math.log(end.scale)])))
-    .translate([W / 2, H / 2]), [end, fly, startScale]);
+    .translate([W / 2, H / 2]).clipExtent([[-20, -20], [W + 20, H + 20]]), [end, fly, startScale]);
   const path = geoPath(projection);
-  // 241 country outlines are the slow part: once the camera stops they are drawn once and reused.
-  const outlines = useMemo(() => COUNTRIES.map((c) => path(c) ?? ""), [projection]);
+  // The outlines are the slow part: coarse ones while zoomed out, clipped to the frame (countries off
+  // screen draw nothing), and once the camera stops they are drawn once and reused.
+  const shapes = projection.scale() < COARSE_BELOW ? COARSE : COUNTRIES;
+  const outlines = useMemo(() => shapes.map((c) => path(c) ?? ""), [projection, shapes]);
   const fill = interpolate(frame, [flyEnd - 6, flyEnd + 8], [0, 1], {extrapolateLeft: "clamp", extrapolateRight: "clamp"});
   const routeAt = flyEnd + 10;
   const draw = interpolate(frame, [routeAt, routeAt + Math.max(20, frames * 0.25)], [0, 1], {extrapolateLeft: "clamp",
@@ -78,8 +111,8 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
   // appear on screen. (A great circle, the shortest path on the globe, runs off one edge of a flat map
   // and back on the other: USA → India went over the pole and was drawn as a line across the whole map.)
   const arcs = stops.slice(1).map((stop, i) => {
-    const [ax, ay] = projection(geoCentroid(stops[i]))!;
-    const [bx, by] = projection(geoCentroid(stop))!;
+    const [ax, ay] = projection(geoCentroid(anchor(stops[i])))!;
+    const [bx, by] = projection(geoCentroid(anchor(stop)))!;
     const lift = Math.min(260, Math.hypot(bx - ax, by - ay) * 0.3);
     const [cx, cy] = [(ax + bx) / 2, Math.min(ay, by) - lift];
     return Array.from({length: 41}, (_, k) => {
@@ -96,9 +129,9 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
         </Arrive>
       ) : null}
       <svg width={W} height={H} style={{borderRadius: 30, background: `${theme.panel}88`, overflow: "hidden"}}>
-        {COUNTRIES.map((c, i) => {
-          const on = lit.includes(c);
-          return (
+        {shapes.map((c, i) => {
+          const on = litNames.has(c.properties.name);
+          return outlines[i] === "" ? null : (
             <path key={i} d={outlines[i]} fill={on ? theme.accent : theme.panel} fillOpacity={on ? 0.35 + 0.55 * fill : 1}
               stroke={on ? theme.accent : `${theme.muted}66`} strokeWidth={on ? 3 : 1} />
           );
@@ -117,7 +150,7 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
           ) : null;
         })}
         {placeLabels(names.map((c) => {
-          const [x, y] = path.centroid(c);
+          const [x, y] = path.centroid(anchor(c));
           return {x, y, width: widthOf(c.properties.name)};
         })).map((spot, i) => (
           <Label key={i} at={[spot.x, spot.y]} name={names[i].properties.name} delay={flyEnd + 4 + i * 4} />

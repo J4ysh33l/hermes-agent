@@ -160,7 +160,7 @@ words; never more than 4 s without something moving.
 | Bar / line chart from data | Think School, Wendover | ✅ `chart` |
 | Headline clipping with highlighter sweep (rebuilt as a card) | Dhruv, Think School, Vox | ✅ `clipping` |
 | Tweet / post card (generic, no platform branding) | Varun Mayya, Code Report | ✅ `post` |
-| Map: zoom to region, highlight, route draws on, labels | Dhruv, Vox, Harris, Wendover | ✅ `map` (d3-geo + Natural Earth, no API key; countries only, ~2× render time) |
+| Map: zoom to region, highlight, route draws on, labels | Dhruv, Vox, Harris, Wendover | ✅ `map` (d3-geo + Natural Earth, no API key; countries only; coarse outlines when zoomed out) |
 | Meme card (text over a CC0 image) | Fireship | ✅ `meme` |
 | Timeline (dates slide past) | history channels | ✅ `timeline` |
 | Quote card | all | ✅ `quote` |
