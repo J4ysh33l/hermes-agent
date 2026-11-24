@@ -43,7 +43,7 @@ people, 15:00–19:00, 15 min each → 15:00, 15:20, … 18:00–18:15.
 - A name that matches two people stops the whole command. Nothing goes to a guess.
 - At most `daily_cap` (50) sends a day: Slack messages, invites and channel posts. A batch over the
   cap is refused whole, never cut off halfway.
-- Plans expire after `preview_minutes` (30). A new plan replaces the waiting one of the same kind.
+- Plans expire after `preview_minutes` (30). An expired one stays in the 20:00 recap until you make it again or say `no`. A new plan replaces the waiting one of the same kind.
 - Every send is logged in `$HERMES_HOME/brief/outreach/sent.jsonl`.
 - A failed invite stops its Slack note. The other lines still go.
 - Someone found only in your Outlook directory gets the invite email and no Slack note.

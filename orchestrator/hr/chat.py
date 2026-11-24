@@ -15,6 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from orchestrator import expiry
 from orchestrator.brief.creds import Secrets
 from orchestrator.brief.net import Http, HttpError, UrllibHttp
 from orchestrator.brief.sources import outlook
@@ -86,7 +87,7 @@ class Context:
             return None
         plan = json.loads(self.paths.pending.read_text(encoding="utf-8"))
         if self.now - plan["created"] > self.settings.preview_minutes * 60:
-            self.paths.pending.unlink()
+            expiry.expire(self.paths.pending)  # the evening recap reminds you until you redo it or say no
             return None
         return plan
 
@@ -184,7 +185,8 @@ def _no(ctx: Context, _arg: str) -> str:
     if ctx.paths.pending.is_file():
         ctx.paths.pending.unlink()
         return "Cancelled. Nothing was emailed."
-    return "Nothing was waiting."
+    dropped = expiry.clear(ctx.paths.pending) | expiry.clear(ctx.paths.blocked)
+    return "Dropped the expired payslip run from the recap." if dropped else "Nothing was waiting."
 
 
 def _check(ctx: Context, arg: str) -> str:
@@ -208,7 +210,7 @@ def _skip(ctx: Context, _arg: str) -> str:
         return "Nothing to skip. /hr payslip skip works right after a run that stopped only because of bad rows."
     held = json.loads(path.read_text(encoding="utf-8"))
     if ctx.now - held["created"] > ctx.settings.preview_minutes * 60:
-        path.unlink()
+        expiry.expire(path)
         return "That run is too old. Send the sheet again."
     period = Period(date.fromisoformat(held["start"]), date.fromisoformat(held["end"]),
                     date.fromisoformat(held["pay_date"]))
@@ -239,7 +241,7 @@ def _interview_saved(ctx: Context) -> dict | None:
         return None
     saved = json.loads(path.read_text(encoding="utf-8"))
     if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
-        path.unlink()
+        expiry.expire(path)
         return None
     return saved
 
@@ -253,6 +255,7 @@ def _interview_make(ctx: Context, text: str) -> str:
     warnings = interview.busy_warnings(ctx.http, ctx.secrets, parsed)
     saved = interview.plan(parsed, warnings, ctx.now)
     payslips.save_private(_interview_path(ctx), saved)
+    expiry.clear(_interview_path(ctx))
     return interview.preview(saved, ctx.settings.preview_minutes)
 
 
@@ -275,7 +278,7 @@ def _interview_no(ctx: Context, _arg: str) -> str:
     if path.is_file():
         path.unlink()
         return "Cancelled. Nobody was invited."
-    return "Nothing was waiting."
+    return "Dropped the expired interview plan from the recap." if expiry.clear(path) else "Nothing was waiting."
 
 
 def _inbox_store(ctx: Context) -> inbox.Store:

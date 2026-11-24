@@ -17,7 +17,8 @@ from . import parts
 from .parts import Line, RecapError
 
 HELP = """**/recap** — what is waiting on you, by script (also every evening at 20:00)
-/recap now — approvals waiting for your yes (or missed today), HR mail with no reply, To Do tasks
+/recap now — approvals waiting for your yes, or expired without it (until you make them again or
+say no to them), HR mail with no reply, To Do tasks
 and bills overdue or due in the next 3 days, and Outlook events this week named as deadlines
 (deadline, due, last date, submission, expiry, renewal). /menu — all your commands"""
 

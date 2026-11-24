@@ -259,7 +259,9 @@ def _yes(session: Session, kind: Kind, arg: str) -> str:
 
 
 def _no(session: Session, kind: Kind, _arg: str) -> str:
-    return "Cancelled. Nothing was sent." if session.store.drop(kind) else "Nothing was waiting."
+    if session.store.drop(kind):
+        return "Cancelled. Nothing was sent."
+    return "Dropped the expired plan from the recap." if session.store.forget_expired(kind) else "Nothing was waiting."
 
 
 def _show(session: Session, kind: Kind, _arg: str) -> str:

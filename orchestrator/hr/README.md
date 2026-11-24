@@ -31,7 +31,7 @@ details or HR mail.**
 5. `/hr payslip show`: name, email and net pay for each person, plus the total.
 6. `/hr payslip test`: two sample slips are emailed to **you**. `/hr payslip test all` emails every slip to you.
 7. `/hr payslip yes`: each person gets their own slip from your Outlook. `/hr payslip yes 1-10` sends only those.
-   `/hr payslip no` cancels. A batch expires after 2 hours.
+   `/hr payslip no` cancels. A batch expires after 2 hours. An expired one stays in the 20:00 recap until you make it again or say `no`.
 
 ## The sheet
 
@@ -97,7 +97,7 @@ Rohan Das, Data Analyst, 11:45, 12:15, rohan@gmail.com
      Either way they never see each other's names or emails.
 - **The lobby:** candidates are outside your company, so Teams holds them in the lobby until
   someone on the panel admits them. An early joiner can't walk into the previous interview.
-- `/hr interview show` · `/hr interview no`. A plan expires after `hr.preview_minutes`.
+- `/hr interview show` · `/hr interview no`. A plan expires after `hr.preview_minutes`. An expired one stays in the 20:00 recap until you make it again or say `no`.
 - **Wording:** `hr.interview` in `brief.yaml` (company, subjects, HTML bodies); the defaults are in
   `settings.py`. Uses the Outlook login's Calendars.ReadWrite (and Mail.Send for `hr.mailbox`), already granted.
 

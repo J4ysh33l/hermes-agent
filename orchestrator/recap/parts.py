@@ -1,8 +1,8 @@
 """The parts of the evening recap. Each returns ``Line``s; the recap sorts and groups them.
 
 - Approvals: plans waiting for your yes (payslips, a payslip sheet with problems, interviews, Slack,
-  meetings), read from their files without touching them. One that expired today is "missed";
-  older ones are left out.
+  meetings), read from their files without touching them. One that expired unapproved stays in the
+  recap every evening until you make it again or say ``no`` (``orchestrator.expiry``).
 - HR mail: urgent and people mails still waiting for a reply, as the last ``/hr inbox`` sweep left them.
 - To Do: tasks and bills overdue or due within ``SOON_DAYS`` (My day's lists).
 - Calendar: Outlook events within ``CALENDAR_DAYS`` whose subject names a deadline.
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+from orchestrator import expiry
 from orchestrator.brief.net import HttpError
 from orchestrator.brief.sources import outlook
 from orchestrator.hr import inbox
@@ -44,7 +45,8 @@ class Pending:
 
     path: Path
     name: str
-    command: str
+    command: str  # where to look while it waits
+    cancel: str  # drops it, waiting or expired
     minutes: int
 
 
@@ -53,26 +55,27 @@ def pending_files(home: Path) -> list[Pending]:
     hr_minutes = hr_settings.load(brief).preview_minutes
     out_minutes = outreach_settings.load(brief).preview_minutes
     return [
-        Pending(home / "hr" / "pending.json", "Payslip batch", "/hr payslip show", hr_minutes),
-        Pending(home / "hr" / "blocked.json", "Payslip sheet with problems", "/hr payslip check", hr_minutes),
-        Pending(home / "hr" / "interview.json", "Interview batch", "/hr interview show", hr_minutes),
-        Pending(brief / "outreach" / "pending-slack.json", "Slack messages", "/slack show", out_minutes),
-        Pending(brief / "outreach" / "pending-meet.json", "Meetings", "/meet show", out_minutes),
+        Pending(home / "hr" / "pending.json", "Payslip batch", "/hr payslip show", "/hr payslip no", hr_minutes),
+        Pending(home / "hr" / "blocked.json", "Payslip sheet with problems", "/hr payslip skip", "/hr payslip no",
+                hr_minutes),
+        Pending(home / "hr" / "interview.json", "Interview batch", "/hr interview show", "/hr interview no",
+                hr_minutes),
+        Pending(brief / "outreach" / "pending-slack.json", "Slack messages", "/slack show", "/slack no", out_minutes),
+        Pending(brief / "outreach" / "pending-meet.json", "Meetings", "/meet show", "/meet no", out_minutes),
     ]
 
 
 def approvals(session: Session, home: Path) -> list[Line]:
     lines = []
     for item in pending_files(home):
-        if not item.path.is_file():
+        source = item.path if item.path.is_file() else expiry.marker(item.path)
+        if not source.is_file():
             continue
-        created = json.loads(item.path.read_text(encoding="utf-8"))["created"]
+        created = json.loads(source.read_text(encoding="utf-8"))["created"]
         ends = datetime.fromtimestamp(created + item.minutes * 60, session.tz)
         if ends <= session.local_now:
-            if ends.date() != session.today:
-                continue
             lines.append(Line(ends.date(), f"⌛ {item.name}: expired {ends:%-d %b %H:%M} without your yes · "
-                                           "make it again to send it", waiting=True))
+                                           f"make it again, or {item.cancel} to drop it", waiting=True))
         else:
             lines.append(Line(ends.date(), f"✍️ {item.name}: waiting for your yes until {ends:%H:%M} · "
                                            f"{item.command}", waiting=True))

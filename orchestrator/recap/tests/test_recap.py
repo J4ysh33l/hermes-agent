@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/myday/tests"))
 from test_myday import FakeMicrosoft, at
 
 from orchestrator.myday.session import Session
+from orchestrator.outreach import plan
 from orchestrator.recap import cli
 
 MON_8PM = at(23, 20)  # Mon 23 Nov 2026, 20:00 IST
@@ -47,7 +48,7 @@ class Recap(unittest.TestCase):
     def test_one_message_waiting_first_then_overdue_then_coming_up(self):
         self.pending("hr/pending.json", MON_8PM - 10 * 60)  # payslips: 120 min to approve
         self.pending("brief/outreach/pending-slack.json", at(23, 15))  # 30 min: missed today
-        self.pending("brief/outreach/pending-meet.json", at(21, 15))  # missed days ago: left out
+        self.pending("brief/outreach/pending-meet.expired.json", at(21, 15))  # expired days ago: still reminded
         (self.home / "hr/inbox.json").write_text(json.dumps({"items": {
             "m1": {"cat": "people", "subject": "Formal resignation", "name": "Dev", "from": "dev@co.com",
                    "received": "2026-11-18T05:00:00", "conv": "c1"},
@@ -67,8 +68,9 @@ class Recap(unittest.TestCase):
         self.assertLess(waiting, text.index("**Overdue**"))
         self.assertLess(text.index("**Overdue**"), text.index("**Coming up**"))
         self.assertIn("✍️ Payslip batch: waiting for your yes until 21:50 · /hr payslip show", text)
-        self.assertIn("⌛ Slack messages: expired 23 Nov 15:30 without your yes", text)
-        self.assertNotIn("Meetings:", text)
+        self.assertIn("⌛ Slack messages: expired 23 Nov 15:30 without your yes · make it again, or /slack no "
+                      "to drop it", text)
+        self.assertIn("⌛ Meetings: expired 21 Nov 15:30", text)
         self.assertLess(text.index("Legal notice"), text.index("Formal resignation"))  # urgent first
         self.assertNotIn("Application", text)  # counts-only mail never waits
         self.assertIn("▫️ Send deck — 3d overdue", text)
@@ -76,6 +78,21 @@ class Recap(unittest.TestCase):
         self.assertNotIn("Far away", text)
         self.assertIn("🗓 Grant submission deadline — Fri 17:30", text)
         self.assertNotIn("Team lunch", text)
+
+    def test_an_expired_plan_is_reminded_until_made_again_or_dropped(self):
+        store = plan.Store(self.home / "brief")
+        draft = plan.Plan("slack", "Slack", (plan.Line("Priya — hi", ()),), at(23, 10))
+        store.save(draft)
+        self.assertIsNone(store.waiting("slack", at(23, 11), 30))  # expired unapproved
+        self.assertIn("⌛ Slack messages: expired 23 Nov 10:30", self.recap())
+        self.assertIn("⌛ Slack messages: expired 23 Nov 10:30", self.recap(at(25, 20)))  # days later too
+        store.save(plan.Plan("slack", "Slack", draft.lines, at(25, 19, 50)))  # made again
+        again = self.recap(at(25, 20))
+        self.assertNotIn("expired", again)
+        self.assertIn("✍️ Slack messages: waiting for your yes until 20:20", again)
+        store.waiting("slack", at(25, 21), 30)
+        self.assertTrue(store.forget_expired("slack"))  # what /slack no does when nothing is live
+        self.assertEqual(self.recap(at(25, 21)), "")
 
     def test_nothing_waiting_sends_nothing(self):
         self.assertEqual(self.recap(), "")
