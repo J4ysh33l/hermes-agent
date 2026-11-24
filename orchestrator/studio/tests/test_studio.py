@@ -1,6 +1,6 @@
 """/studio voice against a fake Kokoro (a stand-in for its environment), a fake Gemini and a fake
 Telegram; plus one live run of the real Kokoro when STUDIO_KOKORO_PYTHON and STUDIO_KOKORO_MODELS
-point at an installed one (install_kokoro.sh).
+point at an installed one (install.sh).
 
 The promises tested: each sentence goes to the voice for its script; Hinglish typed in Latin script is
 put into Devanagari by Gemini first, and a rewrite that drops lines or stays in Latin script stops the
@@ -68,7 +68,7 @@ class Speaking(unittest.TestCase):
                                         encoding="utf-8")
         fake = self.home / "fake_kokoro.py"
         fake.write_text(FAKE_KOKORO, encoding="utf-8")
-        python = self.home / "venvs/kokoro/bin/python"
+        python = self.home / "venvs/studio/bin/python"
         python.parent.mkdir(parents=True)
         python.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{fake}"\n', encoding="utf-8")  # ignores the worker path
         python.chmod(0o755)
@@ -112,6 +112,16 @@ class Speaking(unittest.TestCase):
             self.speak("Aaj hum baat karenge ki team kaise kaam karti hai.")
         self.assertFalse((self.home / "out.wav").exists())
 
+    def test_edge_gets_its_own_voices_and_is_picked_per_message(self):
+        self.answers = [["आज हम बात करेंगे।"]]
+        reply = chat.handle("voice edge Ship it today. Aaj hum baat karenge ki kya karna hai.", self.home, self.http)
+        self.assertIn("🔊 Sent (edge)", reply)
+        job = json.loads(next((self.home / "studio/voice").glob("*-edge.wav.job.json")).read_text(encoding="utf-8"))
+        self.assertEqual(job["engine"], "edge")
+        self.assertEqual([ln["voice"] for ln in job["lines"]], ["en-IN-PrabhatNeural", "hi-IN-MadhurNeural"])
+        (self.home / "brief/brief.yaml").write_text("studio:\n  engine: edge\n", encoding="utf-8")
+        self.assertIn("🔊 Sent (edge)", chat.handle("voice Ship it.", self.home, self.http))  # the default now
+
     def test_english_only_needs_no_model(self):
         self.speak("Most teams don't fail because the code is bad. They wait too long.")
         self.assertEqual(self.http.count(GEMINI), 0)
@@ -119,20 +129,20 @@ class Speaking(unittest.TestCase):
     @unittest.skipUnless(HAS_FFMPEG, "ffmpeg not installed")
     def test_studio_voice_sends_a_voice_message(self):
         reply = chat.handle("voice Ship it today. Real users will tell you the truth.", self.home, self.http)
-        self.assertIn("🔊 Sent:", reply)
+        self.assertIn("🔊 Sent (kokoro):", reply)
         self.assertEqual(self.http.count("https://api.telegram.org/bott/sendVoice"), 1)
         self.assertIn("/menu", chat.handle("help", self.home, self.http))
 
     def test_without_kokoro_it_says_how_to_install(self):
-        (self.home / "venvs/kokoro/bin/python").unlink()
-        self.assertIn("run orchestrator/studio/install_kokoro.sh", chat.handle("voice Hello there.", self.home, self.http))
+        (self.home / "venvs/studio/bin/python").unlink()
+        self.assertIn("run orchestrator/studio/install.sh", chat.handle("voice Hello there.", self.home, self.http))
 
 
 @unittest.skipUnless(os.environ.get("STUDIO_KOKORO_PYTHON") and os.environ.get("STUDIO_KOKORO_MODELS"),
                      "set STUDIO_KOKORO_PYTHON and STUDIO_KOKORO_MODELS to run the real Kokoro")
 class RealKokoro(unittest.TestCase):
     def test_english_and_hindi_come_out_as_one_24khz_file_with_line_times(self):
-        s = settings.Settings(kokoro_python=os.environ["STUDIO_KOKORO_PYTHON"],
+        s = settings.Settings(studio_python=os.environ["STUDIO_KOKORO_PYTHON"],
                               models_dir=os.environ["STUDIO_KOKORO_MODELS"])
         with tempfile.TemporaryDirectory() as tmp:
             speech = voice.speak(FakeHttp(), "", s, Path(tmp), "Ship it today. नमस्ते दोस्तों।", Path(tmp) / "x.wav")

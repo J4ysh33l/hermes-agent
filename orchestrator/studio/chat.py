@@ -1,4 +1,4 @@
-"""``/studio`` in Telegram: video, audio, b-roll and images. For now: ``voice`` (Kokoro)."""
+"""``/studio`` in Telegram: video, audio, b-roll and images. For now: ``voice`` (Kokoro or Edge TTS)."""
 
 from __future__ import annotations
 
@@ -16,10 +16,13 @@ from orchestrator.notes.telegram import Telegram
 from . import settings, voice
 
 HELP = """**/studio** — video, audio, b-roll and images, made on your server
-/studio voice <text> — Kokoro reads it and sends you the clip (free, no limits, runs on the server CPU)
-  English sentences use studio.voice_en; Hindi in Devanagari uses studio.voice_hi. Hinglish typed in
-  Latin script is first written in Devanagari by Gemini (one call), since Kokoro can't read it otherwise.
-/studio voices — the voice names you can set in brief.yaml (studio.voice_en, studio.voice_hi)
+/studio voice <text> — read aloud with studio.engine and sent to you as a voice message
+/studio voice kokoro <text> · /studio voice edge <text> — pick the engine for this one
+  Kokoro: on the server CPU, free, no limits. Edge: Microsoft's online voices (Indian English and
+  Hindi), no CPU, but unofficial: it can stop working without notice.
+  English sentences use the English voice; Hindi in Devanagari the Hindi one. Hinglish typed in Latin
+  script is first written in Devanagari by Gemini (one call): neither engine reads it well otherwise.
+/studio voices · /studio voices edge — voice names to set in brief.yaml (studio.voice_en, edge_voice_en …)
 More (videos, b-roll, images) is on its way. /menu — all your commands"""
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
@@ -44,26 +47,43 @@ def _ogg(wav: Path) -> Path:
     return out if done.returncode == 0 and out.is_file() else wav
 
 
+def _engine(ctx: Context, text: str) -> tuple[str, str]:
+    first, _, rest = text.strip().partition(" ")
+    return (first.lower(), rest) if first.lower() in settings.ENGINES else (ctx.settings.engine, text)
+
+
 def _voice(ctx: Context, text: str) -> str:
+    engine, text = _engine(ctx, text)
     if not text.strip():
         return "What should it say? /studio voice <text>"
-    out = ctx.home / "studio" / "voice" / f"{datetime.now():%Y%m%d-%H%M%S}.wav"
+    out = ctx.home / "studio" / "voice" / f"{datetime.now():%Y%m%d-%H%M%S}-{engine}.wav"
     started = time.monotonic()
-    speech = voice.speak(ctx.http, ctx.key, ctx.settings, ctx.home, text, out)
+    speech = voice.speak(ctx.http, ctx.key, ctx.settings, ctx.home, text, out, engine)
     took = time.monotonic() - started
     clip = _ogg(speech.path)
     method, field = ("sendVoice", "voice") if clip.suffix == ".ogg" else ("sendDocument", "document")
-    Telegram(ctx.http, ctx.secrets).upload(method, field, clip, f"🔊 {speech.seconds:.1f} s")
+    Telegram(ctx.http, ctx.secrets).upload(method, field, clip, f"🔊 {engine}, {speech.seconds:.1f} s")
     note = f" · {speech.rewritten} Hinglish line(s) written in Devanagari by Gemini" if speech.rewritten else ""
-    return f"🔊 Sent: {speech.seconds:.1f} s of speech, made in {took:.0f} s{note}. File: {clip}"
+    return f"🔊 Sent ({engine}): {speech.seconds:.1f} s of speech, made in {took:.0f} s{note}. File: {clip}"
 
 
-def _voices(ctx: Context, _text: str) -> str:
-    names = voice.voices(ctx.settings, ctx.home).split()
-    groups = {"English (US)": ("af_", "am_"), "English (UK)": ("bf_", "bm_"), "Hindi": ("hf_", "hm_")}
-    lines = [f"{label}: " + " ".join(n for n in names if n.startswith(prefix)) for label, prefix in groups.items()]
-    return "\n".join(["**Kokoro voices** (f = female, m = male)", *lines,
-                      f"Now: studio.voice_en = {ctx.settings.voice_en}, studio.voice_hi = {ctx.settings.voice_hi}"])
+VOICE_GROUPS = {
+    "kokoro": {"English (US)": ("af_", "am_"), "English (UK)": ("bf_", "bm_"), "Hindi": ("hf_", "hm_")},
+    "edge": {"English (India)": ("en-IN-",), "Hindi": ("hi-IN-",), "English (US)": ("en-US-",),
+             "English (UK)": ("en-GB-",)},
+}
+
+
+def _voices(ctx: Context, text: str) -> str:
+    engine, _ = _engine(ctx, text)
+    names = voice.voices(ctx.settings, ctx.home, engine)
+    lines = [f"{label}: " + " ".join(n for n in names if n.startswith(prefixes))
+             for label, prefixes in VOICE_GROUPS[engine].items()]
+    s = ctx.settings
+    now = f"studio.voice_en = {s.voice_en}, voice_hi = {s.voice_hi}" if engine == "kokoro" else \
+        f"studio.edge_voice_en = {s.edge_voice_en}, edge_voice_hi = {s.edge_voice_hi}"
+    return "\n".join([f"**{engine} voices**" + (" (f = female, m = male)" if engine == "kokoro" else ""), *lines,
+                      f"Now: {now}"])
 
 
 STEPS = {"voice": _voice, "say": _voice, "voices": _voices}

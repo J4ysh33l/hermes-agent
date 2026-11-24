@@ -212,10 +212,13 @@ watch:
   max_lines: 15               # new items listed in one message
 
 # ---------------------------------------------------------------- Studio (/studio): video, audio, b-roll, images
-# See orchestrator/studio/README.md. Kokoro is installed by orchestrator/studio/install_kokoro.sh.
+# See orchestrator/studio/README.md. The voices are installed by orchestrator/studio/install.sh.
 studio:
-  voice_en: am_michael        # /studio voices lists them (af_/am_ US, bf_/bm_ UK, hf_/hm_ Hindi)
+  engine: kokoro              # kokoro (server CPU, free, no limits) or edge (Microsoft's online voices, unofficial)
+  voice_en: am_michael        # Kokoro: /studio voices lists them (af_/am_ US, bf_/bm_ UK, hf_/hm_ Hindi)
   voice_hi: hm_omega          # for Hindi in Devanagari (Hinglish in Latin script is converted first)
+  edge_voice_en: en-IN-PrabhatNeural   # Edge: /studio voices edge
+  edge_voice_hi: hi-IN-MadhurNeural
   speed: 1.05                 # 0.5 to 2.0
   pause: 0.25                 # seconds after each sentence
   threads: 2                  # CPU threads Kokoro may use (the host has 2)
