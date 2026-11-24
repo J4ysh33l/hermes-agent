@@ -26,6 +26,15 @@ def _preset(value: str) -> str:
     return value
 
 
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _effort(value: str) -> str:
+    if value not in EFFORTS:
+        raise ValueError(f"brief.yaml: studio.claude_effort must be one of {', '.join(EFFORTS)}")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     engine: str = "kokoro"  # kokoro (local, free, no limits) or edge (Microsoft's online voices, unofficial)
@@ -50,6 +59,8 @@ class Settings:
     video_browser: str = ""  # Chrome headless shell to use; "" = the one Remotion downloaded (install.sh)
     text_models: tuple[ModelChoice, ...] = TEXT_MODELS  # small text jobs (Hinglish → Devanagari)
     script_models: tuple[ModelChoice, ...] = SCRIPT_MODELS  # notes → storyboard (writer.py); a stronger model writes better
+    claude_model: str = "claude-opus-5-5"  # `write --claude` (needs ANTHROPIC_API_KEY; paid, ~$0.10–0.25 a storyboard)
+    claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
 
 
 def parse(raw: dict[str, Any]) -> Settings:
@@ -85,6 +96,8 @@ def parse(raw: dict[str, Any]) -> Settings:
         video_browser=str(studio.get("video_browser", base.video_browser)),
         text_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in models)
         if models else base.text_models,
+        claude_model=str(studio.get("claude_model", base.claude_model)),
+        claude_effort=_effort(str(studio.get("claude_effort", base.claude_effort))),
         script_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in script)
         if script else base.script_models,
     )

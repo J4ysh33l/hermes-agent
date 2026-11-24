@@ -16,6 +16,9 @@ from typing import Any
 from orchestrator import usage
 
 GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+CLAUDE = "https://api.anthropic.com/v1/messages"
+CLAUDE_VERSION = "2026-10-21"
+CLAUDE_FALLBACK = "server-side-fallback-2026-07-01"  # a declined request is re-run on a fallback model
 API = "https://generativelanguage.googleapis.com"
 FILE_WAIT = 2.0  # seconds between checks while Gemini prepares an uploaded file
 FILE_TRIES = 90
@@ -53,6 +56,34 @@ def gemini(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
                    cached=meta.get("cachedContentTokenCount", 0), reasoning=meta.get("thoughtsTokenCount", 0),
                    ms=int((time.monotonic() - started) * 1000))
     return _text(data)
+
+
+def claude(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str, max_tokens: int = 16000,
+           effort: str = "medium") -> str:
+    """One Messages API call (raw HTTP, like ``gemini``, so it is logged and faked the same way).
+    Thinking is on by default on current Claude models; ``effort`` sets how much (low … max). No sampling
+    parameters: API version 2026-10-21 refuses them. Raises ValueError on a refusal or a cut-off answer."""
+    body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}],
+            "output_config": {"effort": effort}, "fallbacks": "default"}
+    headers = {"x-api-key": api_key, "anthropic-version": CLAUDE_VERSION, "anthropic-beta": CLAUDE_FALLBACK}
+    started = time.monotonic()
+    try:
+        data = http.request("POST", CLAUDE, headers=headers, json_body=body).json()
+    except Exception as exc:
+        usage.log_call(workflow, step, "anthropic", model, ok=False, ms=int((time.monotonic() - started) * 1000),
+                       note=str(exc)[:200])
+        raise
+    meta = data.get("usage") or {}
+    usage.log_call(workflow, step, "anthropic", model, input_tokens=meta.get("input_tokens", 0),
+                   output_tokens=meta.get("output_tokens", 0), cached=meta.get("cache_read_input_tokens", 0),
+                   ms=int((time.monotonic() - started) * 1000))
+    stop = data.get("stop_reason")
+    if stop == "refusal":
+        why = (data.get("stop_details") or {}).get("explanation") or "no reason given"
+        raise ValueError(f"Claude declined: {why}")
+    if stop == "max_tokens":
+        raise ValueError(f"Claude ran out of room ({max_tokens} tokens) before finishing")
+    return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
 
 
 # ---- Gemini Files API: large inputs (meeting audio) are uploaded, referenced, then deleted ----------

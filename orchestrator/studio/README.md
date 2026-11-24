@@ -100,6 +100,7 @@ the top. Parts of a scene (list items, bars, boxes, events, "after") arrive on t
 | 6 scenes, 29.8 s (`crf 17`, `slow`) | 13 s (Kokoro fp16) | 138 s (4.6 s per s of video) | ~1.9 GB over idle | 11.4 MB, 2.7 Mb/s video |
 | 10 newer scenes, 38.5 s | 19 s | 172 s (4.5 s per s) | — | — |
 | 3 scenes with 2 maps, 10.5 s | 5 s | 88 s (8.4 s per s: maps draw 241 country outlines a frame) | — | — |
+| 3 scenes, 2 maps, 8.5 s, before / after coarse outlines + clipping | 4 s | 53 s → 36 s (6.2 → 4.2 s per s) | ~0.8 GB | — |
 
 On the 2-core host expect roughly twice the render time; renders are meant for the overnight queue.
 
@@ -125,7 +126,52 @@ once as a list ("fix these"), then the next model starts fresh:
   profile allows; no image/meme scenes until b-roll exists; maps name countries only.
 
 The models are the free flash-lite ones by default; a stronger model writes better scripts (set
-`script_models` in brief.yaml). **Not run against the real API yet.**
+`script_models` in brief.yaml). `--claude` (or `/studio write claude …` in Telegram) writes with
+Claude instead (`studio.claude_model`, default `claude-opus-5-5` at `claude_effort: medium`; needs
+`ANTHROPIC_API_KEY`; paid, roughly $0.10–0.25 a storyboard; a declined request is retried on a
+fallback model by the API). Same prompt, same checks. **Neither has been run against the real API yet.**
+
+In Telegram: `/studio write <notes>` answers with the hooks and the script and saves the storyboards in
+`$HERMES_HOME/studio/write/<time>/`; rendering from chat comes with the overnight queue.
+
+**Wishes: the library is a menu, never a checklist.** The writer picks only scenes that fit; nothing has
+to be used. When a scene would be clearly better with a visual we cannot make yet, it still picks the
+best available scene and adds a wish ("a 3D bun bouncing out of an oven"). Wishes are logged in
+`$HERMES_HOME/studio/wishes.jsonl`; `python -m orchestrator.studio wishes` ranks them, most wanted first,
+which is the backlog for new scenes and assets.
+
+## Voice directions
+
+Written in `say`, obeyed by the voice, never shown in captions (`direction.py`):
+
+| Write | Effect |
+|---|---|
+| `And the winner is [beat] India.` | a 0.4 s pause there (captions stay silent through it too) |
+| `[pause 1.2] Three years later…` | an exact pause, up to 3 s |
+| `[slow] This is the part that matters.` | the rest of the sentence at 0.9× the page's speed (`[fast]`: 1.1×) |
+
+`...`, `—`, `?` and `!` already shape the reading. Neither engine can stress a single word (`*emphasis*`
+is visual), so wording carries the delivery. Measured with Kokoro: `[beat]` left 0.46 s of silence,
+`[pause 1.2]` 1.41 s with the usual 0.15 s gap. In a Hinglish line typed in Latin script, directions
+inside the sentence are dropped (the Devanagari rewrite returns whole sentences); between sentences they work.
+
+## Covers
+
+```
+python -m orchestrator.studio cover bun.json --out cover.png [--scene 2] [--words "npm is too slow"] [--profile bold]
+```
+
+One scene of the storyboard, fully arrived, under 2–5 huge words in the page's caption font, the last
+word in the accent; any emoji on the scene included. Rendered with Remotion's still renderer from the same
+scene code as the video (~6 s, no voice needed), so it always matches. PLAYBOOK § 9: the words should add
+to the title, not repeat it.
+
+## Maps
+
+Countries only (Natural Earth; narration may name cities freely, the map lights their countries). The
+camera frames each country on its main landmass (the USA without Alaska and Hawaii, France without French
+Guiana); labels and route ends sit on its largest piece. Zoomed out, the map draws the coarse 110 m
+outlines and skips countries off screen: the 2-map test went from 53 s to 36 s of render (8.5 s video).
 
 ## Setup
 

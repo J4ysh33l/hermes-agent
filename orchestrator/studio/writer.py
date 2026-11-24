@@ -28,6 +28,7 @@ from typing import Any
 
 from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
+from orchestrator.brief.settings import ModelChoice
 
 from . import direction, storyboard, video
 from .profile import Profile
@@ -378,11 +379,34 @@ def target_words(look: Profile, seconds: float) -> int:
     return round(seconds / 60 * WPM * float(look.section("voice")["speed"]))
 
 
-def write(http: Http, key: str, settings: Settings, look: Profile, notes: str, seconds: float = 0,
-          folder: Path = Path(".")) -> Draft:
+def _ask(http: Http, keys: Keys, settings: Settings, model: ModelChoice, question: str, attempt: int) -> str:
+    step = "storyboard" if attempt == 0 else "storyboard-fix"
+    if model.id.startswith("claude-"):
+        return llm.claude(http, keys.claude, model.id, question, workflow="studio", step=step,
+                          effort=settings.claude_effort)
+    return llm.gemini(http, keys.gemini, model.id, question, workflow="studio", step=step,
+                      json_mode=model.json_mode, max_output_tokens=8000, temperature=0.9 if attempt == 0 else 0.4)
+
+
+@dataclass(frozen=True)
+class Keys:
+    gemini: str = ""
+    claude: str = ""
+
+
+def models(settings: Settings, use_claude: bool) -> tuple[ModelChoice, ...]:
+    """Gemini's free models by default; Claude when asked (one model, paid)."""
+    return (ModelChoice(settings.claude_model),) if use_claude else settings.script_models
+
+
+def write(http: Http, keys: Keys, settings: Settings, look: Profile, notes: str, seconds: float = 0,
+          folder: Path = Path("."), use_claude: bool = False) -> Draft:
     """``notes``: what the video is about (facts, links' text, a draft script). ``seconds``: 0 = the
-    profile's ``writing.seconds``."""
-    if not key:
+    profile's ``writing.seconds``. ``use_claude``: Claude (studio.claude_model) instead of Gemini."""
+    chosen = models(settings, use_claude)
+    if use_claude and not keys.claude:
+        raise WriterError("Writing with Claude needs ANTHROPIC_API_KEY in your .env")
+    if not use_claude and not keys.gemini:
         raise WriterError("Writing a storyboard needs GEMINI_API_KEY")
     if len(notes.split()) < 3:
         raise WriterError("Give it something to work from: a topic with a few facts, or a draft script")
@@ -390,15 +414,12 @@ def write(http: Http, key: str, settings: Settings, look: Profile, notes: str, s
     words = target_words(look, seconds)
     ask = prompt(look, notes, seconds, words)
     tried, rounds = [], 0
-    for model in settings.script_models:
+    for model in chosen:
         question, answer = ask, ""
         for attempt in range(2):  # the first answer, then one repair
             rounds += 1
             try:
-                answer = llm.gemini(http, key, model.id, question, workflow="studio",
-                                    step="storyboard" if attempt == 0 else "storyboard-fix",
-                                    json_mode=model.json_mode, max_output_tokens=8000,
-                                    temperature=0.9 if attempt == 0 else 0.4)
+                answer = _ask(http, keys, settings, model, question, attempt)
                 raw = _json(answer)
             except (HttpError, ValueError) as exc:
                 tried.append(f"{model.id}: {str(exc)[:100]}")

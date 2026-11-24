@@ -13,7 +13,7 @@ from orchestrator.brief.store import default_state_dir
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import settings, voice
+from . import profile, settings, voice, writer
 
 HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio voice <text> — read aloud with studio.engine and sent to you as a voice message
@@ -23,7 +23,11 @@ HELP = """**/studio** — video, audio, b-roll and images, made on your server
   English sentences use the English voice; Hindi in Devanagari the Hindi one. Hinglish typed in Latin
   script is first written in Devanagari by Gemini (one call): neither engine reads it well otherwise.
 /studio voices · /studio voices edge — voice names to set in brief.yaml (studio.voice_en, edge_voice_en …)
-More (videos, b-roll, images) is on its way. /menu — all your commands"""
+/studio write <notes or a draft script> — a storyboard with 3 hooks, written to your page profile
+  (Gemini, free). /studio write claude <notes> — written by Claude instead (paid, needs ANTHROPIC_API_KEY).
+  Numbers, quotes and headlines on screen must be in your notes, so include the facts you want shown.
+Rendering from chat comes with the overnight queue; for now render on the host (python -m orchestrator.studio video).
+/menu — all your commands"""
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 
@@ -86,7 +90,29 @@ def _voices(ctx: Context, text: str) -> str:
                       f"Now: {now}"])
 
 
-STEPS = {"voice": _voice, "say": _voice, "voices": _voices}
+def _write(ctx: Context, text: str) -> str:
+    first, _, rest = text.strip().partition(" ")
+    use_claude = first.lower() == "claude"
+    notes = rest if use_claude else text
+    if not notes.strip():
+        return "What is the video about? /studio write <notes or a draft script>"
+    look = profile.load(ctx.settings.profile, ctx.home)
+    folder = ctx.home / "studio" / "write" / f"{datetime.now():%Y%m%d-%H%M%S}"
+    keys = writer.Keys(ctx.key, ctx.secrets.get("ANTHROPIC_API_KEY"))
+    draft = writer.write(ctx.http, keys, ctx.settings, look, notes, 0, folder, use_claude)
+    saved = writer.save(draft, folder / "storyboard.json", look.name)
+    if draft.wishes:
+        writer.remember(draft, ctx.home, notes)
+    hooks = [f"{n}. ({h.family}) {h.scene['say']}" for n, h in enumerate(draft.hooks, 1)]
+    body = [f"[{s['type']}] {s['say']}" for s in draft.scenes]
+    extra = [f"⚠️ {n}" for n in draft.notes] + [f"💭 wish: {w}" for w in draft.wishes]
+    return "\n".join([f"🎬 **{draft.title}** · {draft.words()} words (~{draft.words() / writer.WPM * 60:.0f} s) · "
+                      f"{draft.model}", "", "**Hooks**", *hooks, "", "**Script** (after the hook)", *body,
+                      *([""] + extra if extra else []), "", f"Saved: {saved[0].parent} (storyboard.json = hook 1, "
+                      f".hook2/.hook3 = the others)"])
+
+
+STEPS = {"voice": _voice, "say": _voice, "voices": _voices, "write": _write}
 
 
 def handle(raw: str, home: Path | None = None, http: Http | None = None) -> str:
@@ -96,5 +122,5 @@ def handle(raw: str, home: Path | None = None, http: Http | None = None) -> str:
         return HELP
     try:
         return step(Context(home or default_state_dir().parent, http), rest)
-    except (voice.VoiceError, NotesError) as exc:
+    except (voice.VoiceError, NotesError, writer.WriterError, profile.ProfileError) as exc:
         return f"⚠️ {exc}"

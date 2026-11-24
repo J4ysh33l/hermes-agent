@@ -24,9 +24,10 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp
 
-from orchestrator.studio import profile, settings, storyboard, video, writer
+from orchestrator.studio import chat, profile, settings, storyboard, video, writer
 
 GEMINI = "https://generativelanguage.googleapis.com/"
+CLAUDE = "https://api.anthropic.com/v1/messages"
 NOTES = ("Bun is a JavaScript runtime written in Zig by Jarred Sumner. It installs packages up to 25 times "
          "faster than npm. Its test runner, bundler and package manager ship in one binary. "
          'Jarred said: "Bun is designed as a drop-in replacement for Node.js."')
@@ -72,7 +73,7 @@ class Writing(unittest.TestCase):
         self.tmp.cleanup()
 
     def write(self) -> writer.Draft:
-        return writer.write(self.http, "g", settings.Settings(), self.look, NOTES, 15, self.home)
+        return writer.write(self.http, writer.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home)
 
     def prompts(self) -> list[str]:
         return [c.json_body["contents"][0]["parts"][-1]["text"] for c in self.http.calls]
@@ -143,10 +144,44 @@ class Writing(unittest.TestCase):
         self.assertEqual(len(self.http.calls), 4)
         self.assertFalse((self.home / "out").exists())
 
+    def test_claude_on_request_gets_the_same_prompt_and_a_refusal_is_named(self):
+        replies = [{"type": "message", "stop_reason": "end_turn", "usage": {"input_tokens": 9000, "output_tokens": 900},
+                    "content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": json.dumps(GOOD)}]},
+                   {"type": "message", "stop_reason": "refusal", "content": [],
+                    "stop_details": {"type": "refusal", "category": None, "explanation": "policy"}}]
+        self.http.on("POST", CLAUDE, lambda _call: replies.pop(0))
+        keys = writer.Keys("", "a")
+        with self.assertRaisesRegex(writer.WriterError, "needs ANTHROPIC_API_KEY"):
+            writer.write(self.http, writer.Keys("g"), settings.Settings(), self.look, NOTES, 15, self.home, True)
+        draft = writer.write(self.http, keys, settings.Settings(), self.look, NOTES, 15, self.home, True)
+        self.assertEqual((draft.model, draft.rounds), ("claude-opus-5-5", 1))
+        call = self.http.calls[-1]
+        self.assertEqual(call.headers["anthropic-version"], "2026-10-21")
+        self.assertEqual(call.json_body["output_config"], {"effort": "medium"})
+        self.assertNotIn("temperature", call.json_body)  # refused by this API version
+        self.assertIn(NOTES, call.json_body["messages"][0]["content"])
+        self.assertEqual(self.http.count(GEMINI), 0)
+        with self.assertRaisesRegex(writer.WriterError, "Claude declined: policy"):
+            writer.write(self.http, keys, settings.Settings(), self.look, NOTES, 15, self.home, True)
+
+    def test_studio_write_in_chat_answers_with_the_hooks_and_saves_the_storyboards(self):
+        (self.home / ".env").write_text("GEMINI_API_KEY=g\n", encoding="utf-8")
+        (self.home / "studio/profiles").mkdir(parents=True)
+        (self.home / "studio/profiles/shorts.yaml").write_text("writing:\n  seconds: 15\n", encoding="utf-8")
+        (self.home / "brief").mkdir()
+        (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n", encoding="utf-8")
+        self.answers = [GOOD]
+        reply = chat.handle("write " + NOTES, self.home, self.http)
+        self.assertIn("1. (definition-twist) Bun, a JavaScript runtime that *refuses* to wait.", reply)
+        self.assertIn("[quote] Jarred calls it a *drop-in* replacement.", reply)
+        saved = next((self.home / "studio/write").glob("*/storyboard.json"))
+        self.assertEqual(len(storyboard.load(saved).scenes), 5)
+        self.assertIn("needs ANTHROPIC_API_KEY", chat.handle("write claude " + NOTES, self.home, self.http))
+
     def test_the_profiles_writing_reaches_the_prompt(self):
         bold = profile.load("bold", self.home)
         self.answers = [GOOD]
-        writer.write(self.http, "g", settings.Settings(), bold, NOTES, 15, self.home)
+        writer.write(self.http, writer.Keys("g"), settings.Settings(), bold, NOTES, 15, self.home)
         ask = self.prompts()[0]
         self.assertIn("in this order of preference: pain-point, contrarian, number", ask)
         self.assertIn('"game-changer"', ask)  # avoid list, inherited from default
