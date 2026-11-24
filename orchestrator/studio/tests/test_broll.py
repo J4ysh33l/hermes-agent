@@ -83,6 +83,19 @@ class BrollTest(unittest.TestCase):
         self.assertIn('Photo "Shinkansen bullet train at Tokyo station" by Kei via Openverse/wikimedia, CC0', notes[0])
         self.assertIn("license=cc0%2Cpdm", http.calls[0].url)  # only works nobody holds rights to
 
+    def test_a_host_refusing_the_download_means_the_next_result_not_a_failed_video(self):
+        second = {**TRAIN, "url": "https://flickr/train2.jpg", "title": "Bullet train", "creator": "Mo"}
+        http = (FakeHttp().on("GET", OPENVERSE, {"results": [TRAIN, second]})
+                .on("GET", "https://up/train.jpg", http_error(429)).on("GET", "https://flickr/train2.jpg", b"ok"))
+        board = storyboard.parse(TRAIN_BOARD, self.home)
+        found, notes = broll.resolve(http, Keys(), self.home, board, self.look)
+        self.assertEqual(Path(found.scenes[0].fields["src"]).read_bytes(), b"ok")
+        self.assertIn("by Mo", notes[0])
+        refused = FakeHttp().on("GET", OPENVERSE, {"results": [TRAIN]}).on("GET", "https://up/", http_error(429))
+        other = self.home / "other"
+        other.mkdir()
+        self.assertEqual(broll.resolve(refused, Keys(), other, board, self.look)[0].scenes[0].type, "title")
+
     def test_without_fitting_footage_the_scene_becomes_a_title_card_and_says_why(self):
         nothing = FakeHttp().on("GET", OPENVERSE, {"results": [PREMIERE]})
         board, notes = broll.resolve(nothing, Keys(), self.home, self.board, self.look)

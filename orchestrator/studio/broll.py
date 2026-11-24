@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
+from itertools import islice
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -42,79 +43,84 @@ def _portrait(files: list[dict], width: str = "width", height: str = "height") -
     return min(fits, key=lambda f: f[height]) if fits else None
 
 
-def pexels_video(http: Http, key: str, query: str) -> Found | None:
+def pexels_video(http: Http, key: str, query: str) -> list[Found]:
     found = http.request("GET", "https://api.pexels.com/videos/search", headers={"Authorization": key},
                          params={"query": query, "orientation": "portrait", "per_page": 15}).json()
+    out = []
     for video in found.get("videos") or []:
         best = _portrait(video.get("video_files") or [])
         if best and (video.get("duration") or 0) >= MIN_SECONDS and best.get("link"):
-            return Found(best["link"], ".mp4", f"Video by {video['user']['name']} on Pexels ({video['url']})")
-    return None
+            out.append(Found(best["link"], ".mp4", f"Video by {video['user']['name']} on Pexels ({video['url']})"))
+    return out
 
 
-def pexels_photo(http: Http, key: str, query: str) -> Found | None:
+def pexels_photo(http: Http, key: str, query: str) -> list[Found]:
     found = http.request("GET", "https://api.pexels.com/v1/search", headers={"Authorization": key},
                          params={"query": query, "orientation": "portrait", "per_page": 15}).json()
-    for photo in found.get("photos") or []:
-        if (photo.get("height") or 0) >= MIN_HEIGHT and (photo.get("src") or {}).get("portrait"):
-            return Found(photo["src"]["portrait"], ".jpg", f"Photo by {photo['photographer']} on Pexels ({photo['url']})")
-    return None
+    return [Found(photo["src"]["portrait"], ".jpg", f"Photo by {photo['photographer']} on Pexels ({photo['url']})")
+            for photo in found.get("photos") or []
+            if (photo.get("height") or 0) >= MIN_HEIGHT and (photo.get("src") or {}).get("portrait")]
 
 
-def pixabay_video(http: Http, key: str, query: str) -> Found | None:
+def pixabay_video(http: Http, key: str, query: str) -> list[Found]:
     found = http.request("GET", "https://pixabay.com/api/videos/", params={
         "key": key, "q": query, "safesearch": "true", "per_page": 20}).json()
+    out = []
     for hit in found.get("hits") or []:
         best = _portrait(list((hit.get("videos") or {}).values()))
         if best and (hit.get("duration") or 0) >= MIN_SECONDS and best.get("url"):
-            return Found(best["url"], ".mp4", f"Video by {hit.get('user', '?')} on Pixabay ({hit.get('pageURL', '')})")
-    return None
+            out.append(Found(best["url"], ".mp4", f"Video by {hit.get('user', '?')} on Pixabay ({hit.get('pageURL', '')})"))
+    return out
 
 
-def pixabay_photo(http: Http, key: str, query: str) -> Found | None:
+def pixabay_photo(http: Http, key: str, query: str) -> list[Found]:
     found = http.request("GET", "https://pixabay.com/api/", params={
         "key": key, "q": query, "orientation": "vertical", "image_type": "photo", "safesearch": "true",
         "per_page": 20}).json()
-    for hit in found.get("hits") or []:
-        if (hit.get("imageHeight") or 0) >= MIN_HEIGHT and hit.get("largeImageURL"):
-            return Found(hit["largeImageURL"], ".jpg", f"Photo by {hit.get('user', '?')} on Pixabay ({hit.get('pageURL', '')})")
-    return None
+    return [Found(hit["largeImageURL"], ".jpg", f"Photo by {hit.get('user', '?')} on Pixabay ({hit.get('pageURL', '')})")
+            for hit in found.get("hits") or [] if (hit.get("imageHeight") or 0) >= MIN_HEIGHT and hit.get("largeImageURL")]
 
 
 MATCH = 0.6  # an Openverse photo must carry this share of the search's words
 MIN_SIDE = 1080  # and be at least this tall (a landscape photo is cropped to the middle of the frame)
 
 
-def openverse_photo(http: Http, _key: str, query: str) -> Found | None:
-    """The CC0/public-domain photo that matches the words best, tall ones first, then the biggest."""
+def openverse_photo(http: Http, _key: str, query: str) -> list[Found]:
+    """CC0/public-domain photos that carry the words: best match first, then tall ones, then the biggest."""
     found = [r for r in openverse.search(http, "images", query)
              if (r.get("height") or 0) >= MIN_SIDE and openverse.relevance(r, query) >= MATCH]
-    if not found:
-        return None
-    best = max(found, key=lambda r: (openverse.relevance(r, query), (r.get("height") or 0) > (r.get("width") or 0),
-                                     r.get("height") or 0))
-    ext = ".png" if str(best.get("filetype", "")).lower() == "png" else ".jpg"
-    return Found(best["url"], ext, openverse.credit(best, "Photo"))
+    found.sort(key=lambda r: (openverse.relevance(r, query), (r.get("height") or 0) > (r.get("width") or 0),
+                              r.get("height") or 0), reverse=True)
+    return [Found(r["url"], ".png" if str(r.get("filetype", "")).lower() == "png" else ".jpg",
+                  openverse.credit(r, "Photo")) for r in found]
 
 
 # Tried in order: moving footage first, Pexels before Pixabay, then Openverse. Each entry: (which key — "" =
-# none needed, search).
-SOURCES: tuple[tuple[str, Callable[[Http, str, str], Found | None]], ...] = (
+# none needed, search returning its fitting results, best first).
+SOURCES: tuple[tuple[str, Callable[[Http, str, str], list[Found]]], ...] = (
     ("pexels", pexels_video), ("pixabay", pixabay_video), ("pexels", pexels_photo), ("pixabay", pixabay_photo),
     ("", openverse_photo))
+TRIES = 4  # downloads tried before the scene becomes a title card (a host may refuse one: rate limits)
 
 
-def search(http: Http, keys: Keys, query: str) -> Found | None:
+def candidates(http: Http, keys: Keys, query: str) -> Iterator[Found]:
+    """Every fitting result, source by source, best first."""
     for which, find in SOURCES:
         key = getattr(keys, which) if which else "-"
         if not key:
             continue
         try:
-            found = find(http, key, query)
+            yield from find(http, key, query)
         except (HttpError, ValueError, KeyError, TypeError):  # one source down or odd: try the next
             continue
-        if found:
-            return found
+
+
+def _download(http: Http, keys: Keys, query: str) -> tuple[Found, bytes] | None:
+    for found in islice(candidates(http, keys, query), TRIES):
+        try:
+            return found, http.request("GET", found.url).body
+        except HttpError:  # this host refused (Wikimedia rate-limits busy addresses): try the next result
+            continue
     return None
 
 
@@ -127,12 +133,13 @@ def fetch(http: Http, keys: Keys, home: Path, query: str) -> tuple[Path, str] | 
         saved = json.loads(meta.read_text(encoding="utf-8"))
         if (folder / saved["file"]).is_file():
             return folder / saved["file"], saved["credit"]
-    found = search(http, keys, query)
-    if not found:
+    got = _download(http, keys, query)
+    if not got:
         return None
+    found, body = got
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{stem}{found.ext}"
-    path.write_bytes(http.request("GET", found.url).body)
+    path.write_bytes(body)
     meta.write_text(json.dumps({"file": path.name, "credit": found.credit, "query": query}), encoding="utf-8")
     return path, found.credit
 
