@@ -31,8 +31,9 @@ Write a storyboard for a vertical short video, following the brief below exactly
 
 **Answer files (commit them to the default branch, then close the issue):**
 - `studio/{job}/{answer}`: the storyboard JSON, nothing else in the file.
-- For every scene with `"type": "custom"` (hooks included): its component as `studio/{job}/sceneNN.tsx`
-  (NN = the scene's number, the hook is 01), and set that scene's `"component": "sceneNN.tsx"`.
+- For every scene with `"type": "custom"`: its component as `studio/{job}/sceneNN.tsx` (NN = the scene's
+  number: hook 1 is scene 01, the first of "scenes" is 02), and set that scene's `"component"` to the file name.
+  Hooks 2 and 3 are other openings for scene 01: a custom one is `hook2.tsx` / `hook3.tsx`.
   Follow the component contract at the end. Make each one as good as a top motion designer would.
 
 ---

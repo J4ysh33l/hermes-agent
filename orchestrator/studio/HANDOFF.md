@@ -13,7 +13,8 @@ Your Claude scheduled task starts on the **issue opened** event and does this:
    are a fast track, and any picture inside the limits can be a custom scene.
 3. Commit, on the default branch, only the files the request names:
    - the storyboard JSON (`storyboard.json`, or `storyboard-fix<n>.json` for a fix request);
-   - for every custom scene, its component `sceneNN.tsx` (the hook is scene 01), with that scene's
+   - for every custom scene, its component `sceneNN.tsx` (hook 1 is scene 01; a custom hook 2 or 3 is
+     `hook2.tsx` / `hook3.tsx`), with that scene's
      `"component"` set to the file name.
 4. Close the issue.
 
