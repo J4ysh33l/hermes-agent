@@ -6,10 +6,11 @@ your notes under a heading, so the script writer and the director use them like 
 the evidence checks (``rules.py``: a number on screen must be in the notes) count them too. Their sources
 travel with the video to Telegram.
 
-Search runs on Gemini (``studio.research_models``; on the free tier only some models may search: the 2.5
-ones could on 2026-11-24, the 3.x ones could not), whoever writes the script, so Claude's sessions need no
-web access. A busy model hands over to the next; when none can search, the video is written from your notes
-alone and you are told why.
+Search runs on Gemini first (``studio.research_models``; on the free tier only some models may search: the
+2.5 ones could on 2026-11-24, the 3.x ones could not). A busy model hands over to the next. When none can
+search and Claude writes through the handoff repo, Claude does the research too, as the job's first issue
+(``ENDING``: it writes ``research.txt``); otherwise the video is written from your notes alone and you are
+told why.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ from .settings import Keys, Settings
 
 PROMPT = Path(__file__).with_name("prompts") / "research.md"
 HEADING = "Research"
+ANSWER = "research.txt"
+ENDING = ("\nUse web search. Write only the fact lines to `studio/$job/research.txt`, then in one command commit, "
+          "push to main and close this issue.\n")
+SITE = re.compile(r"\(([\w.-]+\.[a-z]{2,})\b[^()]*\)\.?\s*$")
 FACT = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
 MAX_FACTS = 25
 
@@ -77,20 +82,39 @@ def facts(answer: str) -> tuple[str, ...]:
     return tuple(line for line, _w in kept)[:MAX_FACTS]
 
 
+def ask(notes: str, seconds: float, today: date) -> str:
+    return Template(PROMPT.read_text(encoding="utf-8")).substitute(
+        today=f"{today:%d %B %Y}", seconds=round(seconds), notes=notes.strip())
+
+
+def for_claude(notes: str, seconds: float, today: date, job: str) -> str:
+    """The same prompt as an issue body for Claude on your plan."""
+    return ask(notes, seconds, today) + Template(ENDING).substitute(job=job)
+
+
+def from_claude(text: str) -> Findings:
+    """Claude's research.txt → findings; the sites come from each line's "(site, date)"."""
+    found = facts(text)
+    sites = [m.group(1) for m in map(SITE.search, found) if m]
+    return Findings(found, tuple((site, "") for site in dict.fromkeys(sites)), "claude (handoff)",
+                    "" if found else "Claude's research had no facts")
+
+
 def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, today: date) -> Findings:
     """The findings, or none with the reason (research off, no key, every model unable to search)."""
     if not settings.research:
         return Findings((), (), skipped="studio.research is off")
     if not keys.gemini:
         return Findings((), (), skipped="no GEMINI_API_KEY")
-    prompt = Template(PROMPT.read_text(encoding="utf-8")).substitute(
-        today=f"{today:%d %B %Y}", seconds=round(seconds), notes=notes.strip())
-    tried = []
+    prompt, tried = ask(notes, seconds, today), []
     for model in settings.research_models:
         try:
             answer, sources = llm.gemini_search(http, keys.gemini, model.id, prompt, workflow="studio", step="research")
-        except HttpError as exc:
-            tried.append(f"{model.id}: HTTP {exc.status}")
+        except HttpError as exc:  # status 0: the network or a timeout; 429: quota used up; 503: busy
+            tried.append(f"{model.id}: {'no connection' if exc.status == 0 else f'HTTP {exc.status}'}")
+            continue
+        except ValueError:  # an answer that is not JSON
+            tried.append(f"{model.id}: an unreadable answer")
             continue
         found = facts(answer)
         if found:

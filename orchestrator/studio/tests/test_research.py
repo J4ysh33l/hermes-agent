@@ -26,7 +26,9 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fakes import FakeHttp, http_error
-from test_queue import NIGHT, Stand
+
+from orchestrator.brief.net import Response
+from test_queue import DAY, NIGHT, Hub, Stand
 from test_writer import BOARD, SCRIPT
 
 from orchestrator.studio import chat, queue, research, settings
@@ -125,6 +127,42 @@ class Researching(unittest.TestCase):
         self.assertEqual(research.facts(plain), ("CAT 2026 is on Sunday, November 29, 2026.", "IIM Indore conducts CAT 2026."))
         self.assertEqual(research.facts("Facts:\n- One fact here.\n2. Another fact here."),
                          ("One fact here.", "Another fact here."))
+
+    def test_on_the_claude_path_claude_researches_when_gemini_cannot(self):
+        (self.home / ".env").write_text("GEMINI_API_KEY=g\nGITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")
+        self.brief("  writer: claude\n  handoff_repo: me/hand\n")
+        self.searchers = {}  # neither Gemini model may search
+        hub = Hub(self.http)
+        reply = chat.handle("make " + TOPIC, self.home, self.http)
+        self.assertIn("issue #1", reply)
+        ask = hub.issues[1]["body"]
+        self.assertIn("Studio research", ask)
+        self.assertIn("Use web search.", ask)
+        job_id = queue.jobs(self.home)[0].id
+        self.assertIn(f"studio/{job_id}/research.txt", ask)
+        hub.answer(1, {f"studio/{job_id}/research.txt": FOUND})
+        queue.run(chat.Context(self.home, self.http), DAY, False, Stand().tools())
+        script_ask = hub.issues[2]["body"]
+        self.assertIn("1 of 3: the script", script_ask)
+        self.assertIn("Only 12 candidates scored 100 percentile in CAT 2025", script_ask)
+        self.assertIn("research: 2 facts by claude (handoff) from iimcat.ac.in, careers360.com",
+                      queue.load(self.home, job_id).data["research"])
+
+    def test_whatever_stops_gemini_the_research_goes_to_claude_on_the_claude_path(self):
+        (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n  writer: claude\n"
+                                                    "  handoff_repo: me/hand\n", encoding="utf-8")
+        hub = Hub(self.http)
+        failures = {"no connection": http_error(0), "quota used up": http_error(429),
+                    "unreadable": lambda _c: Response(200, b"<html>busy</html>", {})}
+        for why, fail in failures.items():
+            self.http.on("POST", GEMINI, fail)
+            (self.home / ".env").write_text("GEMINI_API_KEY=g\nGITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")
+            chat.handle("make " + TOPIC, self.home, self.http)
+            self.assertIn("Studio research", hub.issues[len(hub.issues)]["body"], why)
+        (self.home / ".env").write_text("GITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")  # no Gemini key at all
+        chat.handle("make " + TOPIC, self.home, self.http)
+        self.assertIn("Studio research", hub.issues[len(hub.issues)]["body"])
+        self.assertEqual(len(hub.issues), 4)
 
     def test_research_can_be_switched_off(self):
         self.brief("  research: false\n")

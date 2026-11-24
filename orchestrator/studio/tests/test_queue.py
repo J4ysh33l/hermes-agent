@@ -214,8 +214,8 @@ class Queue(unittest.TestCase):
 
     def test_without_an_api_key_claude_makes_the_three_calls_through_the_handoff_repo(self):
         self.envfile("GITHUB_HANDOFF_TOKEN=g\n")
-        self.brief("  handoff_repo: me/hand\n", via="")  # the default: no API key needed
-        hub = Hub(self.http)
+        self.brief("  handoff_repo: me/hand\n  research: false\n", via="")  # the default: no API key needed
+        hub = Hub(self.http)  # (research has its own tests: test_research.py)
         reply = chat.handle("make " + NOTES, self.home, self.http)
         self.assertIn("issue #1", reply)
         job_id = queue.jobs(self.home)[0].id
