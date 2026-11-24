@@ -199,7 +199,8 @@ def _render(ctx: Any, job: Job, tools: Tools) -> None:
                                job.folder / f"hook{n}.mp4", job.data["profile"])
             out["hooks"][str(n)] = str(done.path)
     pick = json.loads((job.folder / "storyboard.cover.json").read_text(encoding="utf-8"))
-    out["cover"] = str(tools.cover(ctx.settings, ctx.home, board, job.folder / "cover.png", pick["scene"],
+    out["cover"] = str(tools.cover(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "cover.png",
+                                   pick["scene"],
                                    pick["words"], job.data["profile"]))
     report = tools.qc(made.path, made.seconds, longest_pause(board))
     out.update(qc=report.summary(), passed=report.passed)
@@ -301,9 +302,11 @@ def pick(ctx: Any, job_id: str, hook: int) -> Job:
     job = load(ctx.home, job_id)
     if not 1 <= hook <= 3 or job.state not in ("rendered", "done", "ready", "failed"):
         raise QueueError(f"Hook 1, 2 or 3 of a written job; {job_id} is {job.state}")
-    job.data.update(hook=hook, picked=True, outputs={})
+    # the same hook again on a failed job is a retry: the other hooks' clips are still wanted
+    retry = job.state == "failed" and hook == job.data["hook"] and not job.data["picked"]
+    job.data.update(hook=hook, picked=not retry, outputs={})
     job.data.pop("error", None)
-    job.log(f"hook {hook} picked", "ready")
+    job.log(f"hook {hook} picked" if not retry else "retry", "ready")
     return job
 
 

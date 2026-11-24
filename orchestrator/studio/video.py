@@ -183,9 +183,9 @@ def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboa
     job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second
     job.mkdir(parents=True)
     built = custom.prepare(http, keys, settings, home, board, look, job)
-    footage, found = broll.resolve(http, keys, home, built.board, look)  # stock: images → files, credited
-    built = replace(built, board=footage, notes=built.notes + found)
-    try:
+    try:  # from here the job's entry folder exists: whatever fails, it is removed
+        footage, found = broll.resolve(http, keys, home, built.board, look)  # stock: images → files, credited
+        built = replace(built, board=footage, notes=built.notes + found)
         return _render(http, keys, settings, home, check_countries(built.board), out, look, job, built)
     finally:
         custom.clean(built.entry)

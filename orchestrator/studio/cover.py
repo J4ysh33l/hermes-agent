@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from orchestrator.brief.net import Http
+
+from . import custom, video
 from . import profile as profiles
-from . import video
-from .settings import Settings
+from .settings import Keys, Settings
 from .storyboard import Storyboard
 from .voice import sentences
 
@@ -38,8 +41,8 @@ def props(board: Storyboard, n: int, words: str, job: Path, look: profiles.Profi
                       "exit": scene.exit, "transition": "", "emoji": scene.emoji, **fields}}
 
 
-def still_args(settings: Settings, job: Path, out: Path) -> list[str]:
-    args = [str(video.PROJECT / "node_modules/.bin/remotion"), "still", "src/index.ts", "Cover", str(out),
+def still_args(settings: Settings, job: Path, out: Path, entry: str = "src/index.ts") -> list[str]:
+    args = [str(video.PROJECT / "node_modules/.bin/remotion"), "still", entry, "Cover", str(out),
             f"--props={job / 'props.json'}", f"--public-dir={job}", f"--frame={FRAMES - 1}", "--image-format=png",
             "--log=error"]
     if settings.video_browser:
@@ -47,9 +50,11 @@ def still_args(settings: Settings, job: Path, out: Path) -> list[str]:
     return args
 
 
-def make(settings: Settings, home: Path, board: Storyboard, out: Path, scene: int = 1, words: str = "",
-         profile_name: str = "") -> Path:
-    """``scene`` counts from 1 (the hook); ``words`` defaults to the storyboard's title."""
+def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboard, out: Path, scene: int = 1,
+         words: str = "", profile_name: str = "") -> Path:
+    """``scene`` counts from 1 (the hook); ``words`` defaults to the storyboard's title. A custom scene is
+    built and checked like in the video (custom.py: cached, so a video's own scene costs nothing more), or
+    drawn as its fallback."""
     words = " ".join((words or board.title).split())
     if not words:
         raise CoverError("A cover needs 2–5 words: --words \"...\" (the storyboard has no title)")
@@ -63,15 +68,18 @@ def make(settings: Settings, home: Path, board: Storyboard, out: Path, scene: in
     board = video.check_countries(board)
     job = home / "studio" / "cover" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"
     job.mkdir(parents=True)
-    (job / "props.json").write_text(json.dumps(props(board, scene - 1, words, job, look), ensure_ascii=False),
+    built = custom.prepare(http, keys, settings, home, replace(board, scenes=(board.scenes[scene - 1],)), look, job)
+    (job / "props.json").write_text(json.dumps(props(built.board, 0, words, job, look), ensure_ascii=False),
                                     encoding="utf-8")
     out = out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
-        done = subprocess.run(still_args(settings, job, out), cwd=video.PROJECT, capture_output=True, text=True,
-                              timeout=TIMEOUT, check=False)
+        done = subprocess.run(still_args(settings, job, out, built.entry), cwd=video.PROJECT, capture_output=True,
+                              text=True, timeout=TIMEOUT, check=False)
     except subprocess.TimeoutExpired:
         raise CoverError(f"The cover took over {TIMEOUT // 60} minutes; job kept in {job}") from None
+    finally:
+        custom.clean(built.entry)
     (job / "render.log").write_text(done.stdout + done.stderr, encoding="utf-8")
     if done.returncode != 0 or not out.is_file():
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no error text"]

@@ -61,7 +61,7 @@ class Stand:
         self.videos.append((out.name, len(board.scenes)))
         return video.Video(out, 14.0, out.parent, 1.0, 2.0, ("scene 2: custom scene built",))
 
-    def cover(self, _settings, _home, _board, out: Path, scene: int, words: str, _profile) -> Path:
+    def cover(self, _http, _keys, _settings, _home, _board, out: Path, scene: int, words: str, _profile) -> Path:
         out.write_bytes(b"png")
         self.cover_args = (scene, words)
         return out
@@ -209,6 +209,17 @@ class Queue(unittest.TestCase):
         self.stand.video = lambda *a: (_ for _ in ()).throw(video.VideoError("Remotion failed: boom"))
         self.assertIn("failed: Remotion failed: boom", self.run_queue())
         self.assertIn("⚠️", queue.status(self.ctx()))
+
+    def test_picking_the_same_hook_after_a_failure_is_a_retry_that_still_makes_the_clips(self):
+        job = queue.add(self.ctx(), NOTES)
+        working = self.stand.video
+        self.stand.video = lambda *a: (_ for _ in ()).throw(video.VideoError("Remotion failed: boom"))
+        self.run_queue()
+        self.stand.video = working
+        self.stand.videos.clear()
+        chat.handle(f"pick {job.id} 1", self.home, self.http)
+        self.run_queue()
+        self.assertEqual([name for name, _n in self.stand.videos], ["video.mp4", "hook2.mp4", "hook3.mp4"])
 
     def test_the_window_may_cross_midnight(self):
         self.assertTrue(queue.in_window("23:00-06:00", datetime(2026, 1, 1, 2, 0)))

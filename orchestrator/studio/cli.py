@@ -50,7 +50,8 @@ def _cover(home: Path, words: list[str]) -> int:
     args = parser.parse_args(words)
     ctx = chat.Context(home)
     try:
-        made = cover.make(ctx.settings, home, storyboard.load(args.storyboard), args.out, args.scene, args.words,
+        made = cover.make(ctx.http, ctx.keys, ctx.settings, home, storyboard.load(args.storyboard), args.out,
+                          args.scene, args.words,
                           args.profile)
     except (storyboard.StoryboardError, profile.ProfileError, video.VideoError, cover.CoverError) as exc:
         print(f"⚠️ {exc}", file=sys.stderr)

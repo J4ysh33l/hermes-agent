@@ -266,9 +266,10 @@ class CoverTest(unittest.TestCase):
 
     def test_too_many_words_or_a_missing_scene_are_refused_before_rendering(self):
         with self.assertRaisesRegex(cover.CoverError, "At most 5 words"):
-            cover.make(settings.Settings(), self.folder, self.board, self.folder / "c.png", 1, "one two three four five six")
+            cover.make(None, settings.Keys(), settings.Settings(), self.folder, self.board, self.folder / "c.png", 1,
+                       "one two three four five six")
         with self.assertRaisesRegex(cover.CoverError, "Scene 9\\?"):
-            cover.make(settings.Settings(), self.folder, self.board, self.folder / "c.png", 9, "Rust")
+            cover.make(None, settings.Keys(), settings.Settings(), self.folder, self.board, self.folder / "c.png", 9, "Rust")
         self.assertFalse((self.folder / "c.png").exists())
 
 

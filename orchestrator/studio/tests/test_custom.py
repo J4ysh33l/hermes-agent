@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp
 
-from orchestrator.studio import custom, profile, settings, storyboard
+from orchestrator.studio import cover, custom, profile, settings, storyboard
 
 CLAUDE = "https://api.anthropic.com/v1/messages"
 RACE = (Path(__file__).parent / "data/race.tsx").read_text(encoding="utf-8")
@@ -108,6 +108,17 @@ class Preparing(unittest.TestCase):
         result = self.prepare(settings.Keys(claude="a"))
         self.assertEqual(result.board.scenes[1].type, "stat")
         self.assertIn("failed to draw", result.notes[0])
+
+    @unittest.skipUnless(HAS_REMOTION, "remotion not installed (install.sh)")
+    def test_a_cover_of_a_custom_scene_draws_its_component(self):
+        # the writer may pick a custom scene for the cover (a real job did): the still needs its component
+        (self.home / "scene02.tsx").write_text(RACE, encoding="utf-8")
+        raw = {**BOARD, "scenes": [BOARD["scenes"][0], {**BOARD["scenes"][1], "component": "scene02.tsx"}]}
+        board = storyboard.parse(raw, self.home)
+        out = cover.make(FakeHttp(), settings.Keys(), self.settings, self.home, board, self.home / "c.png", 2,
+                         "Twenty five times")
+        self.assertEqual(out.read_bytes()[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertFalse(any((custom.PROJECT / ".jobs").glob("*/index.tsx")))  # the entry is cleaned up
 
 
 if __name__ == "__main__":
