@@ -1,0 +1,42 @@
+# History, geography, news (Vox / Johnny Harris-like): paper tones, soft motion, 12 fps handmade look.
+description: Paper. Warm off-white, ink and one highlighter accent, soft feel, graphics at 12 fps.
+
+theme:
+  bg: "#efe6d2"
+  glow: "#f7f0de"
+  panel: "#fffaf0"
+  text: "#1d1a16"
+  muted: "#6b6153"
+  accent: "#c2410c"         # burnt orange: reads on cream (highlighter yellow did not)
+  cool: "#1d4ed8"           # ink blue
+  bad: "#b91c1c"
+  good: "#15803d"
+  font: montserrat
+  background: glow
+
+motion:
+  feel: soft
+  enter: rise
+  exit: fade
+  exit_frames: 8
+  punch: 0.05
+  drift: 0.05
+  step: 12
+
+captions:
+  upper: false
+  font: montserrat
+  stroke: 10
+  fill: "#1d1a16"           # ink on a paper-coloured outline (a black outline on dark text was unreadable)
+  outline: "#fffaf0"
+
+writing:
+  format: how-it-works
+  hooks: [question, curiosity, number]
+  humour: occasional understatement
+  tone: curious, calm, specific dates and places
+
+elements:
+  music: auto
+  sfx: auto
+  memes: off

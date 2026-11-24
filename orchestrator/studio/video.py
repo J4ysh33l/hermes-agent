@@ -2,11 +2,12 @@
 
 1. Every scene's ``say`` goes to the voice in one job; each sentence's start and end come back, so each
    scene starts when its first sentence starts and lasts until the next scene's.
-2. Captions come from the script, not a transcript (Whisper drops Hindi in mixed clips): each sentence's
+2. The page profile (``profile.py``) sets the look, motion, captions and voice.
+3. Captions come from the script, not a transcript (Whisper drops Hindi in mixed clips): each sentence's
    time is split over its words by length. Each scene also gets its sentences' start times ("beats"),
    so a list item or compare point appears when it is said, not on a timer. Hinglish rewritten into Devanagari for the voice is still
    captioned as you wrote it.
-3. ``remotion/`` (React templates) renders the props in its own Node project (``install.sh``) at the
+4. ``remotion/`` (React templates) renders the props in its own Node project (``install.sh``) at the
    quality set under ``studio:`` (crf 17, x264 slow, JPEG frames at 95, AAC 320k by default).
 
 Each job keeps its folder under ``$HERMES_HOME/studio/video/<time>/`` (voice.wav, props.json, assets,
@@ -26,7 +27,11 @@ from typing import Any
 
 from orchestrator.brief.net import Http
 
+from dataclasses import replace
+
+from . import profile as profiles
 from . import voice
+from .profile import Profile
 from .settings import Settings
 from .storyboard import Storyboard
 
@@ -49,14 +54,21 @@ class Video:
     render_took: float
 
 
-def word_times(text: str, start: float, end: float) -> list[dict[str, Any]]:
-    """One sentence's words spread over its span by length (a long word takes longer to say)."""
-    words = text.split()
+def word_times(marked: str, start: float, end: float) -> list[dict[str, Any]]:
+    """One sentence's words spread over its span by length (a long word takes longer to say).
+    Words inside *asterisks* come back with ``emphasis``."""
+    words, flags, inside = [], [], False
+    for raw in marked.split():
+        opens = raw.startswith("*")
+        inside = inside or opens
+        words.append(raw.replace("*", ""))
+        flags.append(inside)
+        inside = inside and not raw.rstrip(".,!?;:\"'()।").endswith("*")
     weights = [len(w.strip(".,!?;:\"'()।")) + 2 for w in words]
     total, at, out = sum(weights) or 1, start, []
-    for word, weight in zip(words, weights):
+    for word, weight, flag in zip(words, weights, flags):
         until = at + (end - start) * weight / total
-        out.append({"text": word, "start": round(at, 3), "end": round(until, 3)})
+        out.append({"text": word, "start": round(at, 3), "end": round(until, 3), "emphasis": flag})
         at = until
     return out
 
@@ -70,11 +82,11 @@ def _asset(board: Storyboard, job: Path, n: int, src: str) -> str:
     return name
 
 
-def props(board: Storyboard, job: Path, speech: voice.Speech) -> dict[str, Any]:
+def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> dict[str, Any]:
     spans = list(speech.lines)
     scenes, words, used = [], [], 0
     for n, scene in enumerate(board.scenes):
-        said = voice.sentences(scene.say)
+        said = voice.sentences(scene.marked)
         mine = spans[used:used + len(said)]
         used += len(said)
         for text, (_spoken, start, end) in zip(said, mine):
@@ -84,10 +96,11 @@ def props(board: Storyboard, job: Path, speech: voice.Speech) -> dict[str, Any]:
             fields["src"] = _asset(board, job, n, fields["src"])
         start = 0.0 if n == 0 else mine[0][1]
         beats = [round(s - start, 3) for _t, s, _e in mine]  # each sentence's start, from the scene's start
-        scenes.append({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats, **fields})
+        scenes.append({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats,
+                       "enter": scene.enter, "exit": scene.exit, **fields})
     if used != len(spans):
         raise VideoError(f"The voice gave {len(spans)} sentences for {used}; nothing rendered")
-    return {"audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}
+    return {"profile": look.render_props(), "audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}
 
 
 def render_args(settings: Settings, job: Path, out: Path) -> list[str]:
@@ -102,16 +115,26 @@ def render_args(settings: Settings, job: Path, out: Path) -> list[str]:
     return args
 
 
-def make(http: Http, key: str, settings: Settings, home: Path, board: Storyboard, out: Path) -> Video:
+def voiced(settings: Settings, look: Profile) -> Settings:
+    """The studio settings with the page profile's voice in place of studio.engine/voice/speed/pause."""
+    v = look.section("voice")
+    return replace(settings, engine=v["engine"], voice_en=v["voice_en"], voice_hi=v["voice_hi"],
+                   speed=float(v["speed"]), pause=float(v["pause"]))
+
+
+def make(http: Http, key: str, settings: Settings, home: Path, board: Storyboard, out: Path,
+         profile_name: str = "") -> Video:
+    """``profile_name`` (or the storyboard's, or studio.profile) picks the page profile."""
+    look = profiles.load(profile_name or board.profile or settings.profile, home)
     if not (PROJECT / "node_modules/.bin/remotion").is_file():
         raise VideoError("Remotion is not installed: run orchestrator/studio/install.sh (needs Node 18+)")
-    job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S}"
-    job.mkdir(parents=True, exist_ok=True)
+    job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second
+    job.mkdir(parents=True)
     started = time.monotonic()
     text = "\n".join(scene.say for scene in board.scenes)
-    speech = voice.speak(http, key, settings, home, text, job / "voice.wav")
+    speech = voice.speak(http, key, voiced(settings, look), home, text, job / "voice.wav")
     voice_took = time.monotonic() - started
-    (job / "props.json").write_text(json.dumps(props(board, job, speech), ensure_ascii=False), encoding="utf-8")
+    (job / "props.json").write_text(json.dumps(props(board, job, speech, look), ensure_ascii=False), encoding="utf-8")
     out = out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()

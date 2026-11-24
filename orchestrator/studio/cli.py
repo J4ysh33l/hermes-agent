@@ -1,6 +1,6 @@
 """On the host, no Telegram:
   python -m orchestrator.studio voice "text" --out speech.wav
-  python -m orchestrator.studio video storyboard.json --out short.mp4   (storyboard.py has the format)
+  python -m orchestrator.studio video storyboard.json --out short.mp4 [--profile bold]   (storyboard.py: format)
 or any ``/studio`` words (``python -m orchestrator.studio voices``)."""
 
 from __future__ import annotations
@@ -11,18 +11,20 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import chat, storyboard, video, voice
+from . import chat, profile, storyboard, video, voice
 
 
 def _video(home: Path, words: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m orchestrator.studio video")
     parser.add_argument("storyboard", type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--profile", default="", help="page profile (default: the storyboard's, else studio.profile)")
     args = parser.parse_args(words)
     ctx = chat.Context(home)
     try:
-        made = video.make(ctx.http, ctx.key, ctx.settings, home, storyboard.load(args.storyboard), args.out)
-    except (storyboard.StoryboardError, voice.VoiceError, video.VideoError) as exc:
+        made = video.make(ctx.http, ctx.key, ctx.settings, home, storyboard.load(args.storyboard), args.out,
+                          args.profile)
+    except (storyboard.StoryboardError, profile.ProfileError, voice.VoiceError, video.VideoError) as exc:
         print(f"⚠️ {exc}", file=sys.stderr)
         return 1
     print(f"{made.path}: {made.seconds:.1f} s · voice {made.voice_took:.0f} s · render {made.render_took:.0f} s"

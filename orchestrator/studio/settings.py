@@ -32,8 +32,9 @@ class Settings:
     voice_hi: str = "hm_omega"  # Kokoro voice for Hindi (Devanagari text)
     edge_voice_en: str = "en-IN-PrabhatNeural"  # Edge voice for English (/studio voices edge)
     edge_voice_hi: str = "hi-IN-MadhurNeural"  # Edge voice for Hindi (Devanagari text)
-    speed: float = 1.15  # 0.5 to 2.0; 1.15 ≈ 200 wpm (explainer channels read at 190–220)
-    pause: float = 0.12  # seconds of silence after each sentence (80–150 ms keeps it tight)
+    speed: float = 1.0  # 0.5 to 2.0; 1.0 with pause 0.15 ≈ 196 words a minute (1.15/0.12 ≈ 217)
+    pause: float = 0.15  # seconds of silence after each sentence
+    profile: str = "default"  # the page profile videos use unless one is named (studio/profiles)
     threads: int = 2  # CPU threads Kokoro may use
     kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
@@ -67,6 +68,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         edge_voice_hi=str(studio.get("edge_voice_hi", base.edge_voice_hi)),
         speed=min(2.0, max(0.5, float(studio.get("speed", base.speed)))),
         pause=float(studio.get("pause", base.pause)),
+        profile=str(studio.get("profile", base.profile)),
         threads=int(studio.get("threads", base.threads)),
         kokoro_model=str(studio.get("kokoro_model", base.kokoro_model)),
         studio_python=str(studio.get("studio_python", base.studio_python)),

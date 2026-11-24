@@ -219,8 +219,9 @@ studio:
   voice_hi: hm_omega          # for Hindi in Devanagari (Hinglish in Latin script is converted first)
   edge_voice_en: en-IN-PrabhatNeural   # Edge: /studio voices edge
   edge_voice_hi: hi-IN-MadhurNeural
-  speed: 1.15                 # 0.5 to 2.0; 1.15 ≈ 200 words a minute
-  pause: 0.12                 # seconds after each sentence
+  speed: 1.0                  # 0.5 to 2.0; 1.0 ≈ 196 words a minute (1.15 with pause 0.12 ≈ 217)
+  pause: 0.15                 # seconds after each sentence
+  profile: default            # page profile for videos: orchestrator/studio/profiles or $HERMES_HOME/studio/profiles
   threads: 2                  # CPU threads Kokoro may use (the host has 2)
   kokoro_model: kokoro-v1.0.fp16.onnx  # or kokoro-v1.0.int8.onnx (KOKORO_INT8=1 install.sh) if RAM is tight
   # Videos are 1080×1920 at 30 fps. Quality of the render:

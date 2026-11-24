@@ -1,6 +1,6 @@
 """A storyboard (JSON) → checked, frozen scenes for ``video.make``.
 
-{"title": "Rust in 30 seconds",
+{"title": "Rust in 30 seconds", "profile": "bold",
  "scenes": [{"type": "title", "say": "Rust is fast. Really fast.", "text": "Rust is fast", "kicker": "100 seconds"},
             {"type": "bullets", "say": "...", "title": "Why", "items": ["No GC", "Zero-cost abstractions"]},
             {"type": "code", "say": "...", "title": "main.rs", "code": "fn main() {}"},
@@ -9,8 +9,11 @@
             {"type": "compare", "say": "...", "left": {"label": "C++", "points": ["..."]},
                                               "right": {"label": "Rust", "points": ["..."]}}]}
 
-``say`` is the narration for the scene (the scene lasts as long as it takes to say); the other keys are what
-is on screen. ``src`` is a file next to the storyboard, or an https URL. Unknown types or keys are refused,
+``say`` is the narration for the scene (the scene lasts as long as it takes to say); wrap words in
+``*asterisks*`` to emphasise them (caption colour + a camera punch-in; the voice never hears the
+asterisks). The other keys are what is on screen, plus optional ``enter`` (pop, rise, slide, drop, zoom,
+fade) and ``exit`` (lift, fade, whip, zoom, cut) to override the profile's motion for that scene.
+``profile`` names the page profile (default: studio.profile). ``src`` is a file next to the storyboard, or an https URL. Unknown types or keys are refused,
 so a typo fails here and not halfway through a render.
 """
 
@@ -23,6 +26,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from .profile import SCHEMA as PROFILE_SCHEMA
+from .profile import ProfileError
 from .voice import sentences
 
 MAX_SCENES = 40
@@ -36,8 +41,11 @@ class StoryboardError(ValueError):
 @dataclass(frozen=True)
 class Scene:
     type: str
-    say: str
+    say: str  # what the voice reads (no asterisks)
+    marked: str  # the narration as written, *emphasis* kept, for captions
     fields: Mapping[str, Any]  # what is on screen, per SCHEMA[type]
+    enter: str  # "" = the profile's
+    exit: str
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,7 @@ class Storyboard:
     title: str
     scenes: tuple[Scene, ...]
     folder: Path  # where relative ``src`` files are
+    profile: str  # "" = studio.profile
 
 
 Field = Callable[[str, Any], Any]
@@ -99,14 +108,24 @@ def _scene(n: int, raw: Any) -> Scene:
     kind = raw.get("type")
     if kind not in SCHEMA:
         raise StoryboardError(f"{where}: type must be one of {', '.join(SCHEMA)}")
-    unknown = set(raw) - set(SCHEMA[kind]) - {"type", "say"}
+    unknown = set(raw) - set(SCHEMA[kind]) - {"type", "say", "enter", "exit"}
     if unknown:
         raise StoryboardError(f"{where} ({kind}): unknown key {min(unknown)!r}")
-    say = _text(True)(f"{where}.say", raw.get("say", MISSING))
+    marked = _text(True)(f"{where}.say", raw.get("say", MISSING))
+    if marked.count("*") % 2:
+        raise StoryboardError(f"{where}.say: an *emphasis* is not closed")
+    say = marked.replace("*", "")
     if not sentences(say):
         raise StoryboardError(f"{where}.say has nothing to say")
+    motion = {}
+    for key in ("enter", "exit"):
+        value = raw.get(key, "")
+        try:
+            motion[key] = PROFILE_SCHEMA["motion"][key](f"{where}.{key}", value) if value else ""
+        except ProfileError as exc:
+            raise StoryboardError(str(exc)) from None
     fields = {key: parse(f"{where}.{key}", raw.get(key, MISSING)) for key, parse in SCHEMA[kind].items()}
-    return Scene(kind, say, MappingProxyType(fields))
+    return Scene(kind, say, marked, MappingProxyType(fields), motion["enter"], motion["exit"])
 
 
 def parse(raw: Any, folder: Path) -> Storyboard:
@@ -114,7 +133,7 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         raise StoryboardError('A storyboard is {"title": ..., "scenes": [...]} with at least one scene')
     if len(raw["scenes"]) > MAX_SCENES:
         raise StoryboardError(f"At most {MAX_SCENES} scenes")
-    unknown = set(raw) - {"title", "scenes"}
+    unknown = set(raw) - {"title", "scenes", "profile"}
     if unknown:
         raise StoryboardError(f"unknown key {min(unknown)!r} in the storyboard")
     scenes = tuple(_scene(n, s) for n, s in enumerate(raw["scenes"]))
@@ -122,7 +141,8 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         src = str(scene.fields.get("src", ""))
         if src and not src.startswith("https://") and not (folder / src).is_file():
             raise StoryboardError(f"scene {n + 1}.src: {folder / src} not found")
-    return Storyboard(_text(False)("title", raw.get("title", MISSING)), scenes, folder)
+    return Storyboard(_text(False)("title", raw.get("title", MISSING)), scenes, folder,
+                      _text(False)("profile", raw.get("profile", MISSING)))
 
 
 def load(path: Path) -> Storyboard:

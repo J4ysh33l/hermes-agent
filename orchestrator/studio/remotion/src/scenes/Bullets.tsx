@@ -1,37 +1,31 @@
 import React from "react";
-import {interpolate} from "remotion";
-import {revealAt, usePop} from "../motion";
-import {theme} from "../theme";
+import {Arrive, revealAt} from "../motion";
+import {useTheme} from "../theme";
 import type {BulletsScene} from "../types";
 
-// Numbered list; items slide in spread over the narration so each lands near when it is said.
-export const Bullets: React.FC<{scene: BulletsScene; frames: number}> = ({scene, frames}) => (
-  <div style={{display: "flex", flexDirection: "column", gap: 34}}>
-    {scene.title ? (
-      <div style={{fontFamily: theme.sans, fontWeight: 900, fontSize: 84, color: theme.text, marginBottom: 20}}>
-        {scene.title}
-      </div>
-    ) : null}
-    {scene.items.map((item, n) => (
-      <Item key={n} n={n} text={item} delay={revealAt(n, scene.items.length, frames, scene.beats)} />
-    ))}
-  </div>
-);
-
-const Item: React.FC<{n: number; text: string; delay: number}> = ({n, text, delay}) => {
-  const p = usePop(delay);
+// Numbered list; each item arrives on the sentence that says it.
+export const Bullets: React.FC<{scene: BulletsScene; frames: number}> = ({scene, frames}) => {
+  const theme = useTheme();
   return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", gap: 30, background: theme.panel, borderRadius: 22,
-        padding: "28px 34px", borderLeft: `10px solid ${n % 2 ? theme.cool : theme.accent}`,
-        transform: `translateX(${interpolate(p, [0, 1], [-120, 0])}px)`, opacity: Math.min(1, p * 1.5),
-      }}
-    >
-      <div style={{fontFamily: theme.mono, fontSize: 52, color: n % 2 ? theme.cool : theme.accent}}>{n + 1}</div>
-      <div style={{fontFamily: theme.sans, fontWeight: 800, fontSize: 56, color: theme.text, lineHeight: 1.15}}>
-        {text}
-      </div>
+    <div style={{display: "flex", flexDirection: "column", gap: 34}}>
+      {scene.title ? (
+        <Arrive style={{fontFamily: theme.sans, fontWeight: 900, fontSize: 84, color: theme.text, marginBottom: 20}}>
+          {scene.title}
+        </Arrive>
+      ) : null}
+      {scene.items.map((item, n) => {
+        const colour = n % 2 ? theme.cool : theme.accent;
+        return (
+          <Arrive key={n} delay={revealAt(n, scene.items.length, frames, scene.beats)} enter="slide"
+            style={{display: "flex", alignItems: "center", gap: 30, background: theme.panel, borderRadius: 22,
+              padding: "28px 34px", borderLeft: `10px solid ${colour}`}}>
+            <div style={{fontFamily: theme.monoFamily, fontSize: 52, color: colour}}>{n + 1}</div>
+            <div style={{fontFamily: theme.sans, fontWeight: 800, fontSize: 56, color: theme.text, lineHeight: 1.15}}>
+              {item}
+            </div>
+          </Arrive>
+        );
+      })}
     </div>
   );
 };

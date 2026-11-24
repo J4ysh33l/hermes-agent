@@ -1,0 +1,59 @@
+# The neutral "dev dark" look (Fireship-like) until a page has its own. Every other profile extends this
+# one and states only what differs. Field meanings: orchestrator/studio/profile.py and PLAYBOOK.md.
+description: Dev dark. Navy-black, one loud yellow accent, snappy pops, Hormozi-style captions.
+
+theme:
+  bg: "#0b0f19"
+  glow: "#18223d"
+  panel: "#141a2b"
+  text: "#f5f7fb"
+  muted: "#9aa4bf"
+  accent: "#ffd23f"         # the spoken caption word, last title word, big numbers
+  cool: "#4cc9f0"           # *emphasised* words, second list colour
+  bad: "#ff5d73"
+  good: "#3ddc97"
+  font: inter               # inter | montserrat | anton
+  mono: jetbrains
+  background: glow-grid     # glow-grid | glow | flat
+
+motion:
+  feel: snappy              # snappy | soft | bouncy
+  enter: pop                # pop | rise | slide | drop | zoom | fade
+  exit: lift                # lift | fade | whip | zoom | cut
+  exit_frames: 5
+  punch: 0.08               # camera punch-in on *emphasised* words (0.08 = 8%)
+  drift: 0.04               # slow push over each scene
+  step: 0                   # 0 smooth; 12 = handmade 12 fps look
+
+captions:
+  words: 3                  # most words on screen at once
+  size: 92
+  upper: true
+  font: inter
+  stroke: 14
+  fill: "#f5f7fb"           # words not being said
+  outline: "#000000"        # outline and shadow
+
+voice:                      # this page's voice (overrides studio: in brief.yaml)
+  engine: kokoro
+  voice_en: am_puck
+  voice_hi: hm_omega
+  speed: 1.0                # with pause 0.15: 196 words a minute (measured)
+  pause: 0.15
+
+writing:                    # for script → storyboard
+  format: explainer         # explainer | news | how-it-works | business-case | hindi-explainer
+  language: en              # en | hi | hinglish
+  hooks: [definition-twist, contrarian, number]
+  humour: light, dry; one joke every 2–3 sentences at most
+  tone: confident, plain words, no hype
+  avoid: ["in this video", "smash that like button", "let's dive in", "game-changer"]
+  examples: []              # 3–5 scripts you liked, word for word
+  seconds: 45
+
+elements:                   # off | auto (only where it helps; never forced) | always
+  music: auto
+  sfx: auto
+  broll: auto
+  memes: off
+  scenes: []                # [] = every scene type

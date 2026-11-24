@@ -28,8 +28,8 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
   return the same number of lines, all in Devanagari, or nothing is spoken.
 - **Each sentence goes to its script's voice** (`voice_en`/`voice_hi`, or `edge_voice_en`/`edge_voice_hi`),
   with `studio.pause` seconds after it (the silence each engine leaves around a line is trimmed first, so
-  the pause alone sets the gap). Defaults `speed 1.15`, `pause 0.12`: 217 words a minute measured, the
-  pace of fast explainer channels (190–220). Each line's start and end come back, for captions and cuts.
+  the pause alone sets the gap). Defaults `speed 1.0`, `pause 0.15`: 196 words a minute measured
+  (`1.15`/`0.12` gives 217, Fireship's pace; your pick was ~198). Each line's start and end come back, for captions and cuts.
   (Whisper on a mixed clip dropped the Hindi lines, so captions for generated voiceovers come from
   the known script and these times, not from a fresh transcript.)
 - **Kokoro model:** fp16 (`kokoro-v1.0.fp16.onnx`, 169 MB) by default, at your request. It was faster
@@ -64,6 +64,17 @@ number counting up), **image** (a full-screen image or clip with a slow push and
 **compare** (two cards with VS). Every scene punches in (scale + blur) and keeps a slow push; captions
 are 2–3 words at a time, the word being said in yellow; a progress bar runs along the top.
 
+- **Page profiles** (`profile.py`, one YAML per page): theme (colours, fonts, background), motion
+  (spring feel, default entrance and exit, punch-in strength, drift, optional 12 fps handmade look),
+  captions, voice, writing (format, hooks, humour, tone, words to avoid, example scripts) and allowed
+  elements (music, sound effects, b-roll, memes: `off`, `auto` = only where it helps, or `always`).
+  Built in: `default` (dev dark), `bold` (black/yellow, Anton, whip cuts), `paper` (warm paper, soft,
+  12 fps). Yours go in `$HERMES_HOME/studio/profiles/<name>.yaml` and state only what differs
+  (`extends: bold` + two colours is a whole profile). Pick one with `--profile`, the storyboard's
+  `"profile"`, or `studio.profile`.
+- **Motion is building blocks, not fixed clips** (`remotion/src/motion.tsx`): 3 spring feels × 6 entrances
+  × 5 exits, a camera punch-in on `*emphasised*` words, slow drift, 12 fps stepping. The profile sets
+  defaults; a storyboard scene can override `enter`/`exit`; scenes compose them for their parts.
 - **Timing comes from the voice.** All narration goes to the voice in one job; each scene starts when its
   first sentence starts. Captions are the script as written, its time split over the words by length
   (not Whisper, which drops Hindi in mixed clips).

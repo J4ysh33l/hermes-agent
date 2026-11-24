@@ -1,3 +1,5 @@
+import type {Enter, Exit, Profile} from "./theme";
+
 // The props video.py writes (props.json). Times are seconds on the voice track; the composition is
 // as long as the voice plus a short tail. Every file path is relative to the job folder (--public-dir).
 
@@ -5,6 +7,7 @@ export interface Word {
   text: string;
   start: number;
   end: number;
+  emphasis: boolean; // *marked* in the script: accent colour + camera punch
 }
 
 export interface Side {
@@ -16,6 +19,8 @@ interface SceneBase {
   start: number;
   end: number;
   beats: number[]; // each sentence's start, seconds from the scene's start
+  enter: Enter | ""; // "" = the profile's
+  exit: Exit | "";
 }
 
 export interface TitleScene extends SceneBase {
@@ -59,6 +64,7 @@ export interface CompareScene extends SceneBase {
 export type Scene = TitleScene | BulletsScene | CodeScene | StatScene | ImageScene | CompareScene;
 
 export interface ShortProps extends Record<string, unknown> {
+  profile: Profile;
   audio: string;
   seconds: number;
   scenes: Scene[];
