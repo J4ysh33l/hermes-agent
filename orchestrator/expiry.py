@@ -2,11 +2,14 @@
 
 A workflow keeps a waiting plan in a file (``pending.json``, ``pending-slack.json`` …). When it expires
 unapproved, ``expire`` renames it to ``<name>.expired.json`` instead of deleting it; ``clear`` removes
-that marker when you make the plan again or say ``no``. ``orchestrator/recap`` reads both.
+that marker when you make the plan again or say ``no``; ``resume`` puts it back to wait for your yes
+with a fresh clock (``/resume``). ``orchestrator/recap`` reads both.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 
@@ -23,3 +26,13 @@ def clear(path: Path) -> bool:
     found = marker(path).is_file()
     marker(path).unlink(missing_ok=True)
     return found
+
+
+def resume(path: Path, now: float) -> None:
+    """The expired plan waits again, its clock restarted (the file stays private, 0600)."""
+    data = json.loads(marker(path).read_text(encoding="utf-8"))
+    data["created"] = now
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=1)
+    marker(path).unlink()

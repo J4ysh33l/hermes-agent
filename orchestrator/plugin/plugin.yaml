@@ -1,4 +1,4 @@
 name: orchestrator
 version: 0.4.0
-description: "Fork-only Telegram commands (/menu, /brief, /usage, /slack, /meet, /hr, /day, /bills, /goals, /recap) and the outreach and payslip skills."
+description: "Fork-only Telegram commands (/menu, /brief, /usage, /slack, /meet, /hr, /day, /bills, /goals, /recap, /resume) and the outreach and payslip skills."
 author: orchestrator (fork-only)

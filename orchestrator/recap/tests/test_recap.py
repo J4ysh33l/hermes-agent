@@ -8,7 +8,9 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 from datetime import date
 from pathlib import Path
 
@@ -20,7 +22,7 @@ from test_myday import FakeMicrosoft, at
 
 from orchestrator.myday.session import Session
 from orchestrator.outreach import plan
-from orchestrator.recap import cli
+from orchestrator.recap import cli, resume
 
 MON_8PM = at(23, 20)  # Mon 23 Nov 2026, 20:00 IST
 
@@ -68,9 +70,9 @@ class Recap(unittest.TestCase):
         self.assertLess(waiting, text.index("**Overdue**"))
         self.assertLess(text.index("**Overdue**"), text.index("**Coming up**"))
         self.assertIn("✍️ Payslip batch: waiting for your yes until 21:50 · /hr payslip show", text)
-        self.assertIn("⌛ Slack messages: expired 23 Nov 15:30 without your yes · make it again, or /slack no "
-                      "to drop it", text)
-        self.assertIn("⌛ Meetings: expired 21 Nov 15:30", text)
+        self.assertIn("⌛ 1. Slack messages: expired 23 Nov 15:30 without your yes · /resume 1 to bring it back, "
+                      "or /slack no to drop it", text)
+        self.assertIn("⌛ 2. Meetings: expired 21 Nov 15:30", text)
         self.assertLess(text.index("Legal notice"), text.index("Formal resignation"))  # urgent first
         self.assertNotIn("Application", text)  # counts-only mail never waits
         self.assertIn("▫️ Send deck — 3d overdue", text)
@@ -84,8 +86,8 @@ class Recap(unittest.TestCase):
         draft = plan.Plan("slack", "Slack", (plan.Line("Priya — hi", ()),), at(23, 10))
         store.save(draft)
         self.assertIsNone(store.waiting("slack", at(23, 11), 30))  # expired unapproved
-        self.assertIn("⌛ Slack messages: expired 23 Nov 10:30", self.recap())
-        self.assertIn("⌛ Slack messages: expired 23 Nov 10:30", self.recap(at(25, 20)))  # days later too
+        self.assertIn("⌛ 1. Slack messages: expired 23 Nov 10:30", self.recap())
+        self.assertIn("⌛ 1. Slack messages: expired 23 Nov 10:30", self.recap(at(25, 20)))  # days later too
         store.save(plan.Plan("slack", "Slack", draft.lines, at(25, 19, 50)))  # made again
         again = self.recap(at(25, 20))
         self.assertNotIn("expired", again)
@@ -93,6 +95,27 @@ class Recap(unittest.TestCase):
         store.waiting("slack", at(25, 21), 30)
         self.assertTrue(store.forget_expired("slack"))  # what /slack no does when nothing is live
         self.assertEqual(self.recap(at(25, 21)), "")
+
+    def test_resume_brings_an_expired_plan_back_unless_its_time_has_passed(self):
+        store = plan.Store(self.home / "brief")
+        dm = plan.Action("dm", text="hi", user_ids=("U1",))
+        store.save(plan.Plan("slack", "Slack messages", (plan.Line("Priya — hi", (dm,)),), at(23, 10)))
+        (self.home / "hr/interview.expired.json").write_text(json.dumps(
+            {"created": at(23, 9), "day": "2026-11-23", "panel": [], "warnings": [],
+             "candidates": [{"name": "Asha", "position": "Analyst", "start": "2026-11-23T17:00:00+05:30",
+                             "end": "2026-11-23T17:30:00+05:30", "email": "a@x.com"}]}), encoding="utf-8")
+        text = self.recap()
+        self.assertIn("⌛ 1. Interview batch", text)
+        self.assertIn("⌛ 2. Slack messages: expired 23 Nov 10:30 without your yes · /resume 2", text)
+        now = time.time()  # from here on the real clock: the preview is the workflow's own /slack show
+        with mock.patch.dict("os.environ", {"HERMES_HOME": str(self.home)}):
+            refused = resume.handle("1", self.home, now)
+            self.assertIn("Can't bring back the interview batch: Asha's slot (23 Nov 17:00) has passed", refused)
+            back = resume.handle("2", self.home, now)
+            self.assertIn("▶️ Slack messages is back, waiting for your yes for 30 min.", back)
+            self.assertIn("1. Priya — hi", back)  # its usual preview
+            self.assertIn("already waiting", resume.handle("2", self.home, now + 60))
+        self.assertIn("✍️ Slack messages: waiting for your yes", self.recap(now + 60))
 
     def test_nothing_waiting_sends_nothing(self):
         self.assertEqual(self.recap(), "")
