@@ -31,7 +31,7 @@ graphics:
   box_bg: "#000000"
   box_fg: "#FFFFFF"
   radius: 10
-  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image]
+  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image, split, pop]
   emoji: true
 
 pace:

@@ -55,6 +55,7 @@ export type EditItem = {
   emoji?: string;
   src?: string; // a file next to props.json (public dir)
   video?: boolean;
+  side?: "left" | "right"; // pop
 };
 
 export type GraphicProps = {
@@ -225,9 +226,52 @@ const Cutaway: React.FC<GraphicProps> = ({item, frames}) => {
   );
 };
 
+export const SEAM = 960; // split screen: the picture above, your face (moved down by ffmpeg) below
+
+// The picture fills the top half and slides in from the top; a thin accent line marks the seam.
+const Split: React.FC<GraphicProps> = ({look, item, frames}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const p = spring({frame, fps, config: {damping: 20, stiffness: 220}});
+  const out = interpolate(frame, [frames - OUT, frames], [0, 1], {extrapolateLeft: "clamp", extrapolateRight: "clamp"});
+  const y = (1 - p + out) * -SEAM;
+  const scale = interpolate(frame, [0, frames], [1, 1.06]);
+  const media: React.CSSProperties = {width: "100%", height: "100%", objectFit: "cover", transform: `scale(${scale})`};
+  return (
+    <AbsoluteFill>
+      <div style={{position: "absolute", left: 0, top: 0, width: 1080, height: SEAM, overflow: "hidden", transform: `translateY(${y}px)`,
+        background: "#000"}}>
+        {item.video ? <OffthreadVideo src={staticFile(item.src ?? "")} muted style={media} /> : <Img src={staticFile(item.src ?? "")} style={media} />}
+        <div style={{position: "absolute", left: 0, right: 0, bottom: 0, height: 6, background: look.accent}} />
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// A 1–3 word chip that pops in beside the face on the word it names (side: left | right, set by render.py).
+const Pop: React.FC<GraphicProps> = ({look, item, frames}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const p = spring({frame, fps, config: {damping: 9, stiffness: 260, mass: 0.6}});
+  const out = interpolate(frame, [frames - 5, frames], [1, 0], {extrapolateLeft: "clamp", extrapolateRight: "clamp"});
+  const left = item.side !== "right";
+  return (
+    <AbsoluteFill>
+      <div style={{position: "absolute", top: 660, [left ? "left" : "right"]: 56, opacity: Math.min(1, p * 2) * out,
+        transform: `scale(${(0.4 + 0.6 * p) * (0.85 + 0.15 * out)}) rotate(${(left ? -1 : 1) * (3 + (1 - p) * 8)}deg)`,
+        transformOrigin: left ? "left center" : "right center",
+        background: look.paper, color: look.ink, fontFamily: FAMILIES[look.font], fontWeight: 700, fontSize: 54,
+        padding: "14px 26px", borderRadius: look.radius, boxShadow: shadow,
+        [left ? "borderLeft" : "borderRight"]: `10px solid ${look.accent}`, maxWidth: 560, lineHeight: 1.1}}>
+        {item.text}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 const KINDS: Record<string, React.FC<GraphicProps>> = {
   title: Title, stat: Stat, headline: Headline, list: List, chapter: Chapter, lower_third: LowerThird, emoji: Emoji,
-  quote: Quote, image: Picture, screenshot: Picture, cutaway: Cutaway,
+  quote: Quote, image: Picture, screenshot: Picture, cutaway: Cutaway, split: Split, pop: Pop,
 };
 
 export const Graphic: React.FC<GraphicProps> = (props) => {

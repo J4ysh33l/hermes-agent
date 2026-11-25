@@ -15,7 +15,7 @@ title:
 
 graphics:
   serif: newsreader
-  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image, cutaway, quote]
+  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image, cutaway, quote, split, pop]
 
 pace:
   max_pause: 0.26

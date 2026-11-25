@@ -167,22 +167,23 @@ class Handoff:
                    "X-GitHub-Api-Version": "2022-11-28"}
         return self.http.request(method, f"{API}/repos/{self.repo}/{path}", headers=headers, **kw).json()
 
-    def put(self, path: str, text: str) -> None:
-        """Commit ``text`` at ``path`` (creating or replacing it; nothing when it is already the same)."""
+    def put(self, path: str, text: str | bytes) -> None:
+        """Commit ``text`` (or bytes, e.g. an image) at ``path`` (creating or replacing it; nothing when the same)."""
+        data = text if isinstance(text, bytes) else text.encode()
         try:
             found = self._call("GET", f"contents/{path}")
         except HttpError as exc:
             if exc.status != 404:
                 raise
             found = None
-        if found and base64.b64decode(found["content"]).decode("utf-8") == text:
+        if found and base64.b64decode(found["content"]) == data:
             return
-        body = {"message": f"handoff: {path}", "content": base64.b64encode(text.encode()).decode()}
+        body = {"message": f"handoff: {path}", "content": base64.b64encode(data).decode()}
         if found:
             body["sha"] = found["sha"]
         self._call("PUT", f"contents/{path}", json_body=body)
 
-    def send(self, files: dict[str, str], title: str, body: str) -> int:
+    def send(self, files: dict[str, str | bytes], title: str, body: str) -> int:
         """Commit each ``path: text``, then open the issue (``body`` is Claude's whole task); returns its number."""
         if len(body) > MAX_BODY:
             raise HandoffError(f"the request is {len(body):,} characters; GitHub takes at most {MAX_BODY:,}")

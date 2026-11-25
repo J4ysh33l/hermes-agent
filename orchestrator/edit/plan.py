@@ -18,19 +18,24 @@ time. Checked here (``check``), so a plan that would break the video goes back w
         {"kind": "quote", "at": "S9.1", "text": "...", "by": "..."},
         {"kind": "cutaway", "at": "S4.1", "to": "S4.20", "query": "student solving maths at desk at night"},
         {"kind": "image", "at": "S11.1", "file": "chart.png", "caption": "..."},
-        {"kind": "screenshot", "at": "S2.3", "file": "screen1.png"}
+        {"kind": "screenshot", "at": "S2.3", "file": "screen1.png"},
+        {"kind": "split", "at": "S6.1", "to": "S6.14", "query": "nurse writing paper register"},   # or "file"
+        {"kind": "pop", "at": "S3.2", "text": "Missed claims"},                         # a 1–3 word chip pops in
+        {"kind": "hide", "at": "S2.1", "to": "S2.9", "box": [0.1, 0.55, 0.5, 0.2]}       # blur x, y, w, h (0–1)
       ],
       "music": "calm focused lofi",                 # mood words for the bed ("" = none)
       "notes": "what you should know"               # goes to you with the preview
     }
 
 ``at``/``to`` are ``S<sentence>.<word>``, words counted from 1. Without ``to`` a graphic lasts to the end of
-its sentence (cards), 1.2 s (emoji) or 2 s (chapter). Numbers on screen must be ones you said (or wrote in
+its sentence (cards), 1.2 s (emoji, pop) or 2 s (chapter). A cutaway or split may name ``file`` (the
+creator's own footage or screen recording in the job's assets/) instead of a stock ``query``. Numbers on screen must be ones you said (or wrote in
 the job's notes): the editor never invents a figure.
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 from dataclasses import dataclass, field
@@ -42,11 +47,15 @@ if TYPE_CHECKING:
 from .words import Sentence
 
 KINDS = ("stat", "headline", "list", "quote", "chapter", "emoji", "lower_third", "screenshot", "image",
-         "cutaway")
+         "cutaway", "split", "pop", "hide")
 ANCHOR = re.compile(r"^S(\d+)\.(\d+)$")
-TEXT_MAX = {"stat": 28, "headline": 90, "chapter": 40, "lower_third": 40, "quote": 160, "list": 34, "caption": 60}
+TEXT_MAX = {"pop": 24, "stat": 28, "headline": 90, "chapter": 40, "lower_third": 40, "quote": 160, "list": 34, "caption": 60}
 CARD_KINDS = {"stat", "headline", "list", "quote", "lower_third", "chapter"}  # captions step aside while one shows
 FULL_KINDS = {"cutaway", "image", "screenshot"}  # cover the picture; captions stay
+SPLIT_KINDS = {"split"}  # the top half shows the picture, your face moves to the bottom half
+BROLL_KINDS = FULL_KINDS | SPLIT_KINDS
+FILE_OR_QUERY = {"cutaway", "split"}
+QUIET_MAX = 2.6  # × pace.change_every: the longest stretch with nothing new on screen
 LONGEST_CARD = 7.0
 MIN_GAP = 0.4  # between two graphics in the same place
 NUMBER = re.compile(r"\d[\d,.]*")
@@ -136,7 +145,7 @@ def place(plan: Plan, found_list: list[Sentence]) -> list[Graphic]:
         start = _time(found, start_anchor, "start")
         if "to" in g:
             end = _time(found, _anchor(str(g["to"])), "end")
-        elif kind == "emoji":
+        elif kind in ("emoji", "pop"):
             end = start + 1.2
         elif kind == "chapter":
             end = start + 2.0
@@ -165,7 +174,7 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
         size = len(next((s.words for s in found if s.id == sid), ()))
         if size and not 1 <= a <= b <= size:
             problems.append(f"trim S{sid}: from {a} to {b} must be inside its {size} words")
-    if found and len(plan.drop) > 0.6 * len(found):
+    if found and len(plan.drop) > 0.7 * len(found):
         problems.append(f"{len(plan.drop)} of {len(found)} sentences dropped: the talk is yours, cut only what fails")
     title_words = len(plan.title.replace("*", " ").split())
     starred = plan.title.count("*")
@@ -173,7 +182,7 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
         problems.append("title: mark at most two stretches with *stars*, in pairs, and only when the style's title has an accent")
     if look["title"]["kind"] != "none" and not 2 <= title_words <= 9:
         problems.append(f"title must be 2–9 words (it is {title_words})")
-    allowed = set(look["graphics"]["kinds"]) | ({"emoji"} if look["graphics"]["emoji"] else set())
+    allowed = set(look["graphics"]["kinds"]) | ({"emoji"} if look["graphics"]["emoji"] else set()) | {"hide"}  # always
     said = " ".join(s.text for s in found) + " " + plan.title + " " + evidence
     known = {re.sub(r"[,.]", "", n) for n in NUMBER.findall(said)}
     try:
@@ -188,8 +197,13 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
         if g.kind not in allowed:
             problems.append(f"{where}: this style does not use {g.kind} (allowed: {', '.join(sorted(allowed))})")
         need = {"stat": ["text"], "headline": ["text"], "list": ["items"], "chapter": ["text"], "lower_third": ["text"],
-                "emoji": ["emoji"], "quote": ["text"], "cutaway": ["query"], "image": ["file"], "screenshot": ["file"]}[g.kind]
+                "emoji": ["emoji"], "quote": ["text"], "cutaway": [], "split": [], "pop": ["text"], "hide": ["box"],
+                "image": ["file"], "screenshot": ["file"]}[g.kind]
         problems += [f"{where}: needs '{k}'" for k in need if not raw.get(k)]
+        if g.kind in FILE_OR_QUERY and not (raw.get("query") or raw.get("file")):
+            problems.append(f"{where}: needs 'query' (stock footage to find) or 'file' (one of the job's assets)")
+        if g.kind == "hide" and not _box(raw.get("box")):
+            problems.append(f"{where}: box must be [x, y, w, h], fractions of the frame (0–1), inside it")
         for key, text in _texts(raw):
             limit = TEXT_MAX.get("caption" if key in ("caption", "sub", "source", "by") else ("list" if key == "item" else g.kind), 90)
             if len(text) > limit:
@@ -202,14 +216,63 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
         if cut.ranges and not _kept(cut, g.start):
             problems.append(f"{where}: it starts in a part that is cut (S{_anchor(str(raw['at']))[0]} dropped or trimmed?)")
     for a, b in zip(sorted(placed, key=lambda g: g.start), sorted(placed, key=lambda g: g.start)[1:]):
-        same_place = (a.kind in CARD_KINDS and b.kind in CARD_KINDS) or (a.kind in FULL_KINDS and b.kind in FULL_KINDS)
+        same_place = (a.kind in CARD_KINDS and b.kind in CARD_KINDS) or (a.kind in BROLL_KINDS and b.kind in BROLL_KINDS) \
+            or (a.kind == b.kind == "pop")
         if same_place and b.start < a.end + MIN_GAP:
             problems.append(f"{a.kind} at {a.data.get('at')} and {b.kind} at {b.data.get('at')} overlap: move one or add 'to'")
-    covered = sum(min(g.end, g.start + 20) - g.start for g in placed if g.kind in FULL_KINDS)
+    covered = sum(min(g.end, g.start + 20) - g.start for g in placed if g.kind in FULL_KINDS) \
+        + 0.5 * sum(min(g.end, g.start + 20) - g.start for g in placed if g.kind in SPLIT_KINDS)
     if cut.seconds and covered > look["pace"]["broll"] * cut.seconds + 1:
         problems.append(f"cutaways cover {covered:.0f} s of {cut.seconds:.0f} s; this style allows about "
-                        f"{look['pace']['broll'] * 100:.0f}% (your face is the video)")
+                        f"{look['pace']['broll'] * 100:.0f}% (a split counts half)")
+    kept = [g for g in placed if not cut.ranges or _kept(cut, g.start)]
+    if cut.seconds > 25 and look["pace"]["broll"] >= 0.15 and not any(g.kind in BROLL_KINDS for g in kept) \
+            and BROLL_KINDS & allowed:
+        problems.append(f"{cut.seconds:.0f} s of face with no b-roll: add at least one cutaway or split where the words "
+                        "describe something seeable (or an image/screenshot)")
+    if cut.ranges:
+        problems += _quiet(plan, kept, found, cut, look)
     return problems
+
+
+def _box(value: Any) -> tuple[float, float, float, float] | None:
+    """[x, y, w, h] as fractions of the frame, inside it and not a sliver; else None."""
+    try:
+        x, y, w, h = (float(v) for v in value)
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= x < 1 and 0 <= y < 1 and 0.02 <= w and 0.02 <= h and x + w <= 1.001 and y + h <= 1.001):
+        return None
+    return x, y, w, h
+
+
+def _quiet(plan: Plan, placed: list[Graphic], found: list[Sentence], cut: CutList, look: Style) -> list[str]:
+    """Stretches of the finished video where nothing new appears (no graphic, punch-in or cut between takes)."""
+    limit = max(5.0, QUIET_MAX * float(look["pace"]["change_every"]))
+    events = {0.0, cut.seconds}
+    events |= {cut.to_output(g.start) for g in placed if g.kind != "hide"}
+    events |= {cut.to_output(g.end) for g in placed if g.kind in BROLL_KINDS}
+    events |= {cut.to_output(t) for t in punch_points(plan, found, cut, look)}
+    out_t = 0.0
+    for a, b in zip(cut.ranges, cut.ranges[1:]):  # a jump between two takes or after a dropped line is a change
+        out_t += a.end - a.start
+        if b.start - a.end > 1.0:
+            events.add(out_t)
+    times = sorted(events)
+    problems = []
+    for a, b in itertools.pairwise(times):
+        if b - a > limit:
+            problems.append(f"nothing new on screen from {a:.0f} s to {b:.0f} s of the edit ({_said_at(found, cut, a)}): "
+                            f"this style wants a change about every {look['pace']['change_every']} s; add a pop, card, "
+                            "split, cutaway or punch-in there, or cut the stretch")
+    return problems
+
+
+def _said_at(found: list[Sentence], cut: CutList, out_t: float) -> str:
+    for s in found:
+        if _kept(cut, s.start) and cut.to_output(s.end) > out_t + 0.2:
+            return f"around S{s.id}"
+    return "near the end"
 
 
 def _kept(cut: CutList, t: float) -> bool:

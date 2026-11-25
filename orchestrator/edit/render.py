@@ -36,6 +36,10 @@ import itertools
 FADE = 0.015
 TITLE_SHORTEST, TITLE_LONGEST = 2.5, 8.0
 LOGO_PX = 96
+W, H = 1080, 1920
+SEAM = 960  # split screen: picture above, face below (Graphic.tsx SEAM)
+FACE_TOP = 150  # the band of the frame (FACE_TOP to FACE_TOP + SEAM) that holds head and shoulders
+MASK_KINDS = {"hide"}  # done by ffmpeg, not drawn by Remotion
 PROGRESS_PX = 8
 
 
@@ -162,6 +166,8 @@ def place(chosen: plans.Plan, found: list[Sentence], words: list[Word], cut: cut
         item = {k: v for k, v in g.data.items() if k not in ("at", "to")}
         if g.kind == "list":
             item["beats"] = _list_beats(item, a, b, words, cut, fps)
+        if g.kind == "pop":
+            item["side"] = "left" if sum(p.kind == "pop" for p in out) % 2 == 0 else "right"
         out.append(Placed(g.kind, a, max(b, a + 0.5), item))
     return sorted(out, key=lambda p: p.start), notes
 
@@ -179,10 +185,17 @@ def _assets(job: Path, placed: list[Placed], http: Http | None, keys: Keys, home
                 continue
             shutil.copy(src, public / src.name)
             p.item["src"] = src.name
-        elif p.kind == "cutaway":
-            got = broll.fetch(http, keys, home, str(p.item["query"])) if http else None
+        elif p.kind in ("cutaway", "split") and p.item.get("file"):
+            src = job / "assets" / str(p.item["file"])
+            if not src.is_file():
+                notes.append(f"{p.kind} {p.item['file']!r} skipped: not in the job's assets")
+                continue
+            shutil.copy(src, public / src.name)
+            p.item["src"], p.item["video"] = src.name, src.suffix.lower() in (".mp4", ".mov", ".webm", ".m4v")
+        elif p.kind in ("cutaway", "split"):
+            got = broll.fetch(http, keys, home, str(p.item.get("query", ""))) if http else None
             if not got:
-                notes.append(f"cutaway {p.item['query']!r} skipped: no stock footage found")
+                notes.append(f"{p.kind} {p.item.get('query')!r} skipped: no stock footage found")
                 continue
             path, credit = got
             shutil.copy(path, public / path.name)
@@ -222,10 +235,36 @@ def render_graphics(job: Path, placed: list[Placed], look: Style, studio: Studio
     return files
 
 
+def _even(x: float) -> int:
+    return max(2, round(x / 2) * 2)
+
+
+def _masks(placed: list[Placed], last: str) -> tuple[list[str], str]:
+    """Blur each "hide" box for its time, then move the face to the bottom half during each split. Both work
+    on the cut footage, before the graphics go on top."""
+    chains = []
+    for n, p in enumerate(q for q in placed if q.kind == "hide"):
+        x, y, w, h = p.item["box"]
+        bx, by = _even(x * W), _even(y * H)
+        bw, bh = min(_even(w * W), W - bx), min(_even(h * H), H - by)
+        chains.append(f"{last}split=2[hm{n}][hc{n}]")
+        chains.append(f"[hc{n}]crop={bw}:{bh}:{bx}:{by},scale=iw/16:ih/16,gblur=sigma=2,scale={bw}:{bh}:flags=bilinear[hb{n}]")
+        chains.append(f"[hm{n}][hb{n}]overlay={bx}:{by}:enable='between(t,{p.start:.3f},{p.end:.3f})'[hv{n}]")
+        last = f"[hv{n}]"
+    for n, p in enumerate(q for q in placed if q.kind == "split"):
+        chains.append(f"{last}split=2[sm{n}][sc{n}]")
+        chains.append(f"[sc{n}]crop={W}:{SEAM}:0:{FACE_TOP}[sf{n}]")
+        chains.append(f"[sm{n}][sf{n}]overlay=0:{SEAM}:enable='between(t,{p.start:.3f},{p.end:.3f})'[sv{n}]")
+        last = f"[sv{n}]"
+    return chains, last
+
+
 def finish(job: Path, base: Path, sound_file: Path, placed: list[Placed], gfx: list[Path], ass: Path | None, fonts: Path | None,
            look: Style, home: Path, seconds: float, edit: Settings, out: Path) -> Path:
+    """``placed`` holds every graphic; ``gfx`` the Remotion clips for those that are drawn (all but "hide")."""
     inputs = ["-i", str(base)]
-    chains, last = [], "[0:v]"
+    chains, last = _masks(placed, "[0:v]")
+    placed = [p for p in placed if p.kind not in MASK_KINDS]
     for n, (p, clip) in enumerate(zip(placed, gfx), start=1):
         inputs += ["-i", str(clip)]
         chains.append(f"[{n}:v]setpts=PTS-STARTPTS+{p.start:.3f}/TB[g{n}]")
@@ -265,12 +304,25 @@ def _music(http: Http | None, home: Path, look: Style, chosen: plans.Plan, title
     if use == "off" or (use == "auto" and not chosen.music):
         return None, []
     tracks = [t for t in sound.library(home) if isinstance(t, sound.Track) and (not t.profiles or look.name in t.profiles)]
-    if not tracks and http is not None:
-        tracks = sound.fetch_music(http, home, chosen.music or look["sound"]["music_query"])
+    if not tracks and http is not None:  # Openverse finds little for 3+ words: then fewer, then the style's own
+        for query in _music_queries(chosen.music, look["sound"]["music_query"]):
+            tracks = sound.fetch_music(http, home, query)
+            if tracks:
+                break
     if not tracks:
         return None, ["no music: nothing in studio/music/music.yaml and none found on Openverse"]
     track = tracks[int(hashlib.sha256(title.encode()).hexdigest(), 16) % len(tracks)]
     return track, [f"music: {track.credit}" + ("" if track.licence in track.credit else f" ({track.licence})")]
+
+
+def _music_queries(asked: str, default: str) -> list[str]:
+    out = []
+    for text in (asked, default):
+        words = text.split()
+        for q in (" ".join(words), " ".join(words[:2]), " ".join(words[-2:]), words[-1] if words else ""):
+            if q and q not in out:
+                out.append(q)
+    return out[:6]
 
 
 def _cues(placed: list[Placed], use: str) -> list[sound.Cue]:
@@ -278,9 +330,9 @@ def _cues(placed: list[Placed], use: str) -> list[sound.Cue]:
         return []
     out = []
     for p in placed:
-        if p.kind in ("stat", "emoji", "lower_third", "chapter") or (use == "always" and p.kind in ("list", "headline", "quote")):
+        if p.kind in ("stat", "emoji", "lower_third", "chapter", "pop") or (use == "always" and p.kind in ("list", "headline", "quote")):
             out.append(sound.Cue(p.start, "pop"))
-        elif p.kind == "cutaway":
+        elif p.kind in ("cutaway", "split"):
             out.append(sound.Cue(max(0.0, p.start - sound.EFFECTS["whoosh"][2]), "whoosh"))
     return out
 
@@ -297,11 +349,12 @@ def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found:
     placed, notes = place(chosen, found, words, cut, look, edit.fps)
     placed, more = _assets(job, placed, http, keys, home)
     notes += more
-    gfx = render_graphics(job, placed, look, studio, edit.fps)
+    gfx = render_graphics(job, [p for p in placed if p.kind not in MASK_KINDS], look, studio, edit.fps)
     ass = fonts = None
     if look["captions"]["show"]:
         hidden = [(p.start, p.end) for p in placed if p.kind in plans.CARD_KINDS]
-        ass, fonts = captions.write(captions.pages(words, cut, look, hidden), look, job)
+        seam = [(p.start, p.end) for p in placed if p.kind in plans.SPLIT_KINDS]
+        ass, fonts = captions.write(captions.pages(words, cut, look, hidden), look, job, seam)
     voice = cut_voice(job, cut)
     track, music_notes = _music(http, home, look, chosen, chosen.title.replace("*", "") or job.name)
     mixed = sound.mix(home, voice, sound.Plan(tuple(_cues(placed, look["sound"]["sfx"])), track, tuple(music_notes)), seconds,

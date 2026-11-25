@@ -50,16 +50,26 @@ def cmd_run(a: argparse.Namespace, home: Path) -> int:
         print(f"transcript: {time.monotonic() - t:.0f} s", flush=True)
     ws = words.load(job / "transcript.json")
     found = words.sentences(ws)
+    if not any(job.glob("frames-*.jpg")):
+        media.sheets(job / "source.mp4", found, job)
     chosen = plans.load(Path(a.plan).read_text(encoding="utf-8")) if a.plan else plans.basic(found, look)
     cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
-    problems = plans.check(chosen, found, cut, look, a.notes or "")
+    problems = plans.check(chosen, found, cut, look, a.notes or "") if a.plan else []
+    if not a.plan:
+        print("no plan: cuts, captions and punch-ins only (not a finished edit; write one with `prompt`)", file=sys.stderr)
     if problems:
         print("plan problems:\n" + "\n".join(f"- {p}" for p in problems), file=sys.stderr)
         return 1
     (job / "plan.json").write_text(json.dumps(chosen.as_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
     t = time.monotonic()
     out = Path(a.out) if a.out else job / "edited.mp4"
-    result = render.render(job, look, chosen, ws, found, edit, studio, home, out)
+    from orchestrator.brief.creds import Secrets
+    from orchestrator.brief.net import UrllibHttp
+    from orchestrator.studio.settings import Keys
+    secrets = Secrets(home / ".env", home / "brief" / "tokens")  # stock footage and music need the network
+    keys = Keys(secrets.get("GEMINI_API_KEY", "GOOGLE_API_KEY"), secrets.get("ANTHROPIC_API_KEY"),
+                secrets.get("PEXELS_API_KEY"), secrets.get("PIXABAY_API_KEY"))
+    result = render.render(job, look, chosen, ws, found, edit, studio, home, out, UrllibHttp(timeout=120), keys)
     print(f"render: {result.seconds:.1f} s of video in {time.monotonic() - t:.0f} s → {result.video}")
     print(result.report)
     for note in result.notes:
@@ -72,7 +82,12 @@ def cmd_prompt(a: argparse.Namespace, home: Path) -> int:
     look = _job_style(job, home)
     ws = words.load(job / "transcript.json")
     asked = a.notes or ((job / "asked.txt").read_text(encoding="utf-8") if (job / "asked.txt").is_file() else "")
-    print(editor.prompt(job.name, look, ws, words.sentences(ws), asked, str(job)))
+    found = words.sentences(ws)
+    if not any(job.glob("frames-*.jpg")) and (job / "source.mp4").is_file():
+        media.sheets(job / "source.mp4", found, job)
+    sheets = sorted(p.name for p in job.glob("frames-*.jpg"))
+    assets = sorted(p.name for p in (job / "assets").glob("*") if p.is_file()) if (job / "assets").is_dir() else []
+    print(editor.prompt(job.name, look, ws, found, asked, str(job), sheets=sheets, assets=assets))
     return 0
 
 

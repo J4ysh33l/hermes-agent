@@ -34,11 +34,18 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
    gives word times. It writes Hinglish in Latin letters (`edit.asr_language: en`, with a Hinglish prompt
    that also keeps "umm"/"matlab" from being dropped). The words are grouped into numbered sentences
    (`words.py`).
-3. **Plan** (`editor.py`, `plan.py`, `prompts/plan.md`). Claude reads the numbered sentences and the
-   style, then writes `plan.json`:
-   - sentences to drop, or words to trim;
+3. **Plan** (`editor.py`, `plan.py`, `prompts/plan.md`). Claude directs the edit. It reads the numbered
+   sentences, the style, your notes, the list of your own files in the job's `assets/`, and **frame
+   sheets** (`frames-*.jpg`: one frame from each sentence, labelled), so it sees what the camera saw. It
+   writes `plan.json`:
+   - sentences to drop and words to trim (a raw talk usually loses 25–50%);
    - the title card;
-   - graphics anchored to words (`S3.5` = sentence 3, word 5);
+   - what covers or joins the face, anchored to words (`S3.5` = sentence 3, word 5):
+     - `cutaway`: full-screen b-roll, from your files (`file`) or stock (`query`);
+     - `split`: the picture fills the top half and your face moves to the bottom half;
+     - `pop`: a 1–3 word chip that springs in beside your face;
+     - `stat`, `list`, `chapter`, `headline`, `quote`, `image`, `screenshot` cards;
+     - `hide`: a blurred box over anything private (a patient's name, a phone number);
    - punch-ins and the music mood.
 
    Claude never sees or writes times, so it can't cut into a word. The plan goes through your Claude plan
@@ -48,11 +55,13 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
    - no number may appear that you didn't say;
    - no two cards may overlap;
    - only kinds the style allows;
-   - cutaways must stay within the style's share;
+   - b-roll must stay within the style's share (a split counts half), and a talk over 25 s needs some;
+   - nothing may stay unchanged on screen for longer than about 2.6 × the style's `change_every`;
    - a title of 2–9 words.
 
-   A failing plan goes back twice. After that the job is edited on code alone (cuts, captions, punch-ins),
-   and the notes say so.
+   Captions over the full take is not an edit, so a plan like that fails. A plan that still fails after
+   two rounds becomes a rough cut (cuts, captions, punch-ins). The rough cut is never rendered without
+   your approval, even with `edit.approve: false`.
 4. **Cut list** (`cuts.py`, code only). This step:
    - cuts pauses longer than `pace.max_pause` down to it;
    - cuts fillers that stand alone ("umm", and "matlab"/"toh" only when isolated);

@@ -152,6 +152,30 @@ class PlanTests(unittest.TestCase):
     def check(self, raw: dict) -> list[str]:
         return plans.check(plans.Plan.parse({"title": "Mocks alone won't do it", **raw}), self.found, self.cut, self.look)
 
+    def test_director_moves_are_checked(self) -> None:
+        ok = self.check({"graphics": [{"kind": "pop", "at": "S1.2", "text": "Nobody tells you"},
+                                      {"kind": "split", "at": "S2.1", "to": "S2.6", "file": "demo.mp4"},
+                                      {"kind": "hide", "at": "S2.1", "box": [0.1, 0.6, 0.3, 0.1]}]})
+        self.assertEqual(ok, [])
+        bad = self.check({"graphics": [{"kind": "split", "at": "S2.1"},
+                                       {"kind": "hide", "at": "S2.1", "box": [0.9, 0.9, 0.5, 0.5]},
+                                       {"kind": "pop", "at": "S3.1", "text": "a chip far too long to fit beside a face"}]})
+        self.assertTrue(any("'query'" in p for p in bad))
+        self.assertTrue(any("box must be" in p for p in bad))
+        self.assertTrue(any("characters" in p for p in bad))
+
+    def test_captions_only_is_refused(self) -> None:
+        ws = talk("Every morning the queue reaches the gate.", "Patients wait two hours for a token.",
+                  "The receptionist writes each name by hand.", "Then billing asks for the same details again.",
+                  "Files go missing between the wards.", "Doctors search for old reports on paper.",
+                  "Claims get rejected for small errors.", "Nobody sees the whole picture of the day.",
+                  "That is what we fixed first.", pause=0.2)
+        found = words.sentences(ws)
+        cut = cuts.build(ws, found, self.look)
+        bare = plans.check(plans.Plan.parse({"title": "Queues waste the morning", "punch": []}), found, cut, self.look)
+        self.assertTrue(any("nothing new on screen" in p for p in bare))
+        self.assertTrue(any("no b-roll" in p for p in bare))
+
     def test_a_good_plan_passes(self) -> None:
         self.assertEqual(self.check({"graphics": [{"kind": "stat", "at": "S2.5", "text": "10× the same questions"},
                                                   {"kind": "emoji", "at": "S3.1", "emoji": "🔥"}]}), [])
@@ -198,7 +222,7 @@ class CaptionTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
-    def test_a_job_without_claude_is_still_edited(self) -> None:
+    def test_a_job_without_the_director_waits_for_you(self) -> None:
         with Home() as home:
             (home / "brief").mkdir()
             (home / "brief" / "brief.yaml").write_text("edit:\n  approve: false\n", encoding="utf-8")
@@ -208,14 +232,13 @@ class QueueTests(unittest.TestCase):
             job.log("test", "transcribed")
             ctx = mock.Mock(home=home, edit=settings.Settings(approve=False), keys=mock.Mock(claude=""))
             ctx.settings.claude_via = "handoff"
-            with mock.patch.object(queue, "_hand", return_value=mock.Mock(ready=False)):
-                queue._plan(ctx, job)
-            self.assertEqual(job.state, "ready")
+            with mock.patch.object(queue, "_hand", return_value=mock.Mock(ready=False)), \
+                    mock.patch.object(queue, "Telegram") as telegram:
+                queue._plan(ctx, job)  # approve: false, yet a captions-only cut still asks first
+            self.assertEqual(job.state, "approval")
+            telegram.return_value.text.assert_called_once()
             saved = json.loads((job.folder / "plan.json").read_text())
-            self.assertIn("without the editor", saved["notes"])
-            self.assertIn("ready", queue.status(home))
-            with self.assertRaises(queue.QueueError):
-                queue.approve(home, job.id)  # already ready, not waiting
+            self.assertIn("NOT A FINISHED EDIT", saved["notes"])
             queue.cancel(home, job.id)
             self.assertEqual(queue.load(home, job.id).state, "cancelled")
 

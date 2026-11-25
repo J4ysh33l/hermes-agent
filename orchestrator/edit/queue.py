@@ -135,6 +135,7 @@ def _ingest(ctx: Any, job: Job) -> None:
     ws = words.load(job.folder / "transcript.json")
     if words.has_devanagari(ws):
         job.data.setdefault("warnings", []).append("Some words came out in Devanagari; captions want Latin (edit.asr_language: en)")
+    job.data["sheets"] = media.sheets(job.folder / "source.mp4", words.sentences(ws), job.folder)
     raw.unlink(missing_ok=True)  # source.mp4 and voice.wav hold everything from here on
     job.log(f"ingested: {info.describe()}; {len(ws)} words", "transcribed")
 
@@ -152,7 +153,9 @@ def _parts(ctx: Any, job: Job) -> tuple[style.Style, list[words.Word], list[word
 
 def _plan(ctx: Any, job: Job) -> None:
     look, ws, found = _parts(ctx, job)
-    text = editor.prompt(job.id, look, ws, found, job.data["asked"])
+    sheets = [n for n in job.data.get("sheets", []) if (job.folder / n).is_file()]
+    assets = sorted(p.name for p in (job.folder / "assets").glob("*") if p.is_file()) if (job.folder / "assets").is_dir() else []
+    text = editor.prompt(job.id, look, ws, found, job.data["asked"], sheets=sheets, assets=assets)
     via = ctx.settings.claude_via
     if via == "auto":
         via = "api" if ctx.keys.claude else "handoff"
@@ -166,7 +169,8 @@ def _plan(ctx: Any, job: Job) -> None:
     if not hand.ready:
         return _fallback(ctx, job, "Claude is not set up (handoff repo or API key)")
     words_json = (job.folder / "transcript.json").read_text(encoding="utf-8")
-    number = editor.send(hand, job.id, look, words_json, job.data["asked"], text)
+    number = editor.send(hand, job.id, look, words_json, job.data["asked"], text,
+                         sheets={n: (job.folder / n).read_bytes() for n in sheets})
     job.data.update({"issue": number, "round": 0})
     job.log(f"editor asked (handoff issue #{number})", "planning")
 
@@ -194,15 +198,16 @@ def _collect(ctx: Any, job: Job) -> None:
 def _fallback(ctx: Any, job: Job, why: str) -> None:
     look, _ws, found = _parts(ctx, job)
     chosen = plans.basic(found, look)
-    chosen.notes = f"Edited without the editor: {why}. Cuts, captions and punch-ins only."
-    _accept(ctx, job, chosen)
+    chosen.notes = (f"⚠️ NOT A FINISHED EDIT: the director failed ({why}). This would be cuts, captions and "
+                    "punch-ins only. Approve only if you want that rough cut; otherwise send the job again.")
+    _accept(ctx, job, chosen, ask=True)
 
 
-def _accept(ctx: Any, job: Job, chosen: plans.Plan) -> None:
+def _accept(ctx: Any, job: Job, chosen: plans.Plan, ask: bool = False) -> None:
     (job.folder / "plan.json").write_text(json.dumps(chosen.as_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
     job.data["title"] = chosen.title.replace("*", "") or job.id
     job.log("plan ready", "planned")
-    if ctx.edit.approve:
+    if ctx.edit.approve or ask:  # a rough cut without the director never renders on its own
         Telegram(ctx.http, ctx.secrets).text(summary(ctx, job))
         job.log("plan sent to you for approval", "approval")
     else:

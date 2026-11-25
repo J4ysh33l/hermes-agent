@@ -34,7 +34,7 @@ graphics:
   box_bg: "#000000"
   box_fg: "#FFFFFF"
   radius: 2
-  kinds: [headline, image, cutaway, stat, quote, chapter]
+  kinds: [headline, image, cutaway, stat, quote, chapter, split, pop]
   emoji: false
   progress: true
 

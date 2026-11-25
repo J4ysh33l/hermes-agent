@@ -62,7 +62,22 @@ class Brief:
     files: dict[str, str]  # path in the handoff repo → text
 
 
-def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], asked: str, folder: str = "") -> str:
+def frames_note(sheets: list[str], folder: str) -> str:
+    if not sheets:
+        return "(no frame sheets: decide from the words, and don't use \"hide\")"
+    return ("Frame sheets, one frame from the middle of each sentence, labelled S<n>; open and look at every one "
+            "before deciding (what is on screen, framing, focus, anything private):\n"
+            + "\n".join(f"- {folder}/{name}" for name in sheets))
+
+
+def assets_note(names: list[str]) -> str:
+    if not names:
+        return "(none: b-roll comes from stock by \"query\"; say in notes which of their own shots would help)"
+    return "Use these by \"file\" (they beat stock footage):\n" + "\n".join(f"- {n}" for n in names)
+
+
+def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], asked: str, folder: str = "",
+           sheets: list[str] = (), assets: list[str] = ()) -> str:
     cut = cuts.build(words, found, look)
     style = look.as_dict()
     g, pace, title = style["graphics"], style["pace"], style["title"]
@@ -72,7 +87,8 @@ def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], aske
         style_name=look.name, style_summary=summary(look), hook=style["plan"]["hook"], ending=style["plan"]["ending"],
         tone=style["plan"]["tone"], avoid=", ".join(style["plan"]["avoid"]) or "nothing listed",
         kinds=", ".join(g["kinds"]), emoji_note="" if "emoji" in g["kinds"] or not g["emoji"] else ", emoji",
-        change_every=pace["change_every"], broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
+        change_every=pace["change_every"], quiet_max=max(5.0, plans.QUIET_MAX * float(pace["change_every"])),
+        frames_note=frames_note(list(sheets), folder or f"edit/{job}"), assets_note=assets_note(list(assets)), broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
         subtitle_note=(" with a short subtitle" if title["subtitle"] else "") + (
             "; wrap the 1–2 words that carry the point in *stars* (shown in the brand accent, italic), e.g. "
             "\"Care without *the chaos*\"" if title["accent"] != "none" else ""),
@@ -81,17 +97,21 @@ def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], aske
         auto="\n".join(auto) or "- nothing", folder=folder or f"edit/{job}", schema="    {" + SCHEMA)
 
 
-def files(job: str, look: Style, words_json: str, asked: str) -> dict[str, str]:
+def files(job: str, look: Style, words_json: str, asked: str, sheets: dict[str, bytes] | None = None
+          ) -> dict[str, str | bytes]:
     out = {"tools/check_edit.py": CHECK, "tools/edit/__init__.py": ""}
     out.update({f"tools/edit/{name}": (HERE / name).read_text(encoding="utf-8") for name in TOOLS})
     out[f"edit/{job}/words.json"] = words_json
     out[f"edit/{job}/style.json"] = json.dumps(look.as_dict(), ensure_ascii=False, indent=1)
     out[f"edit/{job}/notes.txt"] = asked
+    for name, data in (sheets or {}).items():
+        out[f"edit/{job}/{name}"] = data
     return out
 
 
-def send(hand: Handoff, job: str, look: Style, words_json: str, asked: str, text: str, round_: int = 0) -> int:
-    return hand.send(files(job, look, words_json, asked), f"edit {job}: plan" + (f" fix {round_}" if round_ else ""), text)
+def send(hand: Handoff, job: str, look: Style, words_json: str, asked: str, text: str, round_: int = 0,
+         sheets: dict[str, bytes] | None = None) -> int:
+    return hand.send(files(job, look, words_json, asked, sheets), f"edit {job}: plan" + (f" fix {round_}" if round_ else ""), text)
 
 
 def answer(hand: Handoff, job: str) -> tuple[plans.Plan | None, str]:

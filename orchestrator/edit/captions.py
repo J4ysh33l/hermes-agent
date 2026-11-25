@@ -90,10 +90,13 @@ def _time(t: float) -> str:
     return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
 
-def ass(found: list[Page], look: Style) -> str:
+SEAM_Y = 960  # during a split screen the captions sit on the seam between picture and face
+
+
+def ass(found: list[Page], look: Style, seam: list[tuple[float, float]] = ()) -> str:
     c = look["captions"]
     family = FONT_FILES[c["font"]][0]
-    y = round(c["y"] * H)
+    normal_y = round(c["y"] * H)
     boxed = c["box"] != "none"
     style = ("Style: Cap,{font},{size},{fill},{fill},{outline},{back},{bold},0,0,0,100,100,0,0,{border},{outw},0,5,40,40,0,1"
              .format(font=family, bold=-1 if FONT_FILES[c["font"]][2] else 0, size=round(c["size"] * 1.33), fill=_ass_colour(c["colour"]),
@@ -109,6 +112,7 @@ def ass(found: list[Page], look: Style) -> str:
     shadow = int(c["shadow"])
     for page in found:
         text = " ".join(w for w, _a, _b in page.words)
+        y = SEAM_Y if any(a - 0.05 <= page.start < b for a, b in seam) else normal_y
         if shadow and not boxed:
             lines.append(f"Dialogue: 0,{_time(page.start)},{_time(page.end)},Cap,,0,0,0,,"
                          f"{{\\pos({W // 2 + shadow // 2},{y + shadow})\\c&H000000&\\3c&H000000&\\alpha&H70&\\blur{shadow * 2}}}{text}")
@@ -123,7 +127,7 @@ def ass(found: list[Page], look: Style) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write(found: list[Page], look: Style, folder: Path) -> tuple[Path, Path]:
+def write(found: list[Page], look: Style, folder: Path, seam: list[tuple[float, float]] = ()) -> tuple[Path, Path]:
     """captions.ass and the fonts folder libass reads it with."""
     fonts = folder / "fonts"
     fonts.mkdir(parents=True, exist_ok=True)
@@ -132,5 +136,5 @@ def write(found: list[Page], look: Style, folder: Path) -> tuple[Path, Path]:
         raise FileNotFoundError(f"caption font missing: {source} (cd orchestrator/studio/remotion && npm ci)")
     shutil.copy(source, fonts / source.name)
     path = folder / "captions.ass"
-    path.write_text(ass(found, look), encoding="utf-8")
+    path.write_text(ass(found, look, seam), encoding="utf-8")
     return path, fonts
