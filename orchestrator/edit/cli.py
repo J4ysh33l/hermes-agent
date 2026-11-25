@@ -98,7 +98,10 @@ def cmd_check(a: argparse.Namespace, home: Path) -> int:
     found = words.sentences(ws)
     chosen = plans.load((job / "plan.json").read_text(encoding="utf-8"))
     asked = (job / "asked.txt").read_text(encoding="utf-8") if (job / "asked.txt").is_file() else ""
-    problems = plans.check(chosen, found, cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep), look, asked)
+    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
+    problems = plans.check(chosen, found, cut, look, asked)
+    for tip in plans.advice(chosen, found, cut, look):
+        print(f"suggestion (yours to take or leave): {tip}")
     print("\n".join(f"- {p}" for p in problems) if problems else "OK")
     return 1 if problems else 0
 

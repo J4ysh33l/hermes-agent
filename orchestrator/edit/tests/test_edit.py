@@ -164,7 +164,7 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(any("box must be" in p for p in bad))
         self.assertTrue(any("characters" in p for p in bad))
 
-    def test_captions_only_is_refused(self) -> None:
+    def test_a_plain_plan_gets_suggestions_not_refusal(self) -> None:
         ws = talk("Every morning the queue reaches the gate.", "Patients wait two hours for a token.",
                   "The receptionist writes each name by hand.", "Then billing asks for the same details again.",
                   "Files go missing between the wards.", "Doctors search for old reports on paper.",
@@ -172,9 +172,9 @@ class PlanTests(unittest.TestCase):
                   "That is what we fixed first.", pause=0.2)
         found = words.sentences(ws)
         cut = cuts.build(ws, found, self.look)
-        bare = plans.check(plans.Plan.parse({"title": "Queues waste the morning", "punch": []}), found, cut, self.look)
-        self.assertTrue(any("nothing new on screen" in p for p in bare))
-        self.assertTrue(any("no b-roll" in p for p in bare))
+        bare = plans.Plan.parse({"title": "Queues waste the morning", "punch": []})
+        self.assertEqual(plans.check(bare, found, cut, self.look), [])  # no b-roll and no graphics is allowed
+        self.assertTrue(any("nothing new on screen" in p for p in plans.advice(bare, found, cut, self.look)))
 
     def test_a_good_plan_passes(self) -> None:
         self.assertEqual(self.check({"graphics": [{"kind": "stat", "at": "S2.5", "text": "10× the same questions"},

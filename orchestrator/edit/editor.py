@@ -49,6 +49,8 @@ if __name__ == "__main__":
         chosen = plan.load((folder / "plan.json").read_text(encoding="utf-8"))
         cut = cuts.build(words.load(folder / "words.json"), found, look, chosen.drop, chosen.trim, chosen.keep)
         problems = plan.check(chosen, found, cut, look, notes)
+        for tip in plan.advice(chosen, found, cut, look):
+            print(f"suggestion (yours to take or leave): {tip}")
     except (OSError, plan.PlanError) as exc:
         problems = [str(exc)]
     print("\\n".join(f"- {p}" for p in problems) if problems else "OK: ready to hand in")
@@ -87,7 +89,7 @@ def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], aske
         style_name=look.name, style_summary=summary(look), hook=style["plan"]["hook"], ending=style["plan"]["ending"],
         tone=style["plan"]["tone"], avoid=", ".join(style["plan"]["avoid"]) or "nothing listed",
         kinds=", ".join(g["kinds"]), emoji_note="" if "emoji" in g["kinds"] or not g["emoji"] else ", emoji",
-        change_every=pace["change_every"], quiet_max=max(5.0, plans.QUIET_MAX * float(pace["change_every"])),
+        change_every=pace["change_every"], 
         frames_note=frames_note(list(sheets), folder or f"edit/{job}"), assets_note=assets_note(list(assets)), broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
         subtitle_note=(" with a short subtitle" if title["subtitle"] else "") + (
             "; wrap the 1–2 words that carry the point in *stars* (shown in the brand accent, italic), e.g. "

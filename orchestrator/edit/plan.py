@@ -225,14 +225,16 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
     if cut.seconds and covered > look["pace"]["broll"] * cut.seconds + 1:
         problems.append(f"cutaways cover {covered:.0f} s of {cut.seconds:.0f} s; this style allows about "
                         f"{look['pace']['broll'] * 100:.0f}% (a split counts half)")
-    kept = [g for g in placed if not cut.ranges or _kept(cut, g.start)]
-    if cut.seconds > 25 and look["pace"]["broll"] >= 0.15 and not any(g.kind in BROLL_KINDS for g in kept) \
-            and BROLL_KINDS & allowed:
-        problems.append(f"{cut.seconds:.0f} s of face with no b-roll: add at least one cutaway or split where the words "
-                        "describe something seeable (or an image/screenshot)")
-    if cut.ranges:
-        problems += _quiet(plan, kept, found, cut, look)
     return problems
+
+
+def advice(plan: Plan, found: list[Sentence], cut: CutList, look: Style) -> list[str]:
+    """Suggestions, not rules: the editor may ignore them (long quiet stretches are sometimes the point)."""
+    try:
+        placed = [g for g in place(plan, found) if not cut.ranges or _kept(cut, g.start)]
+    except PlanError:
+        return []
+    return _quiet(plan, placed, found, cut, look) if cut.ranges else []
 
 
 def _box(value: Any) -> tuple[float, float, float, float] | None:
@@ -262,9 +264,9 @@ def _quiet(plan: Plan, placed: list[Graphic], found: list[Sentence], cut: CutLis
     problems = []
     for a, b in itertools.pairwise(times):
         if b - a > limit:
-            problems.append(f"nothing new on screen from {a:.0f} s to {b:.0f} s of the edit ({_said_at(found, cut, a)}): "
-                            f"this style wants a change about every {look['pace']['change_every']} s; add a pop, card, "
-                            "split, cutaway or punch-in there, or cut the stretch")
+            problems.append(f"nothing new on screen from {a:.0f} s to {b:.0f} s ({_said_at(found, cut, a)}); the style's "
+                            f"rhythm is about every {look['pace']['change_every']} s. Fine if the face carries it; "
+                            "otherwise a pop, card, b-roll or punch-in could go there")
     return problems
 
 

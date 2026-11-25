@@ -38,9 +38,9 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
    sentences, the style, your notes, the list of your own files in the job's `assets/`, and **frame
    sheets** (`frames-*.jpg`: one frame from each sentence, labelled), so it sees what the camera saw. It
    writes `plan.json`:
-   - sentences to drop and words to trim (a raw talk usually loses 25–50%);
+   - sentences to drop and words to trim (how much is its call);
    - the title card;
-   - what covers or joins the face, anchored to words (`S3.5` = sentence 3, word 5):
+   - optionally, what covers or joins the face, anchored to words (`S3.5` = sentence 3, word 5):
      - `cutaway`: full-screen b-roll, from your files (`file`) or stock (`query`);
      - `split`: the picture fills the top half and your face moves to the bottom half;
      - `pop`: a 1–3 word chip that springs in beside your face;
@@ -55,11 +55,11 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
    - no number may appear that you didn't say;
    - no two cards may overlap;
    - only kinds the style allows;
-   - b-roll must stay within the style's share (a split counts half), and a talk over 25 s needs some;
-   - nothing may stay unchanged on screen for longer than about 2.6 × the style's `change_every`;
+   - b-roll must stay within the style's share (a split counts half);
    - a title of 2–9 words.
 
-   Captions over the full take is not an edit, so a plan like that fails. A plan that still fails after
+   B-roll, graphics and how much to cut are the editor's creative choice: none is required. The checker
+   only *suggests* where nothing changes on screen for long. A plan that still fails after
    two rounds becomes a rough cut (cuts, captions, punch-ins). The rough cut is never rendered without
    your approval, even with `edit.approve: false`.
 4. **Cut list** (`cuts.py`, code only). This step:
