@@ -39,6 +39,7 @@ LOGO_PX = 96
 W, H = 1080, 1920
 SEAM = 960  # split screen: picture above, face below (Graphic.tsx SEAM)
 FACE_TOP = 150  # the band of the frame (FACE_TOP to FACE_TOP + SEAM) that holds head and shoulders
+LIST_HOLD = 1.8  # seconds a list stays after its last item arrives
 MASK_KINDS = {"hide"}  # done by ffmpeg, not drawn by Remotion
 PROGRESS_PX = 8
 
@@ -147,9 +148,12 @@ def cut_voice(job: Path, cut: cuts.CutList) -> Path:
 def _list_beats(item: dict[str, Any], start: float, end: float, words: list[Word], cut: cuts.CutList, fps: int) -> list[int]:
     """The frame each list item arrives on: when its first word is said, else evenly through the first 70%."""
     beats, spoken = [], [(w.text.lower().strip(".,!?"), cut.to_output(w.start)) for n, w in enumerate(words) if n in set(cut.kept_words)]
+    after = start - 0.05
     for k, text in enumerate(item.get("items") or []):
         first = (text.split() or [""])[0].lower().strip(".,!?")
-        hit = next((t for w, t in spoken if w == first and start - 0.05 <= t < end), None)
+        hit = next((t for w, t in spoken if w == first and after <= t < end), None)  # each item after the one before
+        if hit is not None:
+            after = hit + 0.05
         even = start + (end - start) * 0.7 * k / max(1, len(item["items"]))
         beats.append(max(0, round(((hit if hit is not None else even) - start) * fps)))
     return beats
@@ -170,7 +174,12 @@ def place(chosen: plans.Plan, found: list[Sentence], words: list[Word], cut: cut
         a, b = cut.to_output(g.start), cut.to_output(g.end)
         item = {k: v for k, v in g.data.items() if k not in ("at", "to")}
         if g.kind == "list":
-            item["beats"] = _list_beats(item, a, b, words, cut, fps)
+            beats = _list_beats(item, a, b, words, cut, fps)
+            lead = max(0, beats[0] - 3) if beats else 0  # the card arrives with its first item, never empty
+            a += lead / fps
+            item["beats"] = [x - lead for x in beats]
+            if item["beats"]:
+                b = max(b, a + item["beats"][-1] / fps + LIST_HOLD)  # the last item stays long enough to read
         if g.kind == "pop":
             item["side"] = "left" if sum(p.kind == "pop" for p in out) % 2 == 0 else "right"
         out.append(Placed(g.kind, a, max(b, a + 0.5), item))

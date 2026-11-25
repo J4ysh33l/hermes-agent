@@ -24,14 +24,19 @@ def main() -> int:
                          cpu_threads=int(job.get("threads", 2)))
     segments, info = model.transcribe(
         audio, language=job.get("language") or None, initial_prompt=job.get("prompt") or None,
-        word_timestamps=True, beam_size=5, condition_on_previous_text=False,
+        word_timestamps=True, beam_size=5,
+        condition_on_previous_text=True,  # without it, every window after the first 30 s loses its punctuation
         suppress_tokens=[],  # keeps "umm", "uh" that Whisper otherwise drops
-        vad_filter=False)
+        vad_filter=True,  # windows start at speech, so stops and capitals carry on through long talks
+        vad_parameters={"min_silence_duration_ms": 700, "speech_pad_ms": 300})  # short gaps and fillers stay in
     words = []
     for seg in segments:
         for x in seg.words or []:
             text = x.word.strip()
-            if text:
+            if text and words and not x.word[:1].isspace() and text[0] in "-,.'%":  # "out" "-of" → "out-of", "1" ",000"
+                words[-1]["w"] += text
+                words[-1]["e"] = round(x.end, 3)
+            elif text:
                 words.append({"w": text, "s": round(x.start, 3), "e": round(x.end, 3), "p": round(x.probability, 3)})
     print(json.dumps({"language": info.language, "words": words}, ensure_ascii=False))
     return 0

@@ -53,9 +53,25 @@ def sentences(words: list[Word]) -> list[Sentence]:
         pause = 0.0 if last else words[n + 1].start - word.end
         size = n - start + 1
         if last or END.search(word.text) or pause >= GAP or (size >= LONGEST and (SOFT_END.search(word.text) or pause > 0.25)):
-            found.append(Sentence(len(found) + 1, tuple(words[start:n + 1]), start))
+            for a, b in _split_run(words, start, n + 1):
+                found.append(Sentence(len(found) + 1, tuple(words[a:b]), a))
             start = n + 1
     return found
+
+
+RUN_MAX = 30  # words: a longer "sentence" (Whisper left out the stops) is split at its longest pauses
+RUN_MIN = 6
+
+
+def _split_run(words: list[Word], a: int, b: int) -> list[tuple[int, int]]:
+    """[a, b) as one piece, or split at the longest gap between words (the middle one on a tie) until every
+    piece has at most RUN_MAX words."""
+    if b - a <= RUN_MAX:
+        return [(a, b)]
+    middle = (a + b) / 2
+    cut = max(range(a + RUN_MIN, b - RUN_MIN + 1),
+              key=lambda k: (round(words[k].start - words[k - 1].end, 2), -abs(k - middle)))
+    return _split_run(words, a, cut) + _split_run(words, cut, b)
 
 def numbered(found: list[Sentence]) -> str:
     """What the editor reads: one line per sentence with its length and the pause before it."""

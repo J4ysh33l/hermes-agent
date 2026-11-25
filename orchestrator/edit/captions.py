@@ -74,7 +74,7 @@ def pages(words: list[Word], cut: CutList, look: Style, hidden: list[tuple[float
         end = follow if follow is not None and follow - g[-1][2] <= 0.35 else g[-1][2] + HOLD
         shown = [(_clean(t, c["case"]), a, b) for t, a, b in g]
         shown = [w for w in shown if w[0]]
-        if shown and not any(h0 <= start + 0.05 and end - 0.05 <= h1 or (h0 < end and start < h1 and (min(end, h1) - max(start, h0)) > 0.5 * (end - start)) for h0, h1 in hidden):
+        if shown and not any(h0 - 0.1 < end and start < h1 + 0.25 for h0, h1 in hidden):  # never over a card, even leaving
             out.append(Page(start, end, tuple(shown)))
     return out
 
