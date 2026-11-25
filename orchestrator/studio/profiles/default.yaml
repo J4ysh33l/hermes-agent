@@ -37,7 +37,7 @@ captions:
   outline: "#000000"        # outline and shadow
 
 voice:                      # this page's voice (overrides studio: in brief.yaml)
-  engine: kokoro            # kokoro | edge | omnivoice (your cloned voice: studio.omni_voice)
+  engine: omnivoice         # your cloned voice (studio.omni_voice; install.sh --omnivoice) | kokoro | edge
   voice_en: am_puck
   voice_hi: hm_omega
   speed: 1.15               # ~196 words a minute with directions (1.0 measured 167-170 on a 55 s short: too slow)

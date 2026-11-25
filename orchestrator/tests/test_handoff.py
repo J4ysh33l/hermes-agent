@@ -1,6 +1,7 @@
 """Handoff: after opening an issue, fire the Claude task's API trigger when it is set up; never fail on it."""
 
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ FIRE = "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire"
 class FireTest(unittest.TestCase):
     def handoff(self, env: str, fire=None) -> tuple[Handoff, FakeHttp]:
         tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
         (tmp / ".env").write_text(env, encoding="utf-8")
         http = FakeHttp()
         http.on("GET", GH + "contents/", http_error(404))

@@ -5,7 +5,7 @@ Made on your server; posting them is another workflow's job. Built so far: **voi
 hooks (Gemini). Next: music/SFX, stock b-roll, thumbnails, edits of your own raw clips. Style reference:
 `PLAYBOOK.md`. Plan and decisions: the checkpoint notes and the conversation log.
 
-## Voice: Kokoro (default) or Edge TTS
+## Voice: your cloned voice (OmniVoice, the default profile's), Kokoro or Edge TTS
 
 All the voice rules in one page (pace, directions, writing for the ear): `VOICE.md`.
 

@@ -25,7 +25,7 @@ from orchestrator.brief.net import Http, HttpError
 
 from . import direction
 from .settings import Settings
-from .text import sentences
+from .text import sentences, years_aloud
 
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 # Common Hindi words as they are typed in Latin script; a sentence with several is Hinglish.
@@ -148,7 +148,7 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
     out.parent.mkdir(parents=True, exist_ok=True)
     job = {"engine": engine, "model": str(models / settings.kokoro_model), "voices": str(models / "voices-v1.0.bin"),
            "threads": settings.threads, "out": str(out), **_omni_job(settings, home),
-           "lines": [{"text": ln.text, "voice": ln.voice, "lang": ln.lang,
+           "lines": [{"text": years_aloud(ln.text), "voice": ln.voice, "lang": ln.lang,
                       "speed": round(min(2.0, settings.speed * ln.speed), 3),
                       "pause": round((settings.pause if ln.last else 0.0) + ln.pause, 3)} for ln in lines]}
     worker = Path(__file__).with_name("voice_worker.py")

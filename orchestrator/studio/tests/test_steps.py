@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,6 +46,7 @@ def transcript(path: Path) -> None:
 class Hook(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
         (self.tmp / "bin").mkdir()
         gh = self.tmp / "bin" / "gh"  # records its arguments instead of calling GitHub
         gh.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {self.tmp}/gh-args\n', encoding="utf-8")
@@ -81,6 +83,7 @@ class Hook(unittest.TestCase):
 class Report(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
         (self.tmp / ".env").write_text("GITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")
         self.http = FakeHttp()
         self.hand = Handoff(self.http, Secrets(self.tmp / ".env", self.tmp / "t", environ={}), "me/hand")

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_writer import BOARD, NOTES, RACE, SCRIPT, TSX
 
 from orchestrator.studio import handoff, rules
-from orchestrator.studio.text import said_words
+from orchestrator.studio.text import said_words, years_aloud
 
 PARAMS = rules.Params(words=49, avoid=("game-changer",), scenes=("title", "stat", "logo", "bullets", "quote", "custom"),
                       stock=False, notes=NOTES)
@@ -52,6 +52,14 @@ class SpokenLengthTest(unittest.TestCase):
     def test_numbers_count_as_they_are_read(self):
         self.assertEqual(said_words("Work began in 1887. [beat] It was built for the 1889 World's Fair."), 16)
         self.assertEqual(said_words("It's about 18,000 iron parts, held by 2.5 million *rivets*."), 13)
+
+    def test_years_are_said_the_way_people_say_them(self):
+        self.assertEqual(years_aloud("In the 1880s, he tested it."), "In the eighteen eighties, he tested it.")
+        self.assertEqual(years_aloud("Work began in 1887; since 2024, in 2007, in 1905, by 1900."),
+                         "Work began in eighteen eighty-seven; since twenty twenty-four, in two thousand and seven, "
+                         "in nineteen oh five, by nineteen hundred.")
+        self.assertEqual(years_aloud("1887–1889 was busy."), "eighteen eighty-seven to eighteen eighty-nine was busy.")
+        self.assertEqual(years_aloud("1500 people paid 2,019 rupees."), "1500 people paid 2,019 rupees.")  # not dates
         self.assertEqual(said_words("Blue whales: the *biggest* animals ever."), 6)
 
 

@@ -3,6 +3,7 @@ and the Whisper check's word match."""
 
 import importlib.util
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,7 @@ class OmniVoice(unittest.TestCase):
 
     def test_the_job_uses_the_voice_files_and_the_half_size_model_when_they_exist(self):
         home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, home)
         st = settings.Settings(engine="omnivoice")
         job = voice._omni_job(st, home)
         self.assertEqual((job["voice"], job["voice_hi"], job["omni_model"]), ("", "", ""))  # described voice, original model
