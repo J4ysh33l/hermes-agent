@@ -7,6 +7,9 @@ scheduled task (claude.ai/code → Routines) through its API trigger; Claude cla
 answer and closes the issue; Hermes picks the answer up on its next run. Code: `orchestrator/handoff.py`.
 
 There are no instruction files in the repo to copy or keep up to date: each request carries its own.
+Hermes also keeps `tools/claim.sh` and `tools/close.sh` there (claim the oldest waiting issue, close
+one), so the prompt below has no commands to retype. They use `gh api` (REST) only: `gh issue`
+needs GitHub's GraphQL API, which the task's sessions block.
 
 Used by:
 - **Studio** (`/studio make` without an Anthropic API key): three issues per video, one job each: the
@@ -58,21 +61,20 @@ run (each run takes the oldest waiting issue), or press **Run now**. The fire en
 ## The prompt to paste
 
 ```
-This run started because Hermes has work for you in this repo. Your task is the oldest open issue
-labelled "hermes"; its body is the whole task, and nothing else in the repo is part of it.
-Use only `gh api` (REST) for GitHub: `gh issue` commands need GraphQL, which is blocked here. If a
-`gh api` command itself fails (an error, not an empty list), do the same step with the GitHub tools.
+This run started because Hermes has work for you in this repo.
 
-1. Claim it and read it with exactly this one command:
-   n=$(gh api "repos/{owner}/{repo}/issues?state=open&labels=hermes&sort=created&direction=asc&per_page=1" --jq '.[0].number // empty'); [ -n "$n" ] && gh api -X DELETE "repos/{owner}/{repo}/issues/$n/labels/hermes" >/dev/null && gh api "repos/{owner}/{repo}/issues/$n" --jq '"ISSUE \(.number)\n\(.body)"' || echo "NOTHING TO DO"
+1. Run: sh tools/claim.sh
    If it prints NOTHING TO DO, stop.
+   If it prints GITHUB ERROR, use the GitHub tools instead: take the oldest open issue labelled
+   hermes, remove that label, and read its body.
+   Otherwise it prints ISSUE and a number, then the issue body. The body is your whole task.
 2. Do the one job the body describes. Everything you need is in the body. Read only the files the
-   body names; do not list, open or search anything else, do not look at earlier jobs.
+   body names. Do not list, open or search anything else, and do not look at earlier jobs.
 3. Finish with ONE shell command: write every answer file the body names (quoted heredocs), run the
    check command the body gives (if it gives one), then, chained with &&, git add, commit, push to
-   main and close the issue with: gh api -X PATCH "repos/{owner}/{repo}/issues/<number>" -f state=closed >/dev/null
-   If the check prints problems, fix exactly those and run the same command again.
-4. Then delete any __pycache__ folder the check made, and stop. No summary, no comment on the issue.
+   main, and run: sh tools/close.sh NUMBER (the issue number). If the check prints problems, fix
+   exactly those and run the same command again.
+4. Delete any __pycache__ folder the check made. Then stop: no summary, no comment on the issue.
 
 Never post the job's contents anywhere else. Never write outside the folder the body names.
 ```

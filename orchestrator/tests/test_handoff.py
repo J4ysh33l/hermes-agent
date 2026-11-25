@@ -23,6 +23,8 @@ class FireTest(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         (tmp / ".env").write_text(env, encoding="utf-8")
         http = FakeHttp()
+        http.on("GET", GH + "contents/", http_error(404))
+        http.on("PUT", GH + "contents/", {})
         http.on("POST", GH + "labels", {})
         http.on("POST", GH + "issues", {"number": 7})
         if fire is not None:
@@ -39,6 +41,8 @@ class FireTest(unittest.TestCase):
         self.assertEqual(call.headers["anthropic-beta"], "experimental-cc-routine-2026-04-01")
         self.assertIn("#7", call.json_body["text"])
         self.assertEqual(h.fire_error, "")
+        put = {c.url.rsplit("contents/", 1)[1] for c in http.calls if c.method == "PUT"}
+        self.assertEqual(put, {"tools/claim.sh", "tools/close.sh"})
 
     def test_not_set_up_means_no_fire(self):
         h, http = self.handoff("GITHUB_HANDOFF_TOKEN=g\n")

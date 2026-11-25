@@ -25,6 +25,20 @@ from orchestrator.brief.net import Http, HttpError
 API = "https://api.github.com"
 LABEL = "hermes"  # open + labelled = waiting for Claude; the scheduled task removes it when it starts
 MAX_BODY = 65_000  # GitHub refuses issue bodies over 65,536 characters
+# Kept in the repo with every request, so the task's prompt can stay plain English (nothing to retype).
+# `gh api` only: the task's sessions block GitHub's GraphQL API, which `gh issue` needs.
+CLAIM = """#!/bin/sh
+# Claims the oldest open "hermes" issue and prints it. Written by Hermes; do not edit.
+R={repo}
+n=$(gh api "repos/$R/issues?state=open&labels={label}&sort=created&direction=asc&per_page=1" --jq '.[0].number // empty') || {{ echo "GITHUB ERROR: listing issues failed"; exit 1; }}
+[ -n "$n" ] || {{ echo "NOTHING TO DO"; exit 0; }}
+gh api -X DELETE "repos/$R/issues/$n/labels/{label}" >/dev/null || {{ echo "GITHUB ERROR: claiming issue $n failed"; exit 1; }}
+gh api "repos/$R/issues/$n" --jq '"ISSUE \\(.number)\\n\\(.body)"'
+"""
+CLOSE = """#!/bin/sh
+# Closes issue $1 once its answer is pushed. Written by Hermes; do not edit.
+gh api -X PATCH "repos/{repo}/issues/$1" -f state=closed >/dev/null && echo "CLOSED $1"
+"""
 FIRE_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01"}
 
 
@@ -73,7 +87,9 @@ class Handoff:
         if len(body) > MAX_BODY:
             raise HandoffError(f"the request is {len(body):,} characters; GitHub takes at most {MAX_BODY:,}")
         try:
-            for path, text in files.items():
+            tools = {"tools/claim.sh": CLAIM.format(repo=self.repo, label=LABEL),
+                     "tools/close.sh": CLOSE.format(repo=self.repo)}
+            for path, text in {**tools, **files}.items():
                 self.put(path, text)
             self._label()
             number = int(self._call("POST", "issues", json_body={"title": title, "body": body, "labels": [LABEL]})["number"])
