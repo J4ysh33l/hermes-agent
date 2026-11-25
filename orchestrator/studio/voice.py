@@ -165,7 +165,8 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
         raise VoiceError(f"{engine} failed: {tail[0][:200]}")
     result = json.loads(done.stdout.strip().splitlines()[-1])
     lines_, parts = _sentences(lines, result["lines"])
-    misheard = tuple(f"{lines[i].text} (heard: {heard})" for i, heard in result.get("misheard") or ())
+    misheard = tuple(f"{' '.join(ln.text for ln in lines[a:b + 1])} (heard: {heard})"
+                     for a, b, heard in result.get("misheard") or ())
     return Speech(out, float(result["seconds"]), lines_, rewritten, parts, misheard)
 
 

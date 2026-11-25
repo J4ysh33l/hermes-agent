@@ -14,9 +14,13 @@ sets the gap between sentences.
 - omnivoice: k2-fsa OmniVoice (0.6B, CPU) in your cloned voice ("voice": a prompt file made once by
   "clone" below) or a described one ("instruct"). Extra keys: "steps" (16 fast, 32 best), "dtype" (bf16
   halves the weights' memory), "check" (a faster-whisper model name, "" = no check), "retries".
-  Memory: OmniVoice and Whisper are never loaded together. All lines are spoken, OmniVoice is freed,
-  Whisper listens to every line, is freed, and only the lines it misheard are spoken again (new seed).
-  Peak = the larger of the two, not their sum. The output gains "misheard": [[line, what Whisper heard], ...] still wrong at the end.
+  Paragraphs: consecutive lines of the same language and speed (up to ~45 words) are spoken in one
+  call and checked in one Whisper pass; Whisper's word times cut them back into lines (at the quietest
+  moment between them), so captions and pauses still work per line.
+  Memory: OmniVoice and Whisper are never loaded together. All paragraphs are spoken, OmniVoice is
+  freed, Whisper listens to each, is freed, and only misheard paragraphs are spoken again (new seed).
+  Peak = the larger of the two, not their sum. The output gains "misheard":
+  [[first line, last line, what Whisper heard], ...] for paragraphs still wrong at the end.
 
   {"engine": "convert", "out": "<models>/omnivoice-bf16"} makes the half-size copy (install.sh does it).
   {"engine": "clone", "audio": "me.m4a", "text": "" or its exact words, "out": "me.pt", "seconds": 10}
@@ -32,6 +36,7 @@ import json
 import subprocess
 import sys
 import wave
+from itertools import pairwise
 
 RATE = 24000
 EDGE_TIMEOUT = 120  # seconds for one line from Microsoft, and for decoding it
@@ -141,39 +146,115 @@ def _heard_right(want: str, heard: str) -> bool:
     return not a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.85
 
 
-def _omnivoice_all(job: dict) -> tuple[list, dict[int, str]]:
-    """Every line in the cloned voice, checked by Whisper; see the module's docstring for the memory plan."""
+PARAGRAPH_WORDS = 45  # ~15 s: one OmniVoice call and one Whisper pass per paragraph, not per line
+
+
+def _paragraphs(lines: list[dict], most: int = PARAGRAPH_WORDS) -> list[list[int]]:
+    """Consecutive lines spoken in one go: same language and speed, up to ``most`` words."""
+    groups: list[list[int]] = []
+    for i, line in enumerate(lines):
+        last = groups[-1] if groups else []
+        if last and (lines[last[0]]["lang"], float(lines[last[0]]["speed"])) == (line["lang"], float(line["speed"])) \
+                and sum(len(_words(lines[k]["text"])) for k in last) + len(_words(line["text"])) <= most:
+            last.append(i)
+        else:
+            groups.append([i])
+    return groups
+
+
+def _quietest(audio, start: float, end: float) -> int:
+    """The sample in [start, end] s where the 20 ms around it is quietest: where one line ends."""
+    import numpy as np
+    a, b = max(0, int(start * RATE)), min(len(audio), int(end * RATE))
+    if b - a < 480:
+        return min(len(audio), max(0, int((start + end) / 2 * RATE)))
+    frames = np.abs(audio[a:b])
+    energy = np.convolve(frames, np.ones(480) / 480, mode="same")
+    calm = np.flatnonzero(energy <= energy.min() + 1e-4)
+    return a + int(calm[len(calm) // 2])  # the middle of the quiet stretch, not its edge
+
+
+def _split(texts: list[str], heard: list[tuple[str, float, float]], audio) -> list | None:
+    """A paragraph's audio cut back into its lines, using Whisper's word times; None when a line can't
+    be placed (fewer than half its words heard)."""
+    import difflib
+    want = [(k, w) for k, text in enumerate(texts) for w in _words(text)]
+    found = {}
+    match = difflib.SequenceMatcher(None, [w for _k, w in want], [w for w, _a, _b in heard], autojunk=False)
+    for a, b, n in match.get_matching_blocks():
+        found.update({a + j: b + j for j in range(n)})
+    placed = []
+    for k, text in enumerate(texts):
+        mine = [found[n] for n, (line, _w) in enumerate(want) if line == k and n in found]
+        if not mine or 2 * len(mine) < len(_words(text)):
+            return None
+        placed.append((mine[0], mine[-1]))
+    cuts = []
+    for (_f, last), (first, _l) in pairwise(placed):
+        end, start = heard[last][2], heard[first][1]
+        cuts.append(_quietest(audio, min(end, start) - 0.05, max(end, start) + 0.05))
+    if cuts != sorted(cuts):
+        return None
+    bounds = [0, *cuts, len(audio)]
+    return [audio[a:b] for a, b in pairwise(bounds)]
+
+
+def _omnivoice_all(job: dict) -> tuple[list, list]:
+    """Every line in the cloned voice, spoken and checked a paragraph at a time; see the module's docstring
+    for the memory plan. A misheard paragraph is spoken again whole; one that still can't be cut into its
+    lines is finally spoken line by line, so captions always get each line's time."""
     import numpy as np
     import torch
     from omnivoice.models.omnivoice import VoiceClonePrompt
-    lines, clips = job["lines"], [None] * len(job["lines"])
-    todo, wrong, attempt = list(range(len(lines))), {}, 0
+    lines = job["lines"]
+    groups = _paragraphs(lines) if job.get("check") else [[i] for i in range(len(lines))]  # no ears: no cutting
+    clips: list = [None] * len(lines)
+    todo, wrong, attempt = list(range(len(groups))), {}, 0
     while todo:
         model = _omni(job)
         prompts = {lang: VoiceClonePrompt.load(job[key]) for lang, key in (("en", "voice"), ("hi", "voice_hi"))
                    if job.get(key)}  # a Hindi recording, when given, for Hindi lines (cross-language clones carry an accent)
-        for i in todo:
-            torch.manual_seed(1000 * attempt + i)
-            prompt = prompts.get(lines[i]["lang"][:2]) or prompts.get("en")
+        spoken = {}
+        for g in todo:
+            first = lines[groups[g][0]]
+            torch.manual_seed(1000 * attempt + g)
+            prompt = prompts.get(first["lang"][:2]) or prompts.get("en")
             extra = {"voice_clone_prompt": prompt} if prompt else {"instruct": job.get("instruct") or None}
-            out = model.generate(text=lines[i]["text"], language=lines[i]["lang"][:2], speed=float(lines[i]["speed"]),
-                                 num_step=int(job.get("steps", 32)), **extra)
-            clips[i] = np.asarray(torch.as_tensor(out[0]).float().reshape(-1))
+            out = model.generate(text=" ".join(lines[i]["text"] for i in groups[g]), language=first["lang"][:2],
+                                 speed=float(first["speed"]), num_step=int(job.get("steps", 32)), **extra)
+            spoken[g] = np.asarray(torch.as_tensor(out[0]).float().reshape(-1))
         del model, prompts
         _collect()
         if not job.get("check"):
-            return clips, {}
+            for g, audio in spoken.items():
+                clips[groups[g][0]] = audio
+            return clips, []
         ear = _whisper(job)
         wrong = {}
-        for i in todo:
-            said = " ".join(s.text for s in ear.transcribe(_to16k(clips[i]), language=lines[i]["lang"][:2])[0])
-            if not _heard_right(lines[i]["text"], said):
-                wrong[i] = said.strip()
+        for g in todo:
+            texts = [lines[i]["text"] for i in groups[g]]
+            heard = [(w, word.start, word.end) for seg in ear.transcribe(
+                _to16k(spoken[g]), language=lines[groups[g][0]]["lang"][:2], word_timestamps=True)[0]
+                for word in seg.words for w in _words(word.word)]
+            said = " ".join(w for w, _a, _b in heard)
+            pieces = _split(texts, heard, spoken[g]) if _heard_right(" ".join(texts), said) else None
+            if pieces:
+                for i, piece in zip(groups[g], pieces):
+                    clips[i] = piece
+            else:
+                wrong[g] = said
+                for i, piece in zip(groups[g], _split(texts, heard, spoken[g]) or []):
+                    clips[i] = piece  # the best so far, kept in case the retries run out
         del ear
         _collect()
         attempt += 1
         todo = list(wrong) if attempt <= int(job.get("retries", 2)) else []
-    return clips, wrong
+    uncut = [g for g in wrong if any(clips[i] is None for i in groups[g])]
+    if uncut:  # last resort: line by line, unchecked, so every line has its own clip
+        single = _omnivoice_all({**job, "check": "", "lines": [lines[i] for g in uncut for i in groups[g]]})[0]
+        for i, clip in zip([i for g in uncut for i in groups[g]], single):
+            clips[i] = clip
+    return clips, [[groups[g][0], groups[g][-1], said] for g, said in sorted(wrong.items())]
 
 
 def clone(job: dict) -> dict:
@@ -224,7 +305,7 @@ def main() -> int:
     if job.get("engine") in ("clone", "convert"):
         print(json.dumps((clone if job["engine"] == "clone" else convert)(job), ensure_ascii=False))
         return 0
-    misheard: dict[int, str] = {}
+    misheard: list = []
     if job.get("engine") == "omnivoice":
         clips, misheard = _omnivoice_all(job)
     else:
@@ -244,7 +325,7 @@ def main() -> int:
         out.setframerate(RATE)
         out.writeframes((np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
     print(json.dumps({"seconds": round(len(audio) / RATE, 3), "sample_rate": RATE, "lines": spans,
-                      "misheard": [[i, heard] for i, heard in sorted(misheard.items())]}, ensure_ascii=False))
+                      "misheard": misheard}, ensure_ascii=False))
     return 0
 
 

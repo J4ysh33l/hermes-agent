@@ -44,5 +44,28 @@ class OmniVoice(unittest.TestCase):
         self.assertTrue(worker._heard_right("[pause 0.5]", ""))
 
 
+    def test_lines_are_spoken_as_paragraphs_of_one_language_and_speed(self):
+        line = lambda text, lang="en-us", speed=1.0: {"text": text, "lang": lang, "speed": speed}
+        lines = [line("One two three."), line("Four five."), line("नमस्ते दोस्तों.", "hi"), line("Six seven."),
+                 line("Slow now.", speed=0.9), line("word " * 44), line("Last one.")]
+        self.assertEqual(worker._paragraphs(lines), [[0, 1], [2], [3], [4], [5], [6]])
+        self.assertEqual(worker._paragraphs(lines[:2] + lines[3:4]), [[0, 1, 2]])
+
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "numpy not installed")
+    def test_a_paragraph_is_cut_back_into_its_lines_in_the_silence_between_them(self):
+        import numpy as np
+        rate = worker.RATE
+        loud = lambda s: np.full(int(s * rate), 0.5, dtype="float32")
+        quiet = lambda s: np.zeros(int(s * rate), dtype="float32")
+        audio = np.concatenate([loud(1.0), quiet(0.3), loud(1.0), quiet(0.2), loud(0.5)])  # 3 lines
+        heard = [("most", 0.0, 0.4), ("aspirants", 0.4, 1.0), ("here", 1.25, 1.6), ("is", 1.6, 1.8),
+                 ("what", 1.8, 2.3), ("pick", 2.55, 3.0)]
+        pieces = worker._split(["Most aspirants.", "Here is what.", "Pick."], heard, audio)
+        cuts = np.cumsum([len(x) / rate for x in pieces])[:2]
+        self.assertTrue(1.05 < cuts[0] < 1.25 and 2.35 < cuts[1] < 2.45, cuts)  # inside each silence, not at its edge
+        self.assertEqual(sum(len(x) for x in pieces), len(audio))
+        self.assertIsNone(worker._split(["Most aspirants.", "Something else entirely here."], heard[:2], audio))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,6 +51,7 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
 | Chatterbox 0.5B (Resemble AI, MIT, cloning) | 9.6 s in 78 s (0.12× real time) | 6.8 GB | words all correct; **too heavy for the 4 GB host**: needs a GPU |
 | Edge TTS | not testable here | — | this container's proxy blocks WebSockets; test on the host |
 | OmniVoice 0.6B (k2-fsa), cloned voice, bf16 copy, 4 threads (2026-11-25) | 27 s in 51 s at 16 steps; 11.8 s in ~2 min at 32 steps incl. Whisper checks and retries | 1.87 GB | 6/6 English lines heard right; ref clip + its exact words matter (a wrong transcript garbles every line) |
+| OmniVoice by paragraph vs line by line, same 6 lines, 32 steps | 40 s vs 116 s to speak them (2.9× faster); whole voice step 14.7 s in 79 s incl. Whisper | 2.0–2.2 GB | each cut piece transcribed back to exactly its own line |
 | OmniVoice fp32 (original files) | 27 s in 143 s at 16 steps | 2.9 GB | same quality; bf16 *cast at load* instead peaks at 4.2 GB, so install.sh makes a bf16 copy |
 | OmniVoice voice file (once, `clone`) | 11 s | 4.1 GB | one-off; run it where there is memory (or with swap) and copy the small .pt file |
 
@@ -60,8 +61,11 @@ python -m orchestrator.studio voice "text" --out speech.wav     # on the host, p
 copy of the model. Then, once: `python -m orchestrator.studio clone <recording> ["its exact words"]`
 (`--hindi` for a Hindi recording used on Hindi lines). Without the words, Whisper writes them and the
 clip is cut after the last sentence inside 10 s; check what it prints. Memory plan (`voice_worker.py`):
-every line is spoken, OmniVoice is freed, Whisper (small, int8) listens to each line, is freed, and only
-misheard lines are spoken again with a new seed (`studio.voice_retries`). The two models are never in
+consecutive lines of one language and speed are spoken as one paragraph (up to ~45 words), OmniVoice
+is freed, Whisper (small, int8) listens to each paragraph, is freed, and only misheard paragraphs are
+spoken again with a new seed (`studio.voice_retries`). Whisper's word times cut each paragraph back into
+its lines at the quietest moment between them, so captions and [beat]s still work per line; a
+paragraph that can't be cut is finally spoken line by line. The two models are never in
 memory together, so the peak is ~1.9 GB, not their sum. Lines still wrong are named in the video's
 notes. **Licence: the model weights are CC-BY-NC (non-commercial only)**; the code is Apache 2.0.
 Hindi from an English recording comes out accented and less clear (Whisper misheard our test line):
