@@ -33,6 +33,7 @@ HINGLISH = re.compile(r"\b(hai|hain|kya|nahi|nahin|aur|mein|main|hum|kaise|toh|y
                       r"ka|ko|se|bhi|tha|thi|hota|hoti|kyun|kyunki|aap|apna|apni|matlab|bahut|accha|achha|dekho|"
                       r"chalo|abhi|sab|koi|kuch|wala|wali|doston|yaar|bas|lekin|agar|jab|tak)\b", re.IGNORECASE)
 TIMEOUT = 900  # seconds for one job (about 15 minutes of speech on 2 threads)
+SLOW_TIMEOUT = 4 * 3600  # OmniVoice on a small CPU, with Whisper's check and retries: an overnight job
 
 REWRITE = """Rewrite each line below in Devanagari script, keeping every word and its meaning: Hindi words in
 Hindi spelling, English words written as they sound in Devanagari (product → प्रोडक्ट, startup →
@@ -64,6 +65,7 @@ class Speech:
     lines: tuple[tuple[str, float, float], ...]  # (text spoken, start, end) per sentence, for captions and cuts
     rewritten: int  # Hinglish sentences put into Devanagari by Gemini
     parts: tuple[tuple[tuple[float, float], ...], ...] = ()  # per sentence: each part's (start, end)
+    misheard: tuple[str, ...] = ()  # OmniVoice: lines Whisper still heard wrong after the retries
 
 
 def is_hinglish(sentence: str) -> bool:
@@ -97,6 +99,8 @@ def to_devanagari(http: Http, key: str, settings: Settings, lines: list[str]) ->
 
 
 def _voices_for(settings: Settings, engine: str) -> tuple[str, str]:
+    if engine == "omnivoice":
+        return "clone", "clone"  # one voice, both languages
     return (settings.voice_en, settings.voice_hi) if engine == "kokoro" else \
         (settings.edge_voice_en, settings.edge_voice_hi)
 
@@ -143,7 +147,7 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
         raise VoiceError(f"The studio's voices are not installed ({python} missing): run orchestrator/studio/install.sh")
     out.parent.mkdir(parents=True, exist_ok=True)
     job = {"engine": engine, "model": str(models / settings.kokoro_model), "voices": str(models / "voices-v1.0.bin"),
-           "threads": settings.threads, "out": str(out),
+           "threads": settings.threads, "out": str(out), **_omni_job(settings, home),
            "lines": [{"text": ln.text, "voice": ln.voice, "lang": ln.lang,
                       "speed": round(min(2.0, settings.speed * ln.speed), 3),
                       "pause": round((settings.pause if ln.last else 0.0) + ln.pause, 3)} for ln in lines]}
@@ -151,16 +155,59 @@ def speak(http: Http, key: str, settings: Settings, home: Path, text: str, out: 
     try:
         # -I: isolated, so the worker's folder is not on its path (the studio's queue.py and profile.py
         # would shadow the standard library's there)
+        limit = SLOW_TIMEOUT if engine == "omnivoice" else TIMEOUT
         done = subprocess.run([str(python), "-I", str(worker)], input=json.dumps(job), capture_output=True, text=True,
-                              timeout=TIMEOUT, check=False)
+                              timeout=limit, check=False)
     except subprocess.TimeoutExpired:
-        raise VoiceError(f"{engine} took over {TIMEOUT // 60} minutes; split the text.") from None
+        raise VoiceError(f"{engine} took over {limit // 60} minutes; split the text.") from None
     if done.returncode != 0:
         tail = (done.stderr or "").strip().splitlines()[-1:] or ["no error text"]
         raise VoiceError(f"{engine} failed: {tail[0][:200]}")
     result = json.loads(done.stdout.strip().splitlines()[-1])
     lines_, parts = _sentences(lines, result["lines"])
-    return Speech(out, float(result["seconds"]), lines_, rewritten, parts)
+    misheard = tuple(f"{lines[i].text} (heard: {heard})" for i, heard in result.get("misheard") or ())
+    return Speech(out, float(result["seconds"]), lines_, rewritten, parts, misheard)
+
+
+def voice_file(settings: Settings, home: Path) -> Path:
+    return Path(settings.omni_voice) if settings.omni_voice else home / "studio/voices/me.pt"
+
+
+OMNI_HALF = "omnivoice-bf16"  # in the models folder (install.sh --omnivoice)
+
+
+def _omni_job(settings: Settings, home: Path) -> dict:
+    found, half = voice_file(settings, home), _paths(settings, home)[1] / OMNI_HALF
+    hindi = found.with_name(found.stem + "-hi" + found.suffix)
+    return {"voice": str(found) if found.is_file() else "", "voice_hi": str(hindi) if hindi.is_file() else "",
+            "omni_model": str(half) if half.is_dir() else "", "instruct": settings.omni_instruct,
+            "steps": settings.omni_steps, "dtype": settings.omni_dtype, "check": settings.voice_check,
+            "retries": settings.voice_retries}
+
+
+def clone(settings: Settings, home: Path, audio: Path, text: str = "", lang: str = "en") -> tuple[Path, str, float]:
+    """Your recording → the OmniVoice voice file (once). ``text``: its exact words; "" = Whisper writes them
+    and the first whole sentences up to 10 s are kept. Returns (file, the words it used, seconds)."""
+    python, _models = _paths(settings, home)
+    if not python.is_file():
+        raise VoiceError(f"The studio's voices are not installed ({python} missing): run orchestrator/studio/install.sh --omnivoice")
+    out = voice_file(settings, home)
+    if lang == "hi":  # used for Hindi lines; English lines keep the English clip
+        out = out.with_name(out.stem + "-hi" + out.suffix)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    job = {"engine": "clone", "audio": str(audio), "text": text, "out": str(out), "seconds": 10, "lang": lang,
+           "threads": settings.threads, "omni_model": _omni_job(settings, home)["omni_model"], "dtype": settings.omni_dtype, "check": settings.voice_check or "small"}
+    worker = Path(__file__).with_name("voice_worker.py")
+    try:
+        done = subprocess.run([str(python), "-I", str(worker)], input=json.dumps(job), capture_output=True, text=True,
+                              timeout=TIMEOUT, check=False)
+    except subprocess.TimeoutExpired:
+        raise VoiceError(f"cloning took over {TIMEOUT // 60} minutes") from None
+    if done.returncode != 0:
+        tail = (done.stderr or "").strip().splitlines()[-1:] or ["no error text"]
+        raise VoiceError(f"cloning failed: {tail[0][:200]}")
+    result = json.loads(done.stdout.strip().splitlines()[-1])
+    return out, str(result["text"]), float(result["seconds"])
 
 
 def _sentences(lines: list[Line], spans: list[list[float]]) -> tuple[tuple, tuple]:
@@ -179,6 +226,7 @@ def _sentences(lines: list[Line], spans: list[list[float]]) -> tuple[tuple, tupl
 
 
 VOICE_LISTS = {
+    "omnivoice": "print('clone')",
     "kokoro": "import numpy, sys; print(' '.join(sorted(numpy.load(sys.argv[1]).files)))",
     "edge": ("import asyncio, edge_tts; print(' '.join(sorted(v['ShortName'] for v in asyncio.run(edge_tts.list_voices()) "
              "if v['Locale'] in ('en-IN', 'hi-IN', 'en-US', 'en-GB'))))"),

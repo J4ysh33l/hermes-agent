@@ -164,7 +164,26 @@ def _music(home: Path, words: list[str]) -> int:
     return 0
 
 
-COMMANDS = {"video": _video, "queue": _queue, "cover": _cover, "write": _write, "profile": _profile, "music": _music}
+def _clone(home: Path, args: list[str]) -> int:
+    """clone [--hindi] <recording> ["its exact words"]: your OmniVoice voice file, once (voice.clone)."""
+    lang = "hi" if args[:1] == ["--hindi"] else "en"
+    args = args[1:] if lang == "hi" else args
+    if not args:
+        print('usage: python -m orchestrator.studio clone [--hindi] <recording.wav|m4a|mp3> ["its exact words"]',
+              file=sys.stderr)
+        return 2
+    ctx = chat.Context(home)
+    try:
+        path, words, seconds = voice.clone(ctx.settings, home, Path(args[0]), " ".join(args[1:]), lang)
+    except voice.VoiceError as exc:
+        print(f"⚠️ {exc}", file=sys.stderr)
+        return 1
+    print(f"{path}: {seconds:.1f} s of your voice, saying: {words}")
+    print("Check those words match the recording exactly; if not, run again with the words in quotes.")
+    return 0
+
+
+COMMANDS = {"clone": _clone, "video": _video, "queue": _queue, "cover": _cover, "write": _write, "profile": _profile, "music": _music}
 
 
 def main(argv: list[str] | None = None) -> int:

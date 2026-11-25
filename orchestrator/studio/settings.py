@@ -20,7 +20,7 @@ TEXT_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-fla
 SCRIPT_MODELS = (ModelChoice("gemini-3.5-flash-lite"), ModelChoice("gemini-3.1-flash-lite"))
 # Google Search on the free tier worked on these and not on the 3.x models (tested 2026-11-24)
 RESEARCH_MODELS = (ModelChoice("gemini-2.5-flash"), ModelChoice("gemini-2.5-flash-lite"))  # flash finds more
-ENGINES = ("kokoro", "edge")
+ENGINES = ("kokoro", "edge", "omnivoice")
 PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 
 
@@ -82,7 +82,14 @@ class Settings:
     speed: float = 1.0  # 0.5 to 2.0; a page profile's voice.speed wins (default profile: 1.15 ≈ 196 wpm on real scripts)
     pause: float = 0.15  # seconds of silence after each sentence
     profile: str = "default"  # the page profile videos use unless one is named (studio/profiles)
-    threads: int = 2  # CPU threads Kokoro may use
+    threads: int = 2  # CPU threads the voice may use
+    # OmniVoice (studio.engine: omnivoice; install.sh --omnivoice): your cloned voice, CPU, slow but fine overnight
+    omni_voice: str = ""  # the voice file from /studio clone; "" = $HERMES_HOME/studio/voices/me.pt
+    omni_instruct: str = "male, indian accent"  # the described voice used while there is no voice file
+    omni_steps: int = 32  # 16: ~2× faster, a little rougher
+    omni_dtype: str = "bf16"  # bf16 halves the model's memory; fp32 if bf16 sounds wrong on your CPU
+    voice_check: str = "small"  # faster-whisper model that listens to each OmniVoice line ("" = no check)
+    voice_retries: int = 2  # a misheard line is spoken again this many times
     kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
     models_dir: str = ""  # "" = $HERMES_HOME/studio/models
@@ -131,6 +138,12 @@ def parse(raw: dict[str, Any]) -> Settings:
         pause=float(studio.get("pause", base.pause)),
         profile=str(studio.get("profile", base.profile)),
         threads=int(studio.get("threads", base.threads)),
+        omni_voice=str(studio.get("omni_voice", base.omni_voice)),
+        omni_instruct=str(studio.get("omni_instruct", base.omni_instruct)),
+        omni_steps=min(64, max(4, int(studio.get("omni_steps", base.omni_steps)))),
+        omni_dtype="fp32" if str(studio.get("omni_dtype", base.omni_dtype)) == "fp32" else "bf16",
+        voice_check=str(studio.get("voice_check", base.voice_check) or ""),
+        voice_retries=min(5, max(0, int(studio.get("voice_retries", base.voice_retries)))),
         kokoro_model=str(studio.get("kokoro_model", base.kokoro_model)),
         studio_python=str(studio.get("studio_python", base.studio_python)),
         models_dir=str(studio.get("models_dir", base.models_dir)),

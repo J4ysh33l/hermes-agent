@@ -37,6 +37,21 @@ fi
 if [ "${KOKORO_FP32:-0}" = 1 ]; then   # optional: studio.kokoro_model: kokoro-v1.0.onnx
     fetch kokoro-v1.0.onnx 7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5
 fi
+
+# Optional: OmniVoice (your cloned voice, studio.engine: omnivoice) and the Whisper model that checks
+# every line it speaks. ~1 GB of packages (CPU PyTorch) + 2 GB of models. Run: install.sh --omnivoice
+if [ "${1:-}" = "--omnivoice" ] || [ "${OMNIVOICE:-0}" = 1 ]; then
+    "$VENV/bin/python" -m pip install --quiet "torch==2.8.0" "torchaudio==2.8.0" \
+        --index-url https://download.pytorch.org/whl/cpu
+    "$VENV/bin/python" -m pip install --quiet "omnivoice==0.2.1" "faster-whisper==1.2.1"
+    if [ ! -f "$MODELS/omnivoice-bf16/model.safetensors" ]; then  # the half-size copy: ~1.9 GB peak instead of 2.9
+        echo "{\"engine\": \"convert\", \"out\": \"$MODELS/omnivoice-bf16\"}" | \
+            "$VENV/bin/python" -I "$(dirname "$0")/voice_worker.py"
+    fi
+    "$VENV/bin/python" -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
+    echo "ready   OmniVoice 0.2.1 (bf16 copy in $MODELS/omnivoice-bf16) + faster-whisper small"
+    echo "Next:   your voice file, once: python -m orchestrator.studio clone <recording> [\"its exact words\"]"
+fi
 fetch voices-v1.0.bin bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
 command -v ffmpeg >/dev/null || echo "note    install ffmpeg (Edge TTS audio and Telegram voice messages need it)"
 fc-list 2>/dev/null | grep -qi emoji || echo "note    install an emoji font for video emoji: sudo apt install fonts-noto-color-emoji"

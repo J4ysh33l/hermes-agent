@@ -78,6 +78,7 @@ def _voice(ctx: Context, text: str) -> str:
     method, field = ("sendVoice", "voice") if clip.suffix == ".ogg" else ("sendDocument", "document")
     Telegram(ctx.http, ctx.secrets).upload(method, field, clip, f"🔊 {engine}, {speech.seconds:.1f} s")
     note = f" · {speech.rewritten} Hinglish line(s) written in Devanagari by Gemini" if speech.rewritten else ""
+    note += f" · ⚠️ still misheard after retries: {'; '.join(speech.misheard)}" if speech.misheard else ""
     return f"🔊 Sent ({engine}): {speech.seconds:.1f} s of speech, made in {took:.0f} s{note}. File: {clip}"
 
 

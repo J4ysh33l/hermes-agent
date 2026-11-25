@@ -213,4 +213,4 @@ def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Story
         tail = (done.stderr or done.stdout).strip().splitlines()[-1:] or ["no error text"]
         raise VideoError(f"Remotion failed: {tail[0][:200]} (log: {job / 'render.log'})")
     return Video(out, speech.seconds + TAIL, job, voice_took, time.monotonic() - started,
-                 built.notes + chosen.notes)
+                 built.notes + chosen.notes + tuple(f"voice: Whisper still heard this line wrong: {t}" for t in speech.misheard))
