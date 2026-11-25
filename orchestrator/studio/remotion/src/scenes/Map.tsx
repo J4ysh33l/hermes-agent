@@ -7,7 +7,8 @@ import type {GeometryCollection, Topology} from "topojson-specification";
 import world from "world-atlas/countries-50m.json";
 import coarseWorld from "world-atlas/countries-110m.json";
 import {Arrive, usePop} from "../motion";
-import {useTheme} from "../theme";
+import {textWidth} from "../fit";
+import {SAFE, useTheme} from "../theme";
 import type {MapScene} from "../types";
 
 const W = 900;
@@ -59,6 +60,9 @@ const target = (shapes: Country[]) => {
 };
 
 const LABEL_H = 64;
+// The safe box SceneFrame leaves a non-full-bleed scene (motion.tsx); the map shrinks to fit it under its title.
+const BOX_H = 1920 - SAFE.top - SAFE.bottom - 260;
+const TITLE = 76;
 const SHORT: Record<string, string> = {"United States of America": "USA", "United Kingdom": "UK",
   "United Arab Emirates": "UAE", "Central African Rep.": "CAR", "Dem. Rep. Congo": "DR Congo"};
 export const labelOf = (name: string) => SHORT[name] ?? name;
@@ -121,14 +125,17 @@ export const WorldMap: React.FC<{scene: MapScene; frames: number}> = ({scene, fr
     });
   });
   const names = scene.labels ? (lit.length ? lit : focus.slice(0, 1)) : [];
+  const titleH = scene.title ? Math.ceil(textWidth(scene.title, TITLE, "inter") / W) * TITLE * 1.1 + 20 : 0;
+  // drawn in W×H units, shown k times as big; 6% spare for the frame's slow zoom (motion.tsx drift)
+  const k = Math.min(1, (BOX_H * 0.94 - titleH) / H);
   return (
     <div>
       {scene.title ? (
-        <Arrive style={{fontFamily: theme.sans, fontWeight: 900, fontSize: 76, color: theme.text, marginBottom: 20}}>
+        <Arrive style={{fontFamily: theme.sans, fontWeight: 900, fontSize: TITLE, lineHeight: 1.1, color: theme.text, marginBottom: 20}}>
           {scene.title}
         </Arrive>
       ) : null}
-      <svg width={W} height={H} style={{borderRadius: 30, background: `${theme.panel}88`, overflow: "hidden"}}>
+      <svg width={W * k} height={H * k} viewBox={`0 0 ${W} ${H}`} style={{display: "block", margin: "0 auto", borderRadius: 30, background: `${theme.panel}88`, overflow: "hidden"}}>
         {shapes.map((c, i) => {
           const on = litNames.has(c.properties.name);
           return outlines[i] === "" ? null : (

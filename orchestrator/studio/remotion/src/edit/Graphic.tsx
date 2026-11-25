@@ -107,7 +107,7 @@ const Title: React.FC<GraphicProps> = ({look, item}) => {
         {marked(item.text ?? "", t.accent)}
       </div>
       {t.subtitle && item.sub ? (
-        <div style={{margin: "10px auto 0", width: "fit-content", background: "rgba(255,255,255,0.92)", color: "#222",
+        <div style={{margin: "10px auto 0", width: "fit-content", background: look.paper + "EB", color: look.ink,
           fontFamily: FAMILIES[look.font], fontWeight: 700, fontSize: 28, padding: "6px 14px", borderRadius: 4}}>{item.sub}</div>
       ) : null}
     </Card>
@@ -127,10 +127,10 @@ const Stat: React.FC<GraphicProps> = ({look, item}) => (
 
 const Headline: React.FC<GraphicProps> = ({look, item}) => (
   <Card style={{rotate: "-1deg"}}>
-    <div style={{background: "#f6f2ea", color: "#141210", padding: "26px 34px 32px", boxShadow: shadow, width: 860}}>
+    <div style={{background: look.paper, color: look.ink, padding: "26px 34px 32px", boxShadow: shadow, width: 860}}>
       {item.source ? (
         <div style={{fontFamily: FAMILIES[look.font], fontWeight: 800, fontSize: 24, letterSpacing: 3, textTransform: "uppercase",
-          borderBottom: "2px solid #141210", paddingBottom: 10, marginBottom: 16}}>{item.source}</div>
+          borderBottom: `2px solid ${look.ink}`, paddingBottom: 10, marginBottom: 16}}>{item.source}</div>
       ) : null}
       <div style={{fontFamily: FAMILIES[look.serif], fontWeight: 600, fontSize: (item.text ?? "").length > 60 ? 44 : 52, lineHeight: 1.15}}>
         {item.text}
@@ -163,8 +163,8 @@ const List: React.FC<GraphicProps> = ({look, item}) => {
 
 const Chapter: React.FC<GraphicProps> = ({look, item}) => (
   <Card top={CARD_TOP - 40}>
-    <div style={{display: "flex", alignItems: "center", gap: 22, background: look.box_bg + "D1", color: "#fff",
-      border: "1.5px solid rgba(255,255,255,0.35)", borderRadius: 18, padding: "18px 30px", fontFamily: FAMILIES[look.font],
+    <div style={{display: "flex", alignItems: "center", gap: 22, background: look.box_bg + "D1", color: look.box_fg,
+      border: `1.5px solid ${look.box_fg}59`, borderRadius: 18, padding: "18px 30px", fontFamily: FAMILIES[look.font],
       boxShadow: shadow}}>
       <span style={{color: look.accent, fontWeight: 800, fontSize: 54}}>{String(item.n ?? 1).padStart(2, "0")}</span>
       <span style={{fontWeight: 800, fontSize: 46}}>{item.text}</span>
@@ -209,9 +209,9 @@ const Quote: React.FC<GraphicProps> = ({look, item}) => (
 
 const Picture: React.FC<GraphicProps> = ({look, item}) => (
   <Card top={980}>
-    <div style={{background: "#fff", padding: 10, borderRadius: 18, boxShadow: shadow, width: 880}}>
+    <div style={{background: look.paper, padding: 10, borderRadius: 18, boxShadow: shadow, width: 880}}>
       <Img src={staticFile(item.src ?? "")} style={{width: "100%", maxHeight: 640, objectFit: "contain", borderRadius: 10, display: "block"}} />
-      {item.caption ? <div style={{fontFamily: FAMILIES[look.font], fontWeight: 700, fontSize: 30, color: "#222", padding: "10px 8px 4px"}}>{item.caption}</div> : null}
+      {item.caption ? <div style={{fontFamily: FAMILIES[look.font], fontWeight: 700, fontSize: 30, color: look.ink, padding: "10px 8px 4px"}}>{item.caption}</div> : null}
     </div>
   </Card>
 );

@@ -342,3 +342,4 @@ apps/desktop/.dist-build*
 
 # Local Claude context checkpoints (private)
 .claude/checkpoints/
+!orchestrator/studio/tests/data/
