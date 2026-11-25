@@ -88,7 +88,7 @@ class Settings:
     omni_instruct: str = "male, indian accent"  # the described voice used while there is no voice file
     omni_steps: int = 32  # 16: ~2× faster, a little rougher
     omni_dtype: str = "bf16"  # bf16 halves the model's memory; fp32 if bf16 sounds wrong on your CPU
-    omni_wpm: int = 185  # speaking rate (pauses not counted) at speed 1.0, × the profile's speed: 1.15 → ~213, ~196 with pauses; 0 = the clip's own pace
+    omni_wpm: int = 170  # speaking rate (pauses not counted) at speed 1.0, × the profile's speed: 1.15 → ~196, ~182 with pauses (185 felt rushed); 0 = the clip's own pace
     omni_guidance: float = 2.0  # how closely it follows your clip: lower = freer, less "read"; higher = closer copy
     voice_check: str = "small"  # faster-whisper model that listens to each OmniVoice line ("" = no check)
     voice_check_hi: str = "large-v3-turbo"  # for passes with Hindi lines: small can't read Hindi (~2.3 GB, still alone in memory)
@@ -112,7 +112,8 @@ class Settings:
     claude_via: str = "handoff"  # handoff (your Claude plan, via the private handoff repo; default) | api | auto
     handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
     direction_retries: int = 2  # a storyboard that fails its checks goes back to the director this many times
-    research: bool = True  # before the script, a researcher finds current facts with Google Search (research.py)
+    research: bool = True  # before the script, a researcher finds current facts on the web (research.py)
+    researcher: str = "auto"  # auto: Claude when Claude writes (API key: its web search; handoff: an issue), else Gemini | claude | gemini
     research_models: tuple[ModelChoice, ...] = RESEARCH_MODELS  # Gemini models that may search, tried in order
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
     hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram
@@ -167,6 +168,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         handoff_repo=str(studio.get("handoff_repo", "") or (raw.get("notes") or {}).get("handoff_repo", "")),
         direction_retries=min(5, max(0, int(studio.get("direction_retries", base.direction_retries)))),
         research=bool(studio.get("research", base.research)),
+        researcher=_choice("researcher", str(studio.get("researcher", base.researcher)), ("auto", "claude", "gemini")),
         research_models=tuple(ModelChoice(str(m["id"])) for m in studio["research_models"])
         if studio.get("research_models") else base.research_models,
         render_window=_window(str(studio.get("render_window", base.render_window))),

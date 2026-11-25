@@ -142,14 +142,14 @@ def _for(job_id: str) -> Iterator[None]:
 
 def _add(ctx: Any, notes: str, how: str, seconds: float, look: profile.Profile, folder: Path) -> Job:
     folder.joinpath("asked.txt").write_text(notes, encoding="utf-8")  # yours; notes.txt adds the research
-    notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes, brief.seconds_of(look, seconds), folder)
+    notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes, brief.seconds_of(look, seconds), folder, how)
     folder.joinpath("notes.txt").write_text(notes, encoding="utf-8")
     job = Job(folder, {"id": folder.name, "created": datetime.now().isoformat(timespec="seconds"),
                        "profile": look.name, "seconds": seconds, "hook": 1, "picked": False, "via": how,
                        "writer": "claude (handoff)" if how == "handoff" else how, "stage": "script", "round": 0, "fixes": 0, "calls": 0, "wishes": [],
                        "state": "writing", "outputs": {}, "research": research.summary(found)})
     job.log(research.summary(found))
-    if how == "handoff" and not found.facts and ctx.settings.research:  # Gemini could not search: Claude does
+    if how == "handoff" and not found.facts and ctx.settings.research:  # Claude researches (or Gemini could not)
         asked = folder.joinpath("asked.txt").read_text(encoding="utf-8")
         job.data.update(stage="research", calls=1)
         job.data["issue"] = _issue(ctx, job, "research", lambda hand: handoff.ask(hand, job.id, "research", research.for_claude(

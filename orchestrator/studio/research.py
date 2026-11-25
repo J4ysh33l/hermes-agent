@@ -1,4 +1,4 @@
-"""Call 0, before the script: a researcher finds the current facts on the topic with Google Search.
+"""Call 0, before the script: a researcher finds the current facts on the topic with web search.
 
 Its own job and its own prompt (``prompts/research.md``): current numbers, dates and names, surprising
 details, a quote, and corrections to your notes, one line each with its site. The findings are added to
@@ -6,7 +6,10 @@ your notes under a heading, so the script writer and the director use them like 
 the evidence checks (``rules.py``: a number on screen must be in the notes) count them too. Their sources
 travel with the video to Telegram.
 
-Search runs on Gemini first (``studio.research_models``; on the free tier only some models may search: the
+Who searches (``studio.researcher``, default auto): when Claude writes, Claude researches too and Gemini is
+not called: with an API key, Claude's own web search tool (``llm.claude_search``); through the handoff,
+the job's first issue (``ENDING``; the repo's settings keep web search and fetch for it). Otherwise search
+runs on Gemini first (``studio.research_models``; on the free tier only some models may search: the
 2.5 ones could on 2026-11-24, the 3.x ones could not). A busy model hands over to the next. When none can
 search and Claude writes through the handoff repo, Claude does the research too, as the job's first issue
 (``ENDING``: it writes ``research.txt``); otherwise the video is written from your notes alone and you are
@@ -40,7 +43,7 @@ MAX_FACTS = 25
 @dataclass(frozen=True)
 class Findings:
     facts: tuple[str, ...]  # one line each, with its site and date
-    sources: tuple[tuple[str, str], ...]  # (site, link) as Google Search returned them
+    sources: tuple[tuple[str, str], ...]  # (site, link) as the search returned them
     model: str = ""
     skipped: str = ""  # why there are none ("" = there are)
 
@@ -49,7 +52,7 @@ class Findings:
         if not self.facts:
             return notes
         lines = "\n".join(f"- {f}" for f in self.facts)
-        return f"{notes.strip()}\n\n{HEADING} (found with Google Search on {today:%d %B %Y}):\n{lines}\n"
+        return f"{notes.strip()}\n\n{HEADING} (found with web search on {today:%d %B %Y}):\n{lines}\n"
 
     def sites(self) -> list[str]:
         return list(dict.fromkeys(site for site, _link in self.sources if site))
@@ -100,10 +103,34 @@ def from_claude(text: str) -> Findings:
                     "" if found else "Claude's research had no facts")
 
 
-def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, today: date) -> Findings:
-    """The findings, or none with the reason (research off, no key, every model unable to search)."""
+def by_claude(settings: Settings, how: str) -> bool:
+    """Claude researches when it writes too (studio.researcher: auto), or always (claude)."""
+    return settings.researcher == "claude" or (settings.researcher == "auto" and how in ("claude-api", "handoff"))
+
+
+def _claude(http: Http, keys: Keys, settings: Settings, prompt: str) -> Findings:
+    try:
+        answer, sources = llm.claude_search(http, keys.claude, settings.claude_model, prompt, workflow="studio",
+                                            step="research", effort=settings.claude_effort)
+    except HttpError as exc:
+        return Findings((), (), skipped=f"{settings.claude_model}: {'no connection' if exc.status == 0 else f'HTTP {exc.status}'}")
+    except ValueError as exc:
+        return Findings((), (), skipped=f"{settings.claude_model}: {exc}")
+    found = facts(answer)
+    return Findings(found, tuple(sources), settings.claude_model) if found else \
+        Findings((), (), skipped=f"{settings.claude_model}: no facts in the answer")
+
+
+def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, today: date,
+           how: str = "") -> Findings:
+    """The findings, or none with the reason (research off, no key, every model unable to search). Claude
+    with an API key searches itself when ``by_claude``; Gemini is not called then."""
     if not settings.research:
         return Findings((), (), skipped="studio.research is off")
+    if by_claude(settings, how) and keys.claude:
+        return _claude(http, keys, settings, ask(notes, seconds, today))
+    if by_claude(settings, how) and how == "handoff":
+        return Findings((), (), skipped="Claude researches through the handoff")
     if not keys.gemini:
         return Findings((), (), skipped="no GEMINI_API_KEY")
     prompt, tried = ask(notes, seconds, today), []
@@ -123,10 +150,11 @@ def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: floa
     return Findings((), (), skipped="; ".join(tried))
 
 
-def add_to(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, folder: Path) -> tuple[str, Findings]:
+def add_to(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, folder: Path,
+           how: str = "") -> tuple[str, Findings]:
     """Researches, keeps the findings in ``folder`` (research.json), returns (your notes + the findings, them)."""
     today = date.today()
-    found = gather(http, keys, settings, notes, seconds, today)
+    found = gather(http, keys, settings, notes, seconds, today, how)
     folder.mkdir(parents=True, exist_ok=True)
     found.save(folder)
     return found.notes(notes, today), found
@@ -136,4 +164,4 @@ def summary(found: Findings) -> str:
     """One line for the job's log and your reply."""
     if not found.facts:
         return f"research skipped ({found.skipped})"
-    return f"research: {len(found.facts)} facts by {found.model} from {', '.join(found.sites()[:6]) or 'Google Search'}"
+    return f"research: {len(found.facts)} facts by {found.model} from {', '.join(found.sites()[:6]) or 'web search'}"

@@ -95,7 +95,7 @@ class Researching(unittest.TestCase):
         self.assertEqual(search.json_body["tools"], [{"google_search": {}}])
         self.assertIn("Studio research", search.json_body["contents"][0]["parts"][0]["text"])
         self.assertIn(TOPIC, search.json_body["contents"][0]["parts"][0]["text"])
-        self.assertIn("Research (found with Google Search on", script_ask)
+        self.assertIn("Research (found with web search on", script_ask)
         self.assertIn("Only 12 candidates scored 100 percentile in CAT 2025", script_ask)
         self.assertNotIn("Here is what I found", script_ask)  # facts only, one per line
         job = queue.jobs(self.home)[0]
@@ -120,6 +120,31 @@ class Researching(unittest.TestCase):
         self.assertIn("written by gemini-3.5-flash-lite", reply)
         job = queue.jobs(self.home)[-1]
         self.assertNotIn("Research", job.folder.joinpath("notes.txt").read_text(encoding="utf-8"))
+
+    def test_claude_researches_with_its_own_web_search_when_it_writes_and_gemini_is_not_called(self):
+        claude = "https://api.anthropic.com/v1/messages"
+        searched = {"content": [
+            {"type": "text", "text": "Let me search."},
+            {"type": "server_tool_use", "id": "s1", "name": "web_search", "input": {"query": "CAT 2026"}},
+            {"type": "web_search_tool_result", "tool_use_id": "s1", "content": [
+                {"type": "web_search_result", "url": "https://www.iimcat.ac.in/x", "title": "CAT"}]},
+            {"type": "text", "text": FOUND, "citations": [
+                {"type": "web_search_result_location", "url": "https://careers360.com/y", "cited_text": "12"}]}],
+            "stop_reason": "end_turn", "usage": {"input_tokens": 900, "output_tokens": 300}}
+        self.http.on("POST", claude, searched)
+        st = settings.Settings(writer="claude", claude_via="api")
+        found = research.gather(self.http, settings.Keys("g", "sk"), st, TOPIC, 45, date(2026, 11, 24), "claude-api")
+        self.assertEqual((found.model, len(found.facts)), ("claude-opus-5-5", 2))
+        self.assertEqual(found.sites(), ["iimcat.ac.in", "careers360.com"])
+        body = self.http.calls[-1].json_body
+        self.assertEqual(body["tools"][0]["type"], "web_search_20260209")
+        self.assertFalse([c for c in self.http.calls if c.url.startswith(GEMINI)])
+        handoff = research.gather(self.http, settings.Keys("g"), st, TOPIC, 45, date(2026, 11, 24), "handoff")
+        self.assertEqual(handoff.skipped, "Claude researches through the handoff")  # its own issue, not Gemini
+        self.assertFalse([c for c in self.http.calls if c.url.startswith(GEMINI)])
+        gem = research.gather(self.http, settings.Keys("g"), settings.Settings(researcher="gemini"), TOPIC, 45,
+                              date(2026, 11, 24), "handoff")
+        self.assertEqual(gem.model, "gemini-2.5-flash")
 
     def test_facts_are_read_with_or_without_bullets_and_each_is_kept_once(self):
         plain = ("Here is what I found:\nCAT 2026 is on Sunday, November 29, 2026.\nIIM Indore conducts CAT 2026.\n"

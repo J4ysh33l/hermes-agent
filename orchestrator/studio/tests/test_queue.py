@@ -58,6 +58,8 @@ WITH_RACE = {**COVERED, "scenes": [COVERED["scenes"][0], {**RACE_SCENE, "props":
 def writer_answers(board: dict):
     """A fake Claude API answering each of the three calls by what it asks for."""
     def answer(call) -> dict:
+        if call.json_body.get("tools"):  # Claude's own research (web search): nothing new for these tests
+            return claude("Nothing to add.")
         ask = call.json_body["messages"][0]["content"][-1]["text"]
         if "1 of 3: the script" in ask:
             return claude(json.dumps(SCRIPT))
@@ -278,7 +280,7 @@ class Queue(unittest.TestCase):
         self.run_queue(DAY)
         job = queue.load(self.home, job.id)
         self.assertEqual(job.state, "ready")
-        self.assertEqual(self.http.count(CLAUDE), 4)  # script, direction, components, one fix
+        self.assertEqual(self.http.count(CLAUDE), 5)  # research (Claude writes, so Claude searches), script, direction, components, one fix
         board = json.loads(job.folder.joinpath("storyboard.json").read_text(encoding="utf-8"))
         self.assertEqual((board["scenes"][2]["type"], board["scenes"][2]["value"]), ("stat", 25))
         self.assertFalse(job.folder.joinpath("scene03.tsx").exists())

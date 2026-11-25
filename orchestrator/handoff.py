@@ -93,13 +93,14 @@ except Exception:  # noqa: BLE001 - reporting must never break the run
 '''
 # What every Claude run in the handoff repo may use. Each tool a session loads is sent again on every model
 # call of the run (~47k tokens before the issue is read), so the repo's settings remove what no Hermes job
-# needs. Generous on purpose: kept are the file tools, the shell, and GitHub's issue/file tools (the prompt's
-# fallback when `gh api` fails). A bare name in "deny" takes the tool out of Claude's context entirely
+# needs. Generous on purpose: kept are the file tools, the shell, web search and fetch (research), and
+# GitHub's issue/file tools (the prompt's fallback when `gh api` fails). A bare name in "deny" takes the tool out of Claude's context entirely
 # (code.claude.com/docs/en/permissions). Applies to every job, now and future, sent through Handoff.
 KEEP = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "ToolSearch", "TodoWrite")
 DENY = (
-    # other agents, the web, notebooks, skills, scheduling, messaging, artifacts, connectors, plugins
-    "Agent", "Task", "WebFetch", "WebSearch", "NotebookEdit", "Skill", "Workflow", "Monitor",
+    # other agents, notebooks, skills, scheduling, messaging, artifacts, connectors, plugins
+    # (web search and fetch stay: Claude researches through the handoff, research.py)
+    "Agent", "Task", "NotebookEdit", "Skill", "Workflow", "Monitor",
     "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop", "CronCreate", "CronDelete", "CronList",
     "ScheduleWakeup", "SendMessage", "ListAgents", "PushNotification", "ReadNotifications", "SendUserFile",
     "Artifact", "ArtifactComments", "ArtifactData", "DesignSync", "EnterWorktree", "ExitWorktree",

@@ -107,6 +107,53 @@ def claude(http, api_key: str, model: str, prompt: str, *, workflow: str, step: 
     return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
 
 
+def claude_search(http, api_key: str, model: str, prompt: str, *, workflow: str, step: str, max_uses: int = 8,
+                  max_tokens: int = 16000, effort: str = "medium") -> tuple[str, list[tuple[str, str]]]:
+    """Claude with its web search tool: (the answer, its sources as (site, link) pairs). The search runs on
+    Anthropic's side; a long search may pause the turn, which is continued (each call logged)."""
+    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": max_uses}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    headers = {"x-api-key": api_key, "anthropic-version": CLAUDE_VERSION, "anthropic-beta": CLAUDE_FALLBACK}
+    blocks: list[dict[str, Any]] = []
+    for _turn in range(4):  # a paused turn is sent back as it is and goes on
+        body = {"model": model, "max_tokens": max_tokens, "messages": messages, "tools": tools,
+                "output_config": {"effort": effort}, "fallbacks": "default"}
+        started = time.monotonic()
+        try:
+            data = http.request("POST", CLAUDE, headers=headers, json_body=body).json()
+        except Exception as exc:
+            usage.log_call(workflow, step, "anthropic", model, ok=False, ms=int((time.monotonic() - started) * 1000),
+                           note=str(exc)[:200])
+            raise
+        meta = data.get("usage") or {}
+        usage.log_call(workflow, step, "anthropic", model, input_tokens=meta.get("input_tokens", 0),
+                       output_tokens=meta.get("output_tokens", 0), cached=meta.get("cache_read_input_tokens", 0),
+                       ms=int((time.monotonic() - started) * 1000))
+        blocks += data.get("content") or []
+        stop = data.get("stop_reason")
+        if stop == "refusal":
+            raise ValueError(f"Claude declined: {(data.get('stop_details') or {}).get('explanation') or 'no reason given'}")
+        if stop == "max_tokens":
+            raise ValueError(f"Claude ran out of room ({max_tokens} tokens) before finishing")
+        if stop != "pause_turn":
+            break
+        messages = [*messages, {"role": "assistant", "content": data.get("content") or []}]
+    links: list[str] = []
+    for b in blocks:  # what it searched and what it cited
+        if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
+            links += [r.get("url", "") for r in b["content"] if r.get("type") == "web_search_result"]
+        links += [c.get("url", "") for c in b.get("citations") or [] if c.get("url")]
+    sources = [(_site(u), u) for u in dict.fromkeys(u for u in links if u)]
+    # the answer is the text after its last search (earlier text narrates the searching)
+    last = max((n for n, b in enumerate(blocks) if b.get("type") == "web_search_tool_result"), default=-1)
+    return "".join(b.get("text", "") for b in blocks[last + 1:] if b.get("type") == "text"), sources
+
+
+def _site(url: str) -> str:
+    host = url.split("//", 1)[-1].split("/", 1)[0].lower()
+    return host.removeprefix("www.")
+
+
 # ---- Gemini Files API: large inputs (meeting audio) are uploaded, referenced, then deleted ----------
 # Uploading costs no tokens; the tokens are counted (and logged) by the gemini() call that uses the file.
 
