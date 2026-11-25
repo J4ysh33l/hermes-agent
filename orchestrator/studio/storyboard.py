@@ -214,6 +214,11 @@ def _fallback(where: str, value: Any) -> Mapping[str, Any]:
     return MappingProxyType({"type": kind, **fields})
 
 
+def library_scene(where: str, value: Any) -> Mapping[str, Any]:
+    """A library scene's fields with its type, checked (another pipeline drawing one: an edit's full-frame scene)."""
+    return _fallback(where, value)
+
+
 SCHEMA["custom"] = {"brief": _text(True), "props": _json_object, "full_bleed": _flag(False), "component": _text(False),
                     "fallback": _fallback}
 STOCK = "stock:"  # an image scene's src searched at render time (broll.py: public-domain photos, or Pexels/Pixabay with a key)

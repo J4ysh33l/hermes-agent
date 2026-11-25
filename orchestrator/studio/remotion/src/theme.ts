@@ -4,6 +4,8 @@ import "@fontsource/anton/400.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/800.css";
 import "@fontsource/inter/900.css";
+import "@fontsource/inter-tight/600.css";
+import "@fontsource/inter-tight/700.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/montserrat/700.css";
 import "@fontsource/montserrat/900.css";
@@ -15,6 +17,7 @@ export const HEIGHT = 1920;
 
 export const FONTS = {
   inter: "Inter, sans-serif",
+  intertight: "'Inter Tight', Inter, sans-serif",
   montserrat: "Montserrat, sans-serif",
   anton: "Anton, sans-serif",
   jetbrains: "'JetBrains Mono', monospace",

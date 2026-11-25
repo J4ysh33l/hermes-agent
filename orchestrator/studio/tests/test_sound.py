@@ -35,6 +35,7 @@ SONG = {"id": "abc123", "url": "https://cdn/loop.mp3", "duration": 95000, "licen
         "title": "Lofi chill loop", "tags": [{"name": "lofi"}], "creator": "holizna", "foreign_landing_url": "https://fs/1",
         "filetype": "mp3"}
 SPOKEN = {**SONG, "id": "talk1", "title": "Lofi chill podcast intro", "url": "https://cdn/talk.mp3"}
+SONG_BYTES = b"song" * 8000
 SHORT = {**SONG, "id": "blip", "duration": 4000, "url": "https://cdn/blip.mp3"}
 
 PROPS = {
@@ -96,9 +97,9 @@ class MusicLibraryTest(unittest.TestCase):
     def test_with_no_library_a_cc0_track_is_found_for_the_page_and_kept(self):
         (self.folder / "music.yaml").unlink()
         self.http = (FakeHttp().on("GET", OPENVERSE, {"results": [SPOKEN, SHORT, SONG]})
-                     .on("GET", "https://cdn/loop.mp3", b"song"))
+                     .on("GET", "https://cdn/loop.mp3", SONG_BYTES))
         chosen = sound.plan(self.http, self.home, look(self.home, "mine", "auto", "auto"), PROPS, "t")
-        self.assertEqual(chosen.music.path.read_bytes(), b"song")  # not the talk, not the 4 s blip
+        self.assertEqual(chosen.music.path.read_bytes(), SONG_BYTES)  # not the talk, not the 4 s blip
         self.assertIn('Music "Lofi chill loop" by holizna via Openverse/freesound, CC0', chosen.notes[0])
         self.assertIn("lofi chill", self.http.calls[0].url.replace("+", " "))  # the default profile's music_query
         again = sound.plan(self.http, self.home, look(self.home, "mine", "auto", "auto"), PROPS, "t")
@@ -147,6 +148,14 @@ class MixTest(unittest.TestCase):
         self.assertLess(_loudness(out, 5.5, 0.4), music_only)  # and fades out at the end
         song = "bandpass=f=330:width_type=q:w=8,bandpass=f=330:width_type=q:w=8"  # the song alone (voice: 2 kHz)
         self.assertGreater(_loudness(out, 2.6, 1.2, song) - _loudness(out, 0.5, 1.2, song), 6)  # ducked under words
+
+    def test_once_the_voice_is_done_the_music_comes_forward(self):
+        chosen = sound.plan(self.http, self.home, look(self.home, "w", "off", "auto"), PROPS, "t")
+        song = "bandpass=f=330:width_type=q:w=8,bandpass=f=330:width_type=q:w=8"
+        flat = sound.mix(self.home, self.voice, chosen, 8.0, self.home / "flat.wav")
+        risen = sound.mix(self.home, self.voice, chosen, 8.0, self.home / "risen.wav", swell=5.0)
+        self.assertAlmostEqual(_loudness(risen, 2.6, 1.0, song), _loudness(flat, 2.6, 1.0, song), delta=0.5)  # before: as it was
+        self.assertGreater(_loudness(risen, 5.8, 0.5, song) - _loudness(flat, 5.8, 0.5, song), 5)  # after: up front
 
     def test_effects_are_made_once_and_mixed_where_planned(self):
         chosen = sound.plan(self.http, self.home, look(self.home, "s", "auto", "off"), PROPS, "t")

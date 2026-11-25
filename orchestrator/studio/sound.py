@@ -7,20 +7,23 @@ on a push/whip/zoom transition, a hit on a flash, a riser into a burn, a pop whe
 (``always``) a tick as each list item appears. Made once into ``$HERMES_HOME/studio/sfx/``.
 
 Music comes from ``$HERMES_HOME/studio/music/music.yaml``: the tracks you may use, each with its licence
-and the credit to show; a file not listed (or listed without a licence) is never used. When it has nothing
-for the page, one CC0 track is found on Openverse for the profile's ``elements.music_query`` (``fetch_music``,
-or ``python -m orchestrator.studio music fetch "<words>"`` to stock up) and added to it; yours always win::
+and the credit to show; a file not listed (or listed without a licence) is never used. A video asks for a
+mood ("calm piano", "inspiring corporate"); the track whose mood matches it best is used. When nothing of
+yours matches, three are found on Openverse (``fetch_music``, or ``python -m orchestrator.studio music fetch
+"<words>"`` to stock up) and added to it; yours always win. Openverse is asked for produced, instrumental
+music (Jamendo and ccMixter first, then Freesound) under CC0, public domain or CC BY. CC BY lets a business
+use it with credit: the credit is in the job's notes, to paste into the post's caption::
 
     - file: calm-pulse.mp3
       licence: CC0                     # or "Pixabay Content License", "CC BY 4.0", ...
       credit: "Calm Pulse by A. Artist (pixabay.com/music/...)"
       profiles: [paper]                # optional: only for these profiles
-      mood: calm                       # optional, free text
+      mood: calm piano                 # optional, what it suits (matched against the video's mood)
 
-The track is brought to one bed level (so a quiet and a loud track sit alike), looped or cut to the video,
-faded in and out, and ducked under the voice (sidechain
-compression: it dips while words are spoken and comes back up in the pauses). The credit goes into the
-job's notes, which travel with the preview.
+The track starts at its first sound (no silent intro), is brought to one bed level (so a quiet and a loud
+track sit alike), looped or cut to the video, faded in and out, and ducked under the voice (sidechain
+compression: it dips while words are spoken and comes back up in the pauses). From ``swell`` on (an end
+card with no voice) it rises to the front and fades out with the picture.
 """
 
 from __future__ import annotations
@@ -54,10 +57,17 @@ EFFECTS: dict[str, tuple[str, float, float]] = {
 # What each transition sounds like (none, cut and fade are quiet).
 ON_TRANSITION = {"push": "whoosh", "whip": "whoosh", "zoom": "whoosh", "flash": "hit", "burn": "riser"}
 LEVEL = {"whoosh": -16.0, "hit": -14.0, "riser": -18.0, "pop": -18.0, "tick": -24.0}  # dB under full scale
-BED_LUFS = -33.0  # the music under the voice (Kokoro speaks near -18 LUFS), before ducking
-MUSIC_SECONDS = (30, 600)  # a found track long enough to loop well, short enough to fetch quickly
-NOT_MUSIC = re.compile(r"\b(vocals?|voice|speech|talk|podcast|spoken|sing(ing|er)?|acapella)\b", re.IGNORECASE)
-FADE_IN, FADE_OUT = 0.6, 1.2
+BED_LUFS = -30.0  # the music under the voice (Kokoro speaks near -18 LUFS), before ducking
+SWELL_DB = 7.0  # how far the bed rises once the voice is done (an end card)
+MUSIC_SECONDS = (40, 420)  # a found track long enough to loop well, short enough to fetch quickly
+MUSIC_LICENCES = "cc0,pdm,by"
+MUSIC_SOURCES = "jamendo,ccmixter,freesound"  # produced music first; Freesound is mostly loops
+SOURCE_RANK = {"jamendo": 0.3, "ccmixter": 0.2}
+BED_TAGS = {"backgroundmusic", "commercial", "corporate", "film", "filmscore", "musicbed", "instrumental", "soft",
+            "atmospheric"}
+NOT_MUSIC = re.compile(r"\b(vocals?|voice|male|female|speech|talk|podcast|spoken|sing(ing|er)?|acapella|choir|rap)\b",
+                       re.IGNORECASE)
+FADE_IN, FADE_OUT = 0.4, 1.6
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,7 @@ class Track:
     licence: str
     credit: str
     profiles: tuple[str, ...]  # () = any profile
+    mood: str = ""
 
 
 @dataclass(frozen=True)
@@ -155,12 +166,8 @@ def library(home: Path) -> list[Track | tuple[str, str]]:
         else:
             profiles = entry.get("profiles") or []
             out.append(Track(path, str(entry["licence"]), str(entry.get("credit", "")) or file,
-                             tuple(map(str, profiles if isinstance(profiles, list) else [profiles]))))
+                             tuple(map(str, profiles if isinstance(profiles, list) else [profiles])), str(entry.get("mood", ""))))
     return out
-
-
-def _yours(home: Path, look: Profile) -> list[Track]:
-    return [t for t in library(home) if isinstance(t, Track) and (not t.profiles or look.name in t.profiles)]
 
 
 def _is_music(result: dict[str, Any], query: str) -> bool:
@@ -170,15 +177,24 @@ def _is_music(result: dict[str, Any], query: str) -> bool:
             and openverse.relevance(result, query) >= 0.5)
 
 
+def _rank(result: dict[str, Any], query: str) -> float:
+    """Better for a bed: matches the mood, produced (Jamendo/ccMixter), tagged for film or adverts."""
+    tags = {str(t.get("name", "")).lower() for t in result.get("tags") or [] if isinstance(t, dict)}
+    tags |= {str(g).lower() for g in result.get("genres") or []}
+    return openverse.relevance(result, query) + SOURCE_RANK.get(str(result.get("source")), 0) + 0.1 * len(tags & BED_TAGS)
+
+
 def fetch_music(http: Http, home: Path, query: str, count: int = 1) -> list[Track]:
-    """Up to ``count`` CC0/public-domain tracks for ``query`` from Openverse, downloaded into the music
-    folder and listed in music.yaml (with licence, credit and where they came from)."""
+    """Up to ``count`` instrumental tracks for ``query`` from Openverse (CC0, public domain or CC BY), best
+    first, downloaded into the music folder and listed in music.yaml (with licence, credit, mood and where
+    they came from)."""
     folder = home / "studio" / "music"
     listing = folder / "music.yaml"
     entries = (yaml.safe_load(listing.read_text(encoding="utf-8")) or []) if listing.is_file() else []
     known = {str(e.get("openverse")) for e in entries if isinstance(e, dict)}
+    found = openverse.search(http, "audio", query, MUSIC_LICENCES, source=MUSIC_SOURCES, category="music")
     added: list[Track] = []
-    for result in openverse.search(http, "audio", f"{query} music"):
+    for result in sorted(found, key=lambda r: -_rank(r, query)):
         if len(added) >= count:
             break
         if str(result.get("id")) in known or not _is_music(result, query):
@@ -187,32 +203,72 @@ def fetch_music(http: Http, home: Path, query: str, count: int = 1) -> list[Trac
             body = http.request("GET", result["url"]).body
         except HttpError:
             continue
+        if len(body) < 20_000:  # an error page, not a track
+            continue
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"ov-{str(result['id'])[:12]}.{result.get('filetype') or 'mp3'}"
+        ext = str(result.get("filetype") or "mp3")
+        ext = "mp3" if ext.startswith("mp3") or not ext.isalnum() else ext  # Jamendo says "mp32"
+        path = folder / f"ov-{str(result['id'])[:12]}.{ext}"
         path.write_bytes(body)
-        licence = openverse.LICENCE_NAMES[str(result["license"]).lower()]
+        licence = openverse.licence_name(result)
         entries.append({"file": path.name, "licence": licence, "credit": openverse.credit(result, "Music"),
                         "mood": query, "openverse": str(result["id"])})
-        added.append(Track(path, licence, entries[-1]["credit"], ()))
+        added.append(Track(path, licence, entries[-1]["credit"], (), query))
     if added:
         listing.write_text(yaml.safe_dump(entries, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return added
 
 
+def queries(*moods: str) -> list[str]:
+    """What to search for a mood: Openverse finds little for 3+ words, so then fewer."""
+    out: list[str] = []
+    for text in moods:
+        words = text.split()
+        for q in (" ".join(words), " ".join(words[:2]), " ".join(words[-2:]), words[-1] if words else ""):
+            if q and q not in out:
+                out.append(q)
+    return out[:6]
+
+
+def _fits(track: Track, mood: str) -> float:
+    wanted = openverse.words(mood)
+    have = openverse.words(f"{track.mood} {track.credit}")
+    return sum(1 for w in wanted if any(h.startswith(w) for h in have)) / len(wanted) if wanted else 0.0
+
+
+def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], title: str) -> tuple[Track | None, tuple[str, ...]]:
+    """The track for a video: yours (this profile's) that suits the first mood best; none suits: three found
+    for it on Openverse; nothing found: any of yours. The same title gets the same track among equals."""
+    mine = [t for t in library(home) if isinstance(t, Track) and (not t.profiles or profile in t.profiles)]
+    mood = next((m for m in moods if m.strip()), "")
+    best = max((_fits(t, mood) for t in mine), default=0.0)
+    tracks = [t for t in mine if _fits(t, mood) == best] if best >= 0.5 else []
+    if not tracks and http is not None:
+        for query in queries(*moods):
+            tracks = fetch_music(http, home, query, 3)
+            if tracks:
+                break
+    tracks = tracks or mine
+    if not tracks:
+        return None, ("no music: nothing in studio/music/music.yaml suits it and none found on Openverse",)
+    track = tracks[zlib.crc32(title.encode("utf-8")) % len(tracks)]
+    notes = [f"music: {track.credit}" + ("" if track.licence in track.credit else f" ({track.licence})")]
+    if track.licence.startswith("CC BY"):
+        notes.append("music licence CC BY: put the music credit above in the post's caption")
+    return track, tuple(notes)
+
+
 def plan(http: Http, home: Path, look: Profile, props: dict[str, Any], title: str) -> Plan:
-    """The effects and music for one video. Music (``auto``/``always``): a track from your library for this
-    profile, else one found for its ``music_query``; none to be had: no music (``always`` says so)."""
+    """The effects and music for one video. Music (``auto``/``always``): the track that suits the profile's
+    ``music_query`` (``choose``); none to be had: no music (``always`` says so)."""
     elements = look.section("elements")
     found = cues(props, elements["sfx"])
     if elements["music"] == "off":
         return Plan(tuple(found), None, ())
-    tracks = _yours(home, look) or fetch_music(http, home, elements["music_query"] or "calm")
-    if not tracks:
-        why = "no music: nothing in studio/music/music.yaml and none found on Openverse (sound.py)"
-        return Plan(tuple(found), None, (why,) if elements["music"] == "always" else ())
-    track = tracks[zlib.crc32(title.encode("utf-8")) % len(tracks)]  # the same video gets the same track
-    return Plan(tuple(found), track, (f"music: {track.credit}" + ("" if track.licence in track.credit
-                                                                     else f" ({track.licence})"),))
+    track, notes = choose(http, home, look.name, (elements["music_query"] or "calm",), title)
+    if track is None:
+        return Plan(tuple(found), None, notes if elements["music"] == "always" else ())
+    return Plan(tuple(found), track, notes)
 
 
 def _ffmpeg(args: list[str]) -> None:
@@ -231,9 +287,10 @@ def _bed_gain(track: Path) -> float:
     return 0.0 if level < -70 else max(-40.0, min(20.0, BED_LUFS - level))
 
 
-def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path) -> Path:
+def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path, swell: float | None = None) -> Path:
     """The voice with the plan's effects and ducked music, ``seconds`` long, into ``dst`` (WAV, not yet
-    normalised). Nothing to add: the voice is copied."""
+    normalised). From ``swell`` seconds on (the voice is done) the music comes forward. Nothing to add: the
+    voice is copied."""
     if not chosen.cues and not chosen.music:
         dst.write_bytes(voice.read_bytes())
         return dst
@@ -247,11 +304,18 @@ def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path) -> Pat
     if chosen.music:
         m = len(chosen.cues) + 1
         inputs += ["-stream_loop", "-1", "-i", str(chosen.music.path)]
+        rise = ""
+        if swell is not None and swell < seconds - 0.3:  # an even ramp over 0.5 s, then held
+            up = 10 ** (SWELL_DB / 20) - 1
+            rise = f",volume='1+{up:.3f}*min(1,max(0,(t-{swell:.3f})/0.5))':eval=frame"
         chains += ["[v]asplit=2[vk][vm]",
-                   f"[{m}:a]aformat=sample_rates=48000:channel_layouts=stereo,atrim=0:{seconds:.3f},"
-                   f"volume={_bed_gain(chosen.music.path):.2f}dB,afade=t=in:d={FADE_IN},afade=t=out:st={max(0.0, seconds - FADE_OUT):.3f}:"
-                   f"d={FADE_OUT}[bed]",
-                   "[bed][vk]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=350[ducked]"]
+                   f"[{m}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                   "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05,"
+                   f"atrim=0:{seconds:.3f},asetpts=N/SR/TB,"
+                   f"volume={_bed_gain(chosen.music.path):.2f}dB,afade=t=in:d={FADE_IN}[bed]",
+                   # dips while words are spoken (fast), comes back up gently in the pauses
+                   "[bed][vk]sidechaincompress=threshold=0.03:ratio=6:attack=12:release=650:knee=4[duck]",
+                   f"[duck]anull{rise},afade=t=out:st={max(0.0, seconds - FADE_OUT):.3f}:d={FADE_OUT}[ducked]"]
         voices, beds = "[vm]", [*beds, "[ducked]"]
     chains.append(f"{voices}{''.join(beds)}amix=inputs={1 + len(beds)}:duration=first:normalize=0[out]")
     _ffmpeg([*inputs, "-filter_complex", ";".join(chains), "-map", "[out]", "-t", f"{seconds:.3f}", str(dst)])

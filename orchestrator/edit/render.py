@@ -13,7 +13,6 @@ effects and ducked music (studio/sound.py), and brought to -14 LUFS (studio/audi
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import shutil
@@ -328,7 +327,15 @@ def _even(x: float) -> int:
 PANEL_ZOOM = 1.3  # the face in the bottom half of a panel scene is this much closer than the shot
 
 
-def _masks(job: Path, cut: cuts.CutList, placed: list[Placed], last: str) -> tuple[list[str], str]:
+def _on_frames(start: float, end: float, fps: int) -> str:
+    """The frames the overlay draws an item on (render_overlay: from round(start·fps), ceil(length·fps) long),
+    as an ffmpeg time test with half a frame's margin: a panel and the face it moves cut on the same frame."""
+    first = round(start * fps)
+    last = first + max(1, math.ceil((end - start) * fps)) - 1
+    return f"between(t,{(first - 0.5) / fps:.4f},{(last + 0.5) / fps:.4f})"
+
+
+def _masks(job: Path, cut: cuts.CutList, placed: list[Placed], last: str, fps: int = 30) -> tuple[list[str], str]:
     """Blur each "hide" box for its time, then move the face into the bottom half during each split or panel
     scene (zoomed in around the face). Both work on the cut footage, before the overlay goes on top."""
     chains = []
@@ -348,7 +355,7 @@ def _masks(job: Path, cut: cuts.CutList, placed: list[Placed], last: str) -> tup
         cy = min(max(0, round(fy * H - ch * 0.42)), H - ch)  # eyes a little above the middle of the half
         chains.append(f"{last}split=2[sm{n}][sc{n}]")
         chains.append(f"[sc{n}]crop={cw}:{ch}:{cx}:{cy},scale={W}:{SEAM}:flags=lanczos[sf{n}]")
-        chains.append(f"[sm{n}][sf{n}]overlay=0:{SEAM}:enable='between(t,{p.start:.3f},{p.end:.3f})'[sv{n}]")
+        chains.append(f"[sm{n}][sf{n}]overlay=0:{SEAM}:enable='{_on_frames(p.start, p.end, fps)}'[sv{n}]")
         last = f"[sv{n}]"
     return chains, last
 
@@ -360,7 +367,7 @@ def finish(job: Path, cut: cuts.CutList, base: Path, sound_file: Path, placed: l
     inputs = ["-i", str(base)]
     hold = max(0.0, seconds - speech)
     chains, last = [f"[0:v]tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}[b0]"], "[b0]"
-    more, last = _masks(job, cut, placed, last)
+    more, last = _masks(job, cut, placed, last, edit.fps)
     chains += more
     k = 1
     if overlay is not None:
@@ -372,7 +379,7 @@ def finish(job: Path, cut: cuts.CutList, base: Path, sound_file: Path, placed: l
     if logo and logo.is_file() and look["graphics"]["logo_pos"] != "none":
         inputs += ["-loop", "1", "-i", str(logo)]
         x = "W-w-48" if look["graphics"]["logo_pos"] == "top-right" else "48"
-        covered = "+".join(f"between(t,{p.start:.3f},{p.end:.3f})" for p in placed
+        covered = "+".join(_on_frames(p.start, p.end, edit.fps) for p in placed
                            if p.kind == "scene" and p.item.get("layout") == "full" or p.item.get("type") == "end") or "0"
         chains.append(f"[{k}:v]scale=-1:{LOGO_PX},format=rgba,colorchannelmixer=aa=0.92[logo]")
         chains.append(f"{last}[logo]overlay={x}:64:shortest=1:enable='not({covered})'[vl]")
@@ -398,26 +405,8 @@ def _music(http: Http | None, home: Path, look: Style, chosen: plans.Plan, title
     use = look["sound"]["music"]
     if use == "off" or (use == "auto" and not chosen.music):
         return None, []
-    tracks = [t for t in sound.library(home) if isinstance(t, sound.Track) and (not t.profiles or look.name in t.profiles)]
-    if not tracks and http is not None:  # Openverse finds little for 3+ words: then fewer, then the style's own
-        for query in _music_queries(chosen.music, look["sound"]["music_query"]):
-            tracks = sound.fetch_music(http, home, query)
-            if tracks:
-                break
-    if not tracks:
-        return None, ["no music: nothing in studio/music/music.yaml and none found on Openverse"]
-    track = tracks[int(hashlib.sha256(title.encode()).hexdigest(), 16) % len(tracks)]
-    return track, [f"music: {track.credit}" + ("" if track.licence in track.credit else f" ({track.licence})")]
-
-
-def _music_queries(asked: str, default: str) -> list[str]:
-    out = []
-    for text in (asked, default):
-        words = text.split()
-        for q in (" ".join(words), " ".join(words[:2]), " ".join(words[-2:]), words[-1] if words else ""):
-            if q and q not in out:
-                out.append(q)
-    return out[:6]
+    track, notes = sound.choose(http, home, look.name, (chosen.music, look["sound"]["music_query"]), title)
+    return track, list(notes)
 
 
 def _beats(value: Any, key: str = "") -> list[tuple[int, str]]:
@@ -481,7 +470,7 @@ def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found:
     voice = cut_voice(job, cut)
     track, music_notes = _music(http, home, look, chosen, chosen.title.replace("*", "") or job.name)
     mixed = sound.mix(home, voice, sound.Plan(tuple(_cues(placed, look["sound"]["sfx"], edit.fps)), track, tuple(music_notes)),
-                      seconds, job / "mix.wav")
+                      seconds, job / "mix.wav", swell=speech if seconds - speech > 0.5 else None)
     final_sound = audio.normalize(mixed, job / "sound.wav")
     finish(job, cut, base, final_sound, placed, overlay, look, home, seconds, speech, edit, out)
     report = qc.run(out, expected=seconds)

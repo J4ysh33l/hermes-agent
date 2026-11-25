@@ -68,6 +68,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from orchestrator.studio import storyboard
+
 from .cuts import CutList
 if TYPE_CHECKING:
     from .style import Style
@@ -77,7 +79,10 @@ KINDS = ("stat", "headline", "list", "quote", "chapter", "emoji", "lower_third",
          "cutaway", "split", "pop", "hide", "scene")
 # Explainer scenes (remotion/src/edit/Scenes.tsx): type → the fields it needs
 SCENES = {"statement": ("text|lines",), "counter": ("number", "label"), "stack": ("rows",), "steps": ("steps",),
-          "compare": ("left", "right", "heavy"), "bars": ("bars",), "points": ("title", "items"), "badge": ("icon", "text")}
+          "compare": ("left", "right", "heavy"), "bars": ("bars",), "points": ("title", "items"), "badge": ("icon", "text"),
+          "library": ("scene",)}
+# The faceless library's scenes an edit may use full-frame (type "library"); not those that need files.
+LIBRARY = ("chart", "timeline", "quote", "clipping", "diagram", "map", "post", "compare", "stat", "bullets", "title")
 LAYOUTS = ("panel", "full", "top")  # top half (face below) · whole frame · big type above your head
 ICONS = ("hospital", "stethoscope", "pill", "syringe", "heart-pulse", "activity", "ambulance", "bed", "clipboard",
          "clipboard-check", "file", "receipt", "wallet", "rupee", "piggy-bank", "shield", "shield-check", "user", "users",
@@ -237,7 +242,8 @@ def _walk_texts(value: Any, key: str = "") -> Any:
     """Every piece of text in a scene, with the key it sits under (text, label, ...)."""
     if isinstance(value, dict):
         for k, v in value.items():
-            if k not in ("kind", "type", "layout", "tone", "icon", "mark", "heavy", "strike", "at", "to") and not k.endswith("_at"):
+            if k not in ("kind", "type", "layout", "tone", "icon", "mark", "heavy", "strike", "at", "to", "scene", "beats") \
+                    and not k.endswith("_at"):
                 yield from _walk_texts(v, k)
     elif isinstance(value, list):
         for v in value:
@@ -259,6 +265,22 @@ def scene_anchors(g: dict[str, Any], top: bool = True) -> list[tuple[str, str]]:
                 if isinstance(x, dict):
                     out += [(f"{k}[{n}].{a}", b) for a, b in scene_anchors(x, False)]
     return out
+
+
+def _library_problems(where: str, raw: dict[str, Any]) -> list[str]:
+    inner = raw.get("scene")
+    if raw.get("layout", "panel") != "full":
+        return [f"{where}: a library scene fills the frame: layout must be full"]
+    if not isinstance(inner, dict) or inner.get("type") not in LIBRARY:
+        return [f"{where}: scene must be one of the library's ({', '.join(LIBRARY)}) as {{\"type\": \"chart\", ...}}"]
+    try:
+        storyboard.library_scene(f"{where}.scene", inner)
+    except storyboard.StoryboardError as exc:
+        return [str(exc)]
+    beats = raw.get("beats") or []
+    if not isinstance(beats, list) or not all(isinstance(b, dict) and isinstance(b.get("at"), str) for b in beats):
+        return [f'{where}: beats is a list of {{"at": "S4.2"}}, one per part (bar, event, node) as it is said']
+    return []
 
 
 def _scene_problems(where: str, raw: dict[str, Any], g: Graphic, found: dict[int, Sentence]) -> list[str]:
@@ -285,6 +307,8 @@ def _scene_problems(where: str, raw: dict[str, Any], g: Graphic, found: dict[int
             continue
         if not g.start - 0.05 <= t <= g.end + 0.05:
             problems.append(f"{where}: {path} {anchor} is outside the scene ({raw.get('at')} to its end); extend 'to' or move it")
+    if kind == "library":
+        problems += _library_problems(where, raw)
     if kind == "counter" and not isinstance(raw.get("number"), (int, float)):
         problems.append(f"{where}: counter 'number' must be a number")
     if kind in ("stack", "steps", "bars", "points"):

@@ -79,7 +79,7 @@ def _flag(where: str, value: Any) -> bool:
     return value
 
 
-FONT = _choice("inter", "montserrat", "anton", "jetbrains")
+FONT = _choice("inter", "intertight", "montserrat", "anton", "jetbrains")
 USE = _use  # off | auto (only where it helps the video; never forced) | always
 
 SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {

@@ -92,8 +92,7 @@ How to direct it:
    frame; captions low), "top" (big type over the wall, no background; for the hook or a number).
    Types:
    - "statement": one big phrase ("text") or "lines" [{{"text", "tone", "strike_at", "underline_at"}}],
-     optional "kicker" (a small label above), "sub", "icon"; for a claim, a turn, a reframe ("not the price.
-     / the chaos.").
+     optional "sub", "icon"; for a claim, a turn, a reframe ("not the price. / the chaos.").
    - "counter": a number that counts up ("number", "count_from", "prefix", "suffix", "label", "sub"); only
      numbers that were said.
    - "stack": 2–4 "rows" [{{"text", "icon", "mark": "cross"|"check"|"none", "at"}}] that build up, "tone"
@@ -103,12 +102,21 @@ How to direct it:
    - "compare": "left"/"right" {{"text"}}, "heavy" (the side that matters), "strike" + "strike_at" (the
      side dismissed); for "not X, it's Y".
    - "bars": 2–3 "bars" [{{"label", "value", "size" 0–1, "tone", "at"}}]; for small cost vs big cost.
-   - "points": "title" + 2–4 "items" [{{"text", "at"}}], "numbered" true for 01/02, "strike_at" to strike
-     them all; for the usual answers (struck out) or the real fixes (numbered).
+   - "points": "title" + 2–4 "items" [{{"text", "at"}}], "numbered" true when the count matters ("two
+     things"), "strike_at" to strike them all; for the usual answers (struck out) or the real fixes.
    - "badge": "icon" + "text" + "badge" with a tick; for an outcome ("OPD open, every day" / "0 days down").
+   - "library": a full-frame scene from the faceless library, in the style's colours: "layout": "full",
+     "scene" {{"type": one of chart, timeline, quote, clipping, diagram, map, post, compare, stat, bullets,
+     title, and its fields}} and "beats" [{{"at": "S4.2"}}, ...] (one per bar, event or node, as it is said).
+     Chart {{"kind": "bar"|"line", "title", "labels", "values", "suffix", "highlight"}}, timeline {{"title",
+     "events": [{{"when", "what"}}]}}, diagram {{"title", "nodes"}} (a chain), map {{"title", "focus",
+     "highlight", "route"}} (countries), clipping {{"source", "date", "headline", "highlight"}} (only a headline
+     that was really published), quote {{"text", "author"}}. For data, places, history and cause-chains.
    Icons: {icons}.
-   Words in scenes are short (a statement up to ~4 words; rows and items up to ~5). Lower case reads as
-   spoken; sentence case for titles.
+   Words in scenes are short (a statement up to ~4 words; rows and items up to ~5). Sentence case. Mark the
+   one or two words that carry a title or line with stars ("Who *pays*?", "a *prevention* mindset"): they set
+   in the accent colour, in italic, as the brand does. A heading speaks for itself: no small label above it.
+   Every list scene needs its "title" (it sits large in the middle, then moves up as the first row lands).
 3. **Other tools.** "pop" (a 1–3 word chip beside the face), "stat", "list", "chapter", "headline",
    "quote" for smaller moments; "cutaway"/"split"/"image"/"screenshot" for footage or pictures (the
    creator's own files beat stock; stock by "query" when the words describe something seeable). Never cover
@@ -128,7 +136,9 @@ How to direct it:
    that carry the meaning, not every noun.
 9. "end": {{"cta": "...", "seconds": 2–3}} when the style has an end card and the talk has an ending; the
    call to action in the creator's spirit, without their name.
-10. "music": two or three mood words that fit the tone ("calm minimal piano"), or "" for none.
+10. "music": two or three mood words for the bed ("inspiring piano", "uplifting corporate", "calm ambient",
+   "tense minimal"), or "" for none. Produced instrumental tracks are found for them; the music dips under
+   the voice and rises on the end card.
 11. "title": 3–8 words that make a stranger stay: the claim or question of the video, in the creator's words
    where possible. Sentence case, no clickbait they didn't earn. "" when a "top" scene carries the hook instead.
 12. "notes": one or two lines for the creator: what you cut and why, any word Whisper may have misheard that

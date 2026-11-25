@@ -5,6 +5,7 @@ import {FONTS} from "./theme";
 
 const ADVANCE: Record<keyof typeof FONTS, {lower: number; upper: number}> = {
   inter: {lower: 0.6, upper: 0.74},
+  intertight: {lower: 0.55, upper: 0.68},
   montserrat: {lower: 0.66, upper: 0.82},
   anton: {lower: 0.46, upper: 0.52},
   jetbrains: {lower: 0.62, upper: 0.62},

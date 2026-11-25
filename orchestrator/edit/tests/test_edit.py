@@ -175,6 +175,22 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(any("box must be" in p for p in bad))
         self.assertTrue(any("characters" in p for p in bad))
 
+    def test_a_faceless_library_scene_can_fill_the_frame(self) -> None:
+        chart = {"kind": "scene", "type": "library", "layout": "full", "at": "S2.1", "to": "S3.4",
+                 "scene": {"type": "chart", "kind": "bar", "title": "Same *questions*", "labels": ["once", "ten times"],
+                           "values": [1, 10]}, "beats": [{"at": "S2.1"}, {"at": "S2.5"}]}
+        folder = Path(self.home.name) / "edit" / "styles"
+        folder.mkdir(parents=True)
+        (folder / "scenes.yaml").write_text("extends: mine\ngraphics:\n  kinds: [scene]\npace:\n  broll: 0.8\n", encoding="utf-8")
+        self.look = style.load("scenes", Path(self.home.name))
+        self.assertEqual(self.check({"graphics": [chart]}), [])
+        wrong = self.check({"graphics": [{**chart, "layout": "panel"},
+                                         {**chart, "at": "S1.1", "to": "S1.6", "scene": {"type": "chart", "kind": "pie"}},
+                                         {**chart, "at": "S3.1", "beats": [{"at": "S1.1"}]}]})
+        self.assertTrue(any("layout must be full" in p for p in wrong))
+        self.assertTrue(any("kind" in p and "pie" in p or "must be one of" in p for p in wrong))
+        self.assertTrue(any("outside the scene" in p for p in wrong))
+
     def test_a_plain_plan_gets_suggestions_not_refusal(self) -> None:
         ws = talk("Every morning the queue reaches the gate.", "Patients wait two hours for a token.",
                   "The receptionist writes each name by hand.", "Then billing asks for the same details again.",
