@@ -10,7 +10,7 @@ models:
   gemini-3.5-flash-lite: {input: null, output: null, free_rpd: 500}
   gemma-4-31b-it: {input: null, output: null, free_rpd: 14400}
   gemma-4-26b-it: {input: null, output: null, free_rpd: 14400}
-  claude-opus-5-5: {input: 4.00, output: 20.00, cached_input: 0.20}   # Anthropic list price, checked 2026-11-24; no free tier
+  claude-opus-5-5: {input: 4.00, output: 20.00, cached_input: 0.20, cache_write: 8.00}   # Anthropic list price, checked 2026-11-24; cache_write = 1-hour cache (2x input), matches the sessions' own cost figures 2026-11-25; no free tier
 
 # Suggestion thresholds for the /usage report.
 thresholds:

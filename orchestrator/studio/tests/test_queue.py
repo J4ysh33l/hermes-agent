@@ -148,7 +148,7 @@ class Queue(unittest.TestCase):
         self.envfile("ANTHROPIC_API_KEY=a\n")
         self.http = FakeHttp()
         self.http.on("POST", CLAUDE, writer_answers(COVERED))
-        for method in ("sendVideo", "sendPhoto", "sendMessage"):
+        for method in ("sendVideo", "sendPhoto", "sendMessage", "sendDocument"):
             self.http.on("POST", TG + method, {"ok": True})
         self.stand = Stand()
 
@@ -189,6 +189,15 @@ class Queue(unittest.TestCase):
         self.assertIn("QC passed", message)
         self.assertIn("Drive: not signed in", message)
         self.assertIn("scene 2: custom scene built", message)
+        # every step is in the report, which goes out with the video
+        self.assertIn("📊", message)
+        self.assertEqual(len(self.sent("sendDocument")), 1)
+        job = queue.jobs(self.home)[-1]
+        report = job.folder.joinpath("report.md").read_text(encoding="utf-8")
+        for step in ("claude-opus-5-5", "video (hook 1)", "other hooks' clips", "cover", "quality check", "delivery"):
+            self.assertIn(step, report)
+        self.assertIn("## Totals", report)
+        self.assertIn(report, chat.handle(f"report {job.id}", self.home, self.http))
         self.assertEqual(self.run_queue(NIGHT), "")  # done jobs are left alone
         self.assertIn("✅", queue.status(self.ctx()))
 

@@ -31,6 +31,7 @@ HELP = """**/studio** — video, audio, b-roll and images, made on your server
 /studio make <notes> — write it now and render it tonight (studio.render_window): you get the video, the
   cover and hooks 2–3 as clips here, and on Drive. /studio make gemini <notes> — written by Gemini.
 /studio queue — the jobs · /studio pick <job> <n> — re-render with hook n · /studio run — render now
+/studio report <job> — every step of a job with its time and tokens (also sent with each video)
 /menu — all your commands"""
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
@@ -157,7 +158,13 @@ def _pick(ctx: Context, text: str) -> str:
     return f"Job {job.id} will be rendered with hook {parts[1]} (next run, or /studio run)."
 
 
-STEPS = {"voice": _voice, "say": _voice, "voices": _voices, "write": _write, "make": _make, "run": _run,
+def _report(ctx: Context, text: str) -> str:
+    if not text.strip():
+        return "/studio report <job id> (/studio queue lists them)"
+    return queue.report(ctx, queue.load(ctx.home, text.strip()))
+
+
+STEPS = {"report": _report, "voice": _voice, "say": _voice, "voices": _voices, "write": _write, "make": _make, "run": _run,
          "pick": _pick, "queue": lambda ctx, _text: queue.status(ctx)}
 REPO = Path(__file__).resolve().parents[2]
 

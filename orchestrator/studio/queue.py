@@ -30,18 +30,19 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from datetime import time as clock
 from pathlib import Path
 from typing import Any
 
+from orchestrator import usage
 from orchestrator.brief.net import HttpError
 from orchestrator.brief.settings import ModelChoice
 from orchestrator.handoff import Handoff, HandoffError
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
-from . import audio, brief, cover, custom, direction, drive, handoff, profile, qc, research, rules, storyboard, video, voice, writer
+from . import audio, brief, cover, custom, direction, drive, handoff, profile, qc, research, rules, steps, storyboard, video, voice, writer
 from .text import said_words, sentences
 
 PROXY_MB = 48  # Telegram bots may upload 50 MB
@@ -125,6 +126,21 @@ def add(ctx: Any, notes: str, who: str = "", seconds: float = 0) -> Job:
     look = profile.load(ctx.settings.profile, ctx.home)
     how = route(ctx, who)
     folder = _new_folder(root(ctx.home), f"{datetime.now():%Y%m%d-%H%M%S}")
+    with _for(folder.name):
+        return _add(ctx, notes, how, seconds, look, folder)
+
+
+@contextmanager
+def _for(job_id: str) -> Iterator[None]:
+    """Model calls inside are logged with this job's id (its report adds them up)."""
+    token = usage.JOB.set(job_id)
+    try:
+        yield
+    finally:
+        usage.JOB.reset(token)
+
+
+def _add(ctx: Any, notes: str, how: str, seconds: float, look: profile.Profile, folder: Path) -> Job:
     folder.joinpath("asked.txt").write_text(notes, encoding="utf-8")  # yours; notes.txt adds the research
     notes, found = research.add_to(ctx.http, ctx.keys, ctx.settings, notes, brief.seconds_of(look, seconds), folder)
     folder.joinpath("notes.txt").write_text(notes, encoding="utf-8")
@@ -136,8 +152,8 @@ def add(ctx: Any, notes: str, who: str = "", seconds: float = 0) -> Job:
     if how == "handoff" and not found.facts and ctx.settings.research:  # Gemini could not search: Claude does
         asked = folder.joinpath("asked.txt").read_text(encoding="utf-8")
         job.data.update(stage="research", calls=1)
-        job.data["issue"] = handoff.ask(_hand(ctx), job.id, "research", research.for_claude(
-            asked, brief.seconds_of(look, seconds), date.today(), job.id))
+        job.data["issue"] = _issue(ctx, job, "research", lambda hand: handoff.ask(hand, job.id, "research", research.for_claude(
+            asked, brief.seconds_of(look, seconds), date.today(), job.id)))
         job.log(f"research: handoff issue #{job.data['issue']} opened")
         return job
     if how == "handoff":
@@ -181,12 +197,21 @@ def _start(ctx: Any, job: Job, look: profile.Profile, notes: str) -> None:
     """The script's issue, with the job's rules and the checker."""
     prompt = brief.script(look, notes, job.data["seconds"], job.id, True)
     job.data.update(stage="script", round=0, calls=job.data["calls"] + 1)
-    job.data["issue"] = handoff.start(_hand(ctx), job.id, brief.params(look, notes, job.data["seconds"]), prompt)
+    job.data["issue"] = _issue(ctx, job, "script", lambda hand: handoff.start(
+        hand, job.id, brief.params(look, notes, job.data["seconds"]), prompt))
     job.log(f"script: handoff issue #{job.data['issue']} opened")
 
 
 def _hand(ctx: Any) -> Handoff:
     return handoff.repo(ctx.http, ctx.secrets, ctx.settings.handoff_repo)
+
+
+def _issue(ctx: Any, job: Job, stage: str, send: Callable[[Handoff], int], round_: int = 0) -> int:
+    """Opens a handoff issue (``send``) and records it for the job's report."""
+    hand = _hand(ctx)
+    number = send(hand)
+    steps.mark(job.folder, stage, "asked", issue=number, round=round_, session=hand.session, fire_error=hand.fire_error)
+    return number
 
 
 def _json(job: Job, name: str) -> Any:
@@ -216,7 +241,7 @@ def _writing(ctx: Any, tools: Tools, job: Job) -> Writing:
 def _ask(w: Writing, stage: str, prompt: str) -> None:
     """The next call's issue."""
     w.job.data.update(stage=stage, round=0, calls=w.job.data["calls"] + 1)
-    w.job.data["issue"] = handoff.ask(_hand(w.ctx), w.job.id, stage, prompt)
+    w.job.data["issue"] = _issue(w.ctx, w.job, stage, lambda hand: handoff.ask(hand, w.job.id, stage, prompt))
     w.job.log(f"{stage}: handoff issue #{w.job.data['issue']} opened")
 
 
@@ -225,8 +250,9 @@ def _retry(w: Writing, stage: str, limit: int, prompt: str, problems: list[str],
     if w.job.data["round"] >= limit:
         raise writer.WriterError(f"Claude's {stage} still failed the checks: " + "; ".join(problems[:3]))
     w.job.data.update(round=w.job.data["round"] + 1, calls=w.job.data["calls"] + 1)
-    w.job.data["issue"] = handoff.ask(_hand(w.ctx), w.job.id, stage,
-                                      brief.fix(stage, w.job.id, prompt, problems, previous), w.job.data["round"])
+    w.job.data["issue"] = _issue(w.ctx, w.job, stage, lambda hand: handoff.ask(
+        hand, w.job.id, stage, brief.fix(stage, w.job.id, prompt, problems, previous), w.job.data["round"]),
+        w.job.data["round"])
     w.job.log(f"{stage}: {len(problems)} problem(s), fix request #{w.job.data['issue']}")
 
 
@@ -293,7 +319,8 @@ def _verify(w: Writing) -> None:
     names = list(rules.component_names(board).values())
     draft = _finish(job)
     boards = [storyboard.parse(draft.storyboard(n, job.data["profile"]), job.folder) for n in range(len(draft.hooks))]
-    failed = w.tools.verify(w.ctx.settings, w.look, boards, job.folder)
+    with steps.timed(job.folder, "check custom scenes", f"{len(names)} component(s): TypeScript + test render"):
+        failed = w.tools.verify(w.ctx.settings, w.look, boards, job.folder)
     failed.update({n: "missing, or refused by the static check" for n in names if not job.folder.joinpath(n).is_file()})
     if failed and job.data["fixes"] < writer.COMPONENT_FIXES:
         job.data["fixes"] += 1
@@ -303,9 +330,9 @@ def _verify(w: Writing) -> None:
             previous = "\n\n".join(f"// file: {n}\n{job.folder.joinpath(n).read_text(encoding='utf-8')}"
                                     for n in failed if job.folder.joinpath(n).is_file())
             job.data.update(stage="animation", fixing=sorted(failed), calls=job.data["calls"] + 1)
-            job.data["issue"] = handoff.ask(_hand(w.ctx), job.id, "animation", brief.fix(
+            job.data["issue"] = _issue(w.ctx, job, "animation", lambda hand: handoff.ask(hand, job.id, "animation", brief.fix(
                 "animation", job.id, prompt, [f"{n}: {p[:1500]}" for n, p in failed.items()], previous or "(none)"),
-                job.data["fixes"])
+                job.data["fixes"]), job.data["fixes"])
             job.log(f"animation: {len(failed)} component(s) failed, fix request #{job.data['issue']}")
             return
         model = writer.Model(w.ctx.http, w.ctx.keys, w.ctx.settings, (ModelChoice(job.data["writer"]),))
@@ -332,6 +359,7 @@ def _collect(ctx: Any, job: Job, tools: Tools) -> bool:
         return True
     if not _hand(ctx).closed(job.data["issue"]):
         return False
+    steps.mark(job.folder, job.data["stage"], "answered", issue=job.data["issue"])
     STEPS[job.data["stage"]](w)
     return True
 
@@ -373,18 +401,22 @@ def _clips(ctx: Any, job: Job, tools: Tools) -> dict[str, str]:
 
 def _render(ctx: Any, job: Job, tools: Tools) -> None:
     board = _board(job, job.data["hook"])
-    made = tools.video(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "video.mp4", job.data["profile"])
+    with steps.timed(job.folder, f"video (hook {job.data['hook']})", "voice + render"):
+        made = tools.video(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "video.mp4", job.data["profile"])
     job.log(f"video (hook {job.data['hook']}): {_pace(board, made)}")
     for note in made.notes:
         job.log(f"  {note}")
-    out = {"video": str(made.path), "seconds": made.seconds, "notes": list(made.notes),
-           "hooks": _clips(ctx, job, tools)}
+    with steps.timed(job.folder, "other hooks' clips"):
+        clips = _clips(ctx, job, tools)
+    out = {"video": str(made.path), "seconds": made.seconds, "notes": list(made.notes), "hooks": clips}
     pick = json.loads((job.folder / "storyboard.cover.json").read_text(encoding="utf-8"))
     started = time.monotonic()
-    out["cover"] = str(tools.cover(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "cover.png",
-                                   pick["scene"], pick["words"], job.data["profile"]))
+    with steps.timed(job.folder, "cover"):
+        out["cover"] = str(tools.cover(ctx.http, ctx.keys, ctx.settings, ctx.home, board, job.folder / "cover.png",
+                                       pick["scene"], pick["words"], job.data["profile"]))
     job.log(f"cover: scene {pick['scene']}, \"{pick['words']}\" · {time.monotonic() - started:.0f} s")
-    report = tools.qc(made.path, made.seconds, longest_pause(board))
+    with steps.timed(job.folder, "quality check"):
+        report = tools.qc(made.path, made.seconds, longest_pause(board))
     out.update(qc=report.summary(), passed=report.passed)
     job.data["outputs"] = out
     job.log(report.summary().replace("\n", " · "), "rendered")
@@ -402,6 +434,28 @@ def _small(path: Path) -> Path:
 
 
 def _deliver(ctx: Any, job: Job) -> None:
+    with steps.timed(job.folder, "delivery", "Telegram" + (" + Drive" if drive.ready(ctx.secrets) else "")):
+        message = _send(ctx, job)
+    full = report(ctx, job)
+    tg = Telegram(ctx.http, ctx.secrets)
+    tg.file(job.folder / steps.REPORT, f"Step-by-step report · job {job.id}")
+    tg.text(message.replace("\n\n", f"\n{steps.short(full)}\n\n", 1))
+    job.log("delivered", "done")
+
+
+def report(ctx: Any, job: Job) -> str:
+    """Every step with its time and tokens (steps.py); saved as report.md in the job's folder."""
+    issues = sorted({int(r["issue"]) for r in steps.read(job.folder) if r.get("event") == "asked" and r.get("issue")})
+    claude = steps.claude_usage(job.folder, _hand(ctx) if issues else None, issues)
+    since = datetime.now(usage.TZ) - timedelta(days=30)
+    calls = [c for c in usage.read_calls(since) if c.job == job.id]
+    text = steps.build(job.data, job.folder, calls, claude)
+    job.folder.joinpath(steps.REPORT).write_text(text, encoding="utf-8")
+    return text
+
+
+def _send(ctx: Any, job: Job) -> str:
+    """Uploads the video, cover and hook clips (and to Drive); returns the message that goes with them."""
     out = job.data["outputs"]
     tg = Telegram(ctx.http, ctx.secrets)
     title = job.data.get("title", job.id)
@@ -423,8 +477,7 @@ def _deliver(ctx: Any, job: Job) -> None:
     elif out["passed"]:
         lines.append(f"Drive: not signed in ({drive.LOGIN})")
     script = job.folder.joinpath("storyboard.txt").read_text(encoding="utf-8")
-    tg.text("\n".join([f"🎬 {title} (job {job.id})", *lines, "", script]))
-    job.log("delivered", "done")
+    return "\n".join([f"🎬 {title} (job {job.id})", *lines, "", script])
 
 
 # ---------------------------------------------------------------- running
@@ -475,7 +528,8 @@ def run(ctx: Any, now: datetime | None = None, force: bool = False, tools: Tools
                 continue
             render = force or in_window(ctx.settings.render_window, now or datetime.now())
             try:
-                said.append(_advance(ctx, job, tools, render))
+                with _for(job.id):
+                    said.append(_advance(ctx, job, tools, render))
             except STEP_ERRORS as exc:
                 job.data["error"] = str(exc)[:500]
                 job.log(f"failed: {(str(exc).splitlines() or [''])[0][:200]}", "failed")  # no HTML error pages

@@ -9,10 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "orchestrator" / "brief" / "tests"))
 
-from fakes import FakeHttp, http_error  # noqa: E402
+from fakes import FakeHttp, http_error
 
-from orchestrator.brief.creds import Secrets  # noqa: E402
-from orchestrator.handoff import Handoff  # noqa: E402
+from orchestrator.brief.creds import Secrets
+from orchestrator.handoff import Handoff
 
 GH = "https://api.github.com/repos/me/hand/"
 FIRE = "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire"
@@ -42,7 +42,7 @@ class FireTest(unittest.TestCase):
         self.assertIn("#7", call.json_body["text"])
         self.assertEqual(h.fire_error, "")
         put = {c.url.rsplit("contents/", 1)[1] for c in http.calls if c.method == "PUT"}
-        self.assertEqual(put, {"tools/claim.sh", "tools/close.sh"})
+        self.assertEqual(put, {"tools/claim.sh", "tools/close.sh", "tools/usage_hook.py", ".claude/settings.json"})
 
     def test_not_set_up_means_no_fire(self):
         h, http = self.handoff("GITHUB_HANDOFF_TOKEN=g\n")

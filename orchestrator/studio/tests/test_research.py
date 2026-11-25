@@ -63,7 +63,7 @@ class Researching(unittest.TestCase):
         self.searchers = {"gemini-2.5-flash": FOUND}  # model → its answer; missing = may not search (429)
         self.writing = [RESEARCHED, SHOWN]
         self.http = FakeHttp().on("POST", GEMINI, self.gemini)
-        for method in ("sendVideo", "sendPhoto", "sendMessage"):
+        for method in ("sendVideo", "sendPhoto", "sendMessage", "sendDocument"):
             self.http.on("POST", TG + method, {"ok": True})
 
     def tearDown(self):
