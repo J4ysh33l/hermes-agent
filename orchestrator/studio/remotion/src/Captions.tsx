@@ -84,7 +84,7 @@ export const Captions: React.FC<{words: Word[]}> = ({words}) => {
   const index = all.findIndex((page, n) => t >= page[0].start && t < (all[n + 1]?.[0].start ?? page[page.length - 1].end + 0.6));
   if (index < 0) return null;
   const page = all[index];
-  const feel = FEELS[motion.feel];
+  const feel = FEELS[motion.feel === "settle" ? "soft" : motion.feel];
   const size = pageSize(page, captions);
   const pageIn = spring({frame: frame - Math.round(page[0].start * fps), fps, config: feel});
   return (

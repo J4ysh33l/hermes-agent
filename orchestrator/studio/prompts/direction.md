@@ -17,7 +17,13 @@ $look
 - A new picture every 1.5–4 s; nothing is ever fully still (each scene drifts, *emphasised* words
   punch in; that part is automatic).
 - The first frame shows what the hook says: the subject, the number or the headline.
-- Show the evidence: numbers as stats or charts, claims as clippings or posts, places as maps.
+- Show the evidence: numbers as stats, counters or charts, claims as clippings or posts, places as maps.
+- Explain with the explainer scenes: a claim or a turn as a statement ("not the price" struck, then "the
+  *chaos*"), causes or who pays as a stack (crosses or ticks), a process as steps, the usual answers as
+  points struck out, the real fixes as numbered points, small cost against big cost as bars, "it's not X,
+  it's Y" as a balance, an outcome as a badge. Star the one or two words that carry a heading or line.
+- Colours and fonts are the page's; never name a colour. "tone" (problem / solution) says what a line means
+  and the page colours it.
 - One idea per scene. Never two scenes of the same type in a row unless the repetition is the point.
 - A transition only when the change means something: burn = a jump in time, flash = a reveal,
   zoom = going deeper, whip = a contrast, fade = calm, cut = a hard stop. Otherwise leave it out
@@ -33,7 +39,8 @@ $scene_library
 
 Limits:
 - A library scene without parts says at most 20 words; a custom scene at most 40.
-- Parts (bullets items, chart labels, diagram nodes, timeline events, terminal lines) appear on
+- Parts (bullets items, chart labels, diagram nodes, timeline events, terminal lines, statement lines,
+  stack rows, steps, points, bars) appear on
   their own sentence: one sentence per part, in order, after at most one intro sentence. Group the
   script's lines to fit.
 - Maps take country names only (Natural Earth names, e.g. "United States of America").

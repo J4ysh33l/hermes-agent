@@ -24,6 +24,7 @@ from .words import Sentence, Word, numbered
 
 HERE = Path(__file__).parent
 TOOLS = ("words.py", "cuts.py", "plan.py")
+STUDIO_TOOLS = ("direction.py", "text.py", "storyboard.py", "icons.py")  # plan.py checks library scenes and icons with them
 SCHEMA = plans.__doc__.split("    {", 1)[1].split("\n\n``at``", 1)[0]
 
 CHECK = '''"""Checks an edit plan before it is handed in. Written by Hermes; the rules are tools/edit/plan.py.
@@ -105,6 +106,7 @@ def files(job: str, look: Style, words_json: str, asked: str, sheets: dict[str, 
           ) -> dict[str, str | bytes]:
     out = {"tools/check_edit.py": CHECK, "tools/edit/__init__.py": ""}
     out.update({f"tools/edit/{name}": (HERE / name).read_text(encoding="utf-8") for name in TOOLS})
+    out.update({f"tools/studio/{name}": (HERE.parent / "studio" / name).read_text(encoding="utf-8") for name in STUDIO_TOOLS})
     out[f"edit/{job}/words.json"] = words_json
     out[f"edit/{job}/style.json"] = json.dumps(look.as_dict(), ensure_ascii=False, indent=1)
     out[f"edit/{job}/notes.txt"] = asked

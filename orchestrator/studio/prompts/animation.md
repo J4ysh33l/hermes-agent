@@ -18,8 +18,11 @@ $customs
 - The voice is the clock: each element appears on the sentence that names it (scene.beats holds
   each sentence's start in seconds), never on a fixed timer.
 - Nothing fully still: something drifts, glows or breathes in every frame.
-- Entrances in the page's feel ($feel); use usePop or <Arrive>. Things settle without wobble.
-- Colours only from useTheme(), fonts only theme.sans and theme.monoFamily. No hard-coded colours.
+- Entrances in the page's feel ($feel); use usePop or <Arrive>. Things settle without wobble. Strike,
+  tick, underline, count and type reveals come from studio/kit, so your scene moves like the library's.
+- Colours only from useTheme(), fonts only theme.sans and theme.monoFamily. No hard-coded colours: the
+  same scene must work on a dark page and a light one (the page's colours change, your code doesn't).
+- No small label above a heading, no gradient text, no glow halos; the accent marks one or two words.
 - Readable on a phone: large type, at most about 8 words on screen at once.
 - Under about 2,000 SVG/DOM nodes per frame; large blurs rarely.
 

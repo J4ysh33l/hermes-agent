@@ -111,6 +111,28 @@ class StoryboardTest(unittest.TestCase):
                                                                              {"when": "2", "what": "c"}]}]},
                      "unknown key 'who'")
 
+    def test_the_explainer_scenes_of_edit_work_in_a_faceless_short(self):
+        board = storyboard.parse({"scenes": [
+            {"type": "counter", "say": "Seventy percent.", "value": 70, "suffix": "%", "label": "paid out of *pocket*"},
+            {"type": "stack", "say": "Who pays? Not insurance. You.", "title": "Who *pays*?",
+             "rows": [{"text": "No insurance", "icon": "insurance", "mark": "cross"}, {"text": "You"}]},
+            {"type": "points", "say": "The usual fixes. More cover. More money.", "title": "The usual *fixes*",
+             "items": ["More cover", "More money"], "struck": True},
+            {"type": "statement", "say": "Not the price. The chaos.",
+             "lines": [{"text": "not the price", "strike": True}, {"text": "the *chaos*", "tone": "solution"}]},
+            {"type": "steps", "say": "Book. Visit.", "steps": [{"label": "Book", "icon": "calendar"}, {"label": "Visit"}]},
+            {"type": "bars", "say": "Small. Big.", "bars": [{"label": "Screen", "value": "₹1,000", "size": 0.1},
+                                                         {"label": "Treat", "value": "₹5 lakh", "size": 1}]},
+            {"type": "balance", "say": "Price or chaos.", "left": "Price", "right": "Chaos", "strike": "left"},
+            {"type": "badge", "say": "Open every day.", "icon": "check", "text": "Open every day"}]}, self.folder)
+        self.assertEqual(board.scenes[1].fields["rows"][1]["mark"], "none")  # defaults filled in for the renderer
+        self.assertEqual(board.scenes[3].fields["lines"][1]["tone"], "solution")
+        self.refused({"scenes": [{"type": "stack", "say": "x.", "rows": [{"text": "a", "icon": "unicorn"}, {"text": "b"}]}]},
+                     "unknown icon")
+        self.refused({"scenes": [{"type": "points", "say": "x.", "title": "t", "items": ["a" * 40, "b"]}]}, "at most 32")
+        self.refused({"scenes": [{"type": "bars", "say": "x.", "bars": [{"label": "a", "value": "1", "size": 3},
+                                                                        {"label": "b", "value": "2", "size": 1}]}]}, "from 0 to 1")
+
     def test_maps_name_countries_and_any_scene_may_carry_an_emoji(self):
         board = storyboard.parse({"scenes": [
             {"type": "map", "say": "India to Japan.", "highlight": ["India", "Japan"], "route": ["india", "Japan"],

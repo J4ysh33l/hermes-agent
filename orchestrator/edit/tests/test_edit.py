@@ -191,6 +191,18 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(any("kind" in p and "pie" in p or "must be one of" in p for p in wrong))
         self.assertTrue(any("outside the scene" in p for p in wrong))
 
+    def test_the_handoff_repo_checks_a_plan_without_hermes_installed(self) -> None:
+        from orchestrator.edit import editor
+        repo = Path(self.home.name) / "repo"
+        sent = editor.files("j1", self.look, json.dumps({"words": [{"w": w.text, "s": w.start, "e": w.end} for w in self.ws]}), "")
+        for name, data in sent.items():
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_bytes(data if isinstance(data, bytes) else data.encode())
+        (repo / "edit/j1/plan.json").write_text(json.dumps({"title": "Mocks alone won't do it"}), encoding="utf-8")
+        done = subprocess.run([sys.executable, "-I", str(repo / "tools/check_edit.py"), str(repo / "edit/j1")],
+                              capture_output=True, text=True, check=False)  # -I: no Hermes on the path, as in Claude's session
+        self.assertIn("OK: ready to hand in", done.stdout, done.stderr)
+
     def test_a_plain_plan_gets_suggestions_not_refusal(self) -> None:
         ws = talk("Every morning the queue reaches the gate.", "Patients wait two hours for a token.",
                   "The receptionist writes each name by hand.", "Then billing asks for the same details again.",

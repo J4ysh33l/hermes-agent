@@ -64,7 +64,7 @@ LIMITS = """What the pipeline can make (the real limits; anything inside them is
 - Captions sit at the bottom (the lowest ~660 px); platform buttons cover the top ~230 px and right ~90 px."""
 
 CODE = re.compile(r"```(?:tsx|typescript|ts|jsx)?\s*\n(.*?)```", re.DOTALL)
-STUDIO = {"studio/motion": "src/motion", "studio/theme": "src/theme", "studio/types": "src/types"}
+STUDIO = {"studio/motion": "src/motion", "studio/theme": "src/theme", "studio/types": "src/types", "studio/kit": "src/kit"}
 
 CONTRACT = """# The component contract
 ```tsx
@@ -72,6 +72,7 @@ import React from "react";
 import {AbsoluteFill, Easing, interpolate, random, spring, useCurrentFrame, useVideoConfig} from "remotion";
 import {Arrive, usePop, revealAt, ENTERS, FEELS} from "studio/motion";   // optional helpers
 import {useTheme, useProfile} from "studio/theme";                       // colours: theme.bg, panel, text, muted, accent, cool, bad, good; fonts: theme.sans, theme.monoFamily
+import {Rise, Strike, Underline, Tick, Marked, useCount, ramp, settle, fitLine} from "studio/kit"; // the house marks
 import type {CustomScene} from "studio/types";                           // scene.props, scene.beats (s), scene.brief
 
 export default function Scene({scene, frames}: {scene: CustomScene; frames: number}) {
@@ -81,7 +82,11 @@ export default function Scene({scene, frames}: {scene: CustomScene; frames: numb
 ```
 - usePop(delay) is a 0→1 spring in the page's feel; revealAt(i, count, frames, scene.beats) is the frame
   item i should appear on when the narration has one sentence per item; <Arrive delay={n}> wraps a part
-  in the page's entrance. The scene's own entrance, transition to the next scene, drift, punch-ins and captions are added for you.
+  in the page's entrance. From studio/kit, the marks every other scene uses: <Rise at={f}> (type rising out
+  of a mask), <Strike at={f} colour> (a marker bar across its relatively-positioned parent), <Underline>,
+  <Tick at kind="check"|"cross">, <Marked text accent> (*starred* words in the accent, italic),
+  useCount(from, to, at) (a number landing exactly), ramp(frame, at, frames) with the settle ease, and
+  fitLine(text, size, width, font) to keep a heading on one line. The scene's own entrance, transition to the next scene, drift, punch-ins and captions are added for you.
 - Layout: unless the scene says "full_bleed": true, the component draws in a 900 × ~1030 px box centred in
   the safe area (padding is done for you); full bleed owns the whole 1080×1920 frame (keep words clear of
   the bottom 660 px, where captions go).
@@ -156,7 +161,7 @@ class Result:
 def _on_disk(code: str, depth: int) -> str:
     """studio/* imports → the project's src/ (the folder is ``depth`` levels below remotion/)."""
     up = "../" * depth
-    return re.sub(r"""(['"])studio/(motion|theme|types)\1""", lambda m: f'{m.group(1)}{up}src/{m.group(2)}{m.group(1)}', code)
+    return re.sub(r"""(['"])studio/(motion|theme|types|kit)\1""", lambda m: f'{m.group(1)}{up}src/{m.group(2)}{m.group(1)}', code)
 
 
 def _write_entry(folder: Path, keys: list[str], depth: int) -> None:

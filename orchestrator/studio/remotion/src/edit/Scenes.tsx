@@ -35,7 +35,7 @@ const rgb = (hex: string) => {
   return [n >> 16, (n >> 8) & 255, n & 255];
 };
 export const alpha = (hex: string, a: number) => `rgba(${rgb(hex).join(", ")}, ${a})`;
-const light = (hex: string) => {
+export const light = (hex: string) => {
   const [r, g, b] = rgb(hex).map((c) => {
     const v = c / 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
@@ -76,7 +76,8 @@ export const ICONS: Record<string, React.FC<L.LucideProps>> = {
   "calendar-x": L.CalendarX, "user-x": L.UserX, sad: L.Frown, happy: L.Smile, "thumbs-up": L.ThumbsUp,
   globe: L.Globe, truck: L.Truck, package: L.Package, printer: L.Printer, chip: L.Cpu, bot: L.Bot, cloud: L.Cloud,
   sync: L.RefreshCw, layers: L.Layers, dashboard: L.LayoutDashboard, checklist: L.ListChecks, siren: L.Siren,
-  blood: L.Droplet, fever: L.Thermometer, bandage: L.Bandage, plus: L.Cross,
+  blood: L.Droplet, fever: L.Thermometer, bandage: L.Bandage, plus: L.Cross, code: L.Code, terminal: L.Terminal,
+  server: L.Server, key: L.Key, mail: L.Mail, star: L.Star, flag: L.Flag, book: L.BookOpen, car: L.Car, plane: L.Plane,
 };
 
 export type Tone = "problem" | "solution" | "neutral";
@@ -117,8 +118,8 @@ export type SceneItem = {
   beats?: {at: number}[];
 };
 
-type Look = EditLook & {handle?: string};
-type Props = {look: Look; item: SceneItem; frames: number; dark: boolean};
+export type Look = EditLook & {handle?: string};
+export type Props = {look: Look; item: SceneItem; frames: number; dark: boolean};
 
 const display = (look: EditLook) => FAMILIES[look.font] ?? FAMILIES.intertight;
 const textFamily = (look: EditLook) => FAMILIES[look.font] ?? FAMILIES.intertight;
@@ -208,7 +209,7 @@ const Statement: React.FC<Props> = ({look, item, dark}) => {
     return (
       <AbsoluteFill style={{alignItems: "center", paddingTop: 150}}>
         {lines.map((line, n) => {
-          const size = fitLine(line.text, most, CW - 60);
+          const size = fitLine(line.text, most, CW - 60, look.font);
           const colour = line.tone === "problem" ? look.alert : look.ink;
           return (
             <Rise key={n} at={line.at ?? n * 5} style={{marginBottom: 14}}>
@@ -231,7 +232,7 @@ const Statement: React.FC<Props> = ({look, item, dark}) => {
       {item.icon ? <div style={{marginBottom: 28, opacity: ramp(frame, 0, 10), transform: `translateY(${(1 - ramp(frame, 0, 12)) * 20}px)`}}>
         <Icon name={item.icon} size={96} colour={toneColour(look, item.tone, dark)} stroke={1.6} /></div> : null}
       {lines.map((line, n) => {
-        const size = fitLine(line.text, most, CW);
+        const size = fitLine(line.text, most, CW, look.font);
         return (
           <Rise key={n} at={line.at ?? n * 5}>
             <div style={{position: "relative", display: "inline-block", fontFamily: display(look), fontWeight: 600, fontSize: size,
@@ -259,7 +260,7 @@ const Counter: React.FC<Props> = ({look, item, dark}) => {
   const shown = `${item.prefix ?? ""}${value.toLocaleString("en-IN", {maximumFractionDigits: digits, minimumFractionDigits: digits})}${item.suffix ?? ""}`;
   const final = `${item.prefix ?? ""}${to.toLocaleString("en-IN", {maximumFractionDigits: digits, minimumFractionDigits: digits})}${item.suffix ?? ""}`;
   const top = item.layout === "top";
-  const size = fitLine(final, top ? 230 : 300, top ? 700 : CW, 0.62);
+  const size = fitLine(final, top ? 230 : 300, top ? 700 : CW, look.font) * 0.92;
   const colour = toneColour(look, item.tone ?? "problem", dark || top ? !top : false);
   const body = (
     <>
@@ -465,7 +466,7 @@ const Badge: React.FC<Props> = ({look, item}) => {
       <div style={{width: 132, height: 132, borderRadius: 34, background: P.accentTint, display: "flex", alignItems: "center",
         justifyContent: "center", opacity: ramp(frame, 0, 10), transform: `scale(${0.9 + 0.1 * ramp(frame, 0, 14)})`}}>
         <Icon name={item.icon ?? "hospital"} size={72} colour={look.accent} /></div>
-      <Rise at={5} style={{marginTop: 34}}><div style={{fontFamily: display(look), fontWeight: 600, fontSize: fitLine(item.text ?? "", 120, CW),
+      <Rise at={5} style={{marginTop: 34}}><div style={{fontFamily: display(look), fontWeight: 600, fontSize: fitLine(item.text ?? "", 120, CW, look.font),
         lineHeight: 1.02, letterSpacing: "-0.04em", color: P.fg}}><Marked text={item.text ?? ""} accent={look.accent} /></div></Rise>
       {item.badge ? <div style={{marginTop: 30, display: "flex", alignItems: "center", gap: 16}}>
         <Tick at={at} kind="check" colour={look.accent} size={64} />
@@ -527,7 +528,7 @@ const End: React.FC<{look: Look; item: SceneItem}> = ({look, item}) => {
   );
 };
 
-const TYPES: Record<string, React.FC<Props>> = {
+export const EXPLAINERS: Record<string, React.FC<Props>> = {
   statement: Statement, counter: Counter, stack: Stack, steps: Steps, compare: Compare, bars: Bars, points: Points, badge: Badge,
 };
 
@@ -537,7 +538,7 @@ export const Scene: React.FC<{look: Look; item: SceneItem; frames: number}> = ({
   if (item.type === "library") {
     return <Field look={{...look, handle: undefined}} layout="full" bare><Library look={look} item={item} frames={frames} /></Field>;
   }
-  const Type = TYPES[item.type];
+  const Type = EXPLAINERS[item.type];
   if (!Type) return null;
   if (item.layout === "top") return <Type look={look} item={item} frames={frames} dark={false} />;
   return <Field look={look} layout={item.layout}><Type look={look} item={item} frames={frames} dark /></Field>;

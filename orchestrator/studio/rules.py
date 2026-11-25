@@ -47,7 +47,8 @@ HOOK_SCENE_WORDS = 16  # the whole hook: about 5 s at ~196 wpm (a 3-second openi
 HOOK_SENTENCES = 2
 SHOW_WORDS = 12
 TOLERANCE = 0.2  # the narration's length, either way
-PARTS = {"bullets": "items", "terminal": "lines", "chart": "labels", "diagram": "nodes", "timeline": "events"}
+PARTS = {"bullets": "items", "terminal": "lines", "chart": "labels", "diagram": "nodes", "timeline": "events",
+         "statement": "lines", "stack": "rows", "steps": "steps", "points": "items", "bars": "bars"}
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 ALIASES = {"usa": "United States of America", "us": "United States of America", "america": "United States of America",
            "uk": "United Kingdom", "britain": "United Kingdom", "uae": "United Arab Emirates",
@@ -57,7 +58,7 @@ ALIASES = {"usa": "United States of America", "us": "United States of America", 
 MAX_BYTES = 60_000
 ALLOWED_IMPORTS = {"react", "remotion", "@remotion/transitions", "d3-geo", "topojson-client",
                    "world-atlas/countries-110m.json", "world-atlas/countries-50m.json",
-                   "studio/motion", "studio/theme", "studio/types"}
+                   "studio/motion", "studio/theme", "studio/types", "studio/kit"}
 BANNED = [
     (re.compile(r"\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|navigator\.sendBeacon"), "no network"),
     (re.compile(r"\beval\s*\(|new\s+Function\s*\(|\brequire\s*\(|\bimport\s*\("), "no eval or dynamic import"),
@@ -253,7 +254,10 @@ def evidence(where: str, scene: dict[str, Any], notes: str) -> list[str]:
     texts = {"quote": ("text",), "clipping": ("headline",), "post": ("text",)}.get(kind, ())
     problems = [f"{where} ({kind}): its {key} is not in the notes; copy it word for word or use another scene"
                 for key in texts if _clean(str(scene.get(key, ""))) not in squashed]
-    numbers = [scene.get("value")] if kind == "stat" else list(scene.get("values") or []) if kind == "chart" else []
+    numbers = ([scene.get("value")] if kind in ("stat", "counter") else list(scene.get("values") or []) if kind == "chart"
+               else [float(n.replace(",", "")) for b in scene.get("bars") or [] if isinstance(b, dict)
+                     for n in re.findall(r"\d[\d,]*(?:\.\d+)?", str(b.get("value", "")))]
+               if kind == "bars" else [])
     if kind == "custom":  # data a custom scene shows; small counts (3 gears) are pictures, not claims
         numbers = [v for v in _numbers(scene.get("props")) if abs(v) >= 10]
         if isinstance(scene.get("fallback"), dict):

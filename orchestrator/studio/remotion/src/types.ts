@@ -162,7 +162,20 @@ export interface CustomScene extends SceneBase {
   full_bleed: boolean;
 }
 
-export type Scene = MapScene | TitleScene | BulletsScene | CodeScene | StatScene | ImageScene | CompareScene | TerminalScene |
+// The explainer scenes shared with /edit (scenes/Explainer.tsx draws them with edit/Scenes.tsx).
+type Tone = "neutral" | "problem" | "solution";
+export type ExplainerScene = SceneBase & (
+  | {type: "statement"; lines: {text: string; tone: Tone; strike: boolean}[]; sub: string; icon: string}
+  | {type: "counter"; value: number; start: number; prefix: string; suffix: string; label: string; sub: string; tone: Tone}
+  | {type: "stack"; title: string; tone: "problem" | "solution"; rows: {text: string; icon: string; mark: "none" | "cross" | "check"}[]}
+  | {type: "steps"; title: string; steps: {label: string; icon: string; sub: string}[]}
+  | {type: "points"; title: string; items: string[]; numbered: boolean; struck: boolean}
+  | {type: "bars"; title: string; bars: {label: string; value: string; size: number; tone: Tone}[]}
+  | {type: "balance"; title: string; left: string; right: string; heavy: "left" | "right"; strike: "none" | "left" | "right"}
+  | {type: "badge"; icon: string; text: string; badge: string}
+);
+
+export type Scene = ExplainerScene | MapScene | TitleScene | BulletsScene | CodeScene | StatScene | ImageScene | CompareScene | TerminalScene |
   ChartScene | DiagramScene | QuoteScene | TimelineScene | ClippingScene | PostScene | MemeScene | BeforeAfterScene |
   LogoScene | CustomScene;
 

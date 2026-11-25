@@ -21,6 +21,7 @@ import {Quote} from "./scenes/Quote";
 import {Terminal} from "./scenes/Terminal";
 import {Timeline} from "./scenes/Timeline";
 import {Title} from "./scenes/Title";
+import {Explainer} from "./scenes/Explainer";
 import {Motion, ProfileProvider, Theme, useProfile, useTheme} from "./theme";
 import type {CustomScene, Scene, ShortProps} from "./types";
 
@@ -46,6 +47,14 @@ export const SCENES: Record<Scene["type"], {view: SceneView; fullBleed: boolean}
   logo: {view: Logo as SceneView, fullBleed: false},
   map: {view: WorldMap as SceneView, fullBleed: false},
   custom: {view: CustomHost as SceneView, fullBleed: false},
+  statement: {view: Explainer as SceneView, fullBleed: false},
+  counter: {view: Explainer as SceneView, fullBleed: false},
+  stack: {view: Explainer as SceneView, fullBleed: false},
+  steps: {view: Explainer as SceneView, fullBleed: false},
+  points: {view: Explainer as SceneView, fullBleed: false},
+  bars: {view: Explainer as SceneView, fullBleed: false},
+  balance: {view: Explainer as SceneView, fullBleed: false},
+  badge: {view: Explainer as SceneView, fullBleed: false},
 };
 
 // The component registered for this custom scene by the job's entry file.

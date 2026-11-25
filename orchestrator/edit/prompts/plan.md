@@ -116,6 +116,8 @@ How to direct it:
    Words in scenes are short (a statement up to ~4 words; rows and items up to ~5). Sentence case. Mark the
    one or two words that carry a title or line with stars ("Who *pays*?", "a *prevention* mindset"): they set
    in the accent colour, in italic, as the brand does. A heading speaks for itself: no small label above it.
+   Colours and fonts come from the style, so never name one: "tone" (problem / solution / neutral) and
+   "mark" say what a line means and the style colours it (the same plan renders in any brand).
    Every list scene needs its "title" (it sits large in the middle, then moves up as the first row lands).
 3. **Other tools.** "pop" (a 1–3 word chip beside the face), "stat", "list", "chapter", "headline",
    "quote" for smaller moments; "cutaway"/"split"/"image"/"screenshot" for footage or pictures (the

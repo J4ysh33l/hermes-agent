@@ -8,13 +8,17 @@
 // Scenes ask for these by name; a storyboard can override them per scene; the profile sets defaults.
 import React from "react";
 import {AbsoluteFill, Easing, Freeze, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
+import {ramp, settle} from "./kit";
 import {Enter, Exit, Feel, SAFE, Transition, useProfile} from "./theme";
 
-export const FEELS: Record<Feel, {damping: number; stiffness: number; mass: number}> = {
+// Springs; "settle" is no spring but the shared ease-out-expo of kit.tsx (fast, then settling, no overshoot),
+// the motion of the explainer scenes in both pipelines.
+export const FEELS: Record<Exclude<Feel, "settle">, {damping: number; stiffness: number; mass: number}> = {
   snappy: {damping: 14, stiffness: 180, mass: 0.6},
   soft: {damping: 20, stiffness: 110, mass: 0.9},
   bouncy: {damping: 9, stiffness: 160, mass: 0.7},
 };
+const SETTLE_FRAMES = 14;
 
 type Style = React.CSSProperties;
 
@@ -27,6 +31,8 @@ export const ENTERS: Record<Enter, (p: number) => Style> = {
     opacity: Math.min(1, p * 2)}),
   zoom: (p) => ({transform: `scale(${interpolate(p, [0, 1], [1.6, 1])})`, opacity: Math.min(1, p * 1.4)}),
   fade: (p) => ({opacity: p}),
+  // A part rising out of a mask (Arrive clips it); a whole scene, which cannot be clipped, rises a little.
+  mask: (p) => ({transform: `translateY(${interpolate(p, [0, 1], [60, 0])}px)`, opacity: Math.min(1, p * 3)}),
 };
 
 // `t` runs 0 → 1 over the scene's last exit_frames.
@@ -80,6 +86,7 @@ export const usePop = (delay = 0) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const {motion} = useProfile();
+  if (motion.feel === "settle") return ramp(frame, delay, SETTLE_FRAMES, settle);
   return spring({frame: frame - delay, fps, config: FEELS[motion.feel]});
 };
 
@@ -89,6 +96,13 @@ export const Arrive: React.FC<{delay?: number; enter?: Enter; style?: Style; chi
 ) => {
   const p = usePop(delay);
   const {motion} = useProfile();
+  if ((enter ?? motion.enter) === "mask") {  // the text slides up from under its own baseline
+    return (
+      <div style={{...style, overflow: "hidden", padding: "0 0.18em 0.12em 0.06em", margin: "0 -0.18em -0.12em -0.06em"}}>
+        <div style={{transform: `translateY(${(1 - p) * 110}%)`, opacity: p > 0 ? 1 : 0}}>{children}</div>
+      </div>
+    );
+  }
   return <div style={{...style, ...ENTERS[enter ?? motion.enter](p)}}>{children}</div>;
 };
 

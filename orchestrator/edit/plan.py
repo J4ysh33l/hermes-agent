@@ -68,7 +68,12 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from orchestrator.studio import storyboard
+try:
+    from orchestrator.studio import storyboard
+    from orchestrator.studio.icons import ICONS
+except ImportError:  # the handoff repo's copy (editor.files): tools/studio sits beside tools/edit
+    from studio import storyboard  # type: ignore[no-redef]
+    from studio.icons import ICONS  # type: ignore[no-redef]
 
 from .cuts import CutList
 if TYPE_CHECKING:
@@ -84,15 +89,6 @@ SCENES = {"statement": ("text|lines",), "counter": ("number", "label"), "stack":
 # The faceless library's scenes an edit may use full-frame (type "library"); not those that need files.
 LIBRARY = ("chart", "timeline", "quote", "clipping", "diagram", "map", "post", "compare", "stat", "bullets", "title")
 LAYOUTS = ("panel", "full", "top")  # top half (face below) · whole frame · big type above your head
-ICONS = ("hospital", "stethoscope", "pill", "syringe", "heart-pulse", "activity", "ambulance", "bed", "clipboard",
-         "clipboard-check", "file", "receipt", "wallet", "rupee", "piggy-bank", "shield", "shield-check", "user", "users",
-         "calendar", "clock", "alert", "cross", "check", "trending-up", "trending-down", "chart", "database", "phone",
-         "monitor", "laptop", "offline", "languages", "training", "building", "home", "pin", "call", "search", "idea",
-         "target", "zap", "lock", "scale", "rocket", "sparkles", "microscope", "test", "scan", "brain", "care", "cash",
-         "government", "insurance", "timer", "hourglass", "settings", "wrench", "chat", "mic", "camera", "arrow", "ban",
-         "hand", "eye", "heart", "baby", "leaf", "apple", "fitness", "coins", "card", "file-x", "calendar-x", "user-x",
-         "sad", "happy", "thumbs-up", "globe", "truck", "package", "printer", "chip", "bot", "cloud", "sync", "layers",
-         "dashboard", "checklist", "siren", "blood", "fever", "bandage", "plus")
 LONGEST_SCENE = 25.0
 ANCHOR = re.compile(r"^S(\d+)\.(\d+)$")
 TEXT_MAX = {"pop": 24, "stat": 28, "headline": 90, "chapter": 40, "lower_third": 40, "quote": 160, "list": 34, "caption": 60}

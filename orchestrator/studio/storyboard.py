@@ -22,6 +22,19 @@
             {"type": "logo", "say": "...", "name": "Rust", "src": "rust.svg", "tagline": "..."},
             {"type": "map", "say": "...", "title": "...", "focus": "India", "highlight": ["India", "Japan"],
              "route": ["India", "Japan"], "labels": true},        # Natural Earth country names
+            {"type": "statement", "say": "...", "lines": [{"text": "not the *price*", "strike": true},
+                                                          {"text": "the *chaos*", "tone": "solution"}], "sub": "..."},
+            {"type": "counter", "say": "...", "value": 70, "suffix": "%", "label": "paid out of pocket", "tone": "problem"},
+            {"type": "stack", "say": "...", "title": "Who *pays*?", "tone": "problem",
+             "rows": [{"text": "No insurance", "icon": "insurance", "mark": "cross"}, ...]},   # 2–4 rows
+            {"type": "steps", "say": "...", "title": "How it works", "steps": [{"label": "Book", "icon": "calendar"}, ...]},
+            {"type": "points", "say": "...", "title": "The usual *fixes*", "items": ["...", "..."], "numbered": false,
+             "struck": true},                                      # struck: all crossed out after the last one
+            {"type": "bars", "say": "...", "title": "...", "bars": [{"label": "Screening", "value": "₹1,000", "size": 0.05},
+                                                                {"label": "Treatment", "value": "₹5 lakh", "size": 1,
+                                                                 "tone": "problem"}]},
+            {"type": "balance", "say": "...", "left": "Price", "right": "Chaos", "heavy": "right", "strike": "left"},
+            {"type": "badge", "say": "...", "icon": "check", "text": "OPD open every day", "badge": "0 days down"},
             {"type": "custom", "say": "...", "brief": "what is on screen, moment by moment",
              "props": {...}, "full_bleed": false, "component": "coins.tsx",
              "fallback": {"type": "stat", "value": 25, "suffix": "×", "label": "faster"}}]}
@@ -34,8 +47,12 @@ built or fails its checks, so a video never breaks.
 
 Any scene may also have ``"emoji": "🔥"``: it pops on the scene's first *emphasised* word.
 
-List items, chart bars, diagram boxes, timeline events and the "after" panel appear on the sentence that
-says them when ``say`` has one sentence per item (after any intro sentences).
+List items, chart bars, diagram boxes, timeline events, statement lines, stack rows, steps, points and bars,
+and the "after" panel appear on the sentence that says them when ``say`` has one sentence per item (after any
+intro sentences). Statement, counter, stack, steps, points, bars, balance and badge are the explainer scenes
+(the same as /edit's): big type, one idea, parts that build; a struck line or point is crossed out as the
+next one arrives (or at the end); ``*starred*`` words in their text set in the accent colour, in italic.
+Icons: any of the names in icons.py (hospital, wallet, check, cross, chart, users, code, ...).
 
 ``say`` is the narration for the scene (the scene lasts as long as it takes to say); wrap words in
 ``*asterisks*`` to emphasise them (caption colour + a camera punch-in; the voice never hears the
@@ -57,12 +74,13 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from . import direction
+from .icons import ICONS
 from .text import sentences
 
 MAX_SCENES = 40
 MAX_ITEMS = 6
 # Motion a scene may set for itself (the page profile's ``motion:`` takes the same values).
-ENTERS = ("pop", "rise", "slide", "drop", "zoom", "fade")
+ENTERS = ("pop", "rise", "slide", "drop", "zoom", "fade", "mask")
 EXITS = ("lift", "fade", "whip", "zoom", "cut")
 # Scene to scene: the next scene comes in while this one leaves (overlapping); "none" = the scene's own
 # exit, then the next one's entrance; "cut" = a hard cut.
@@ -165,7 +183,38 @@ def _index(where: str, value: Any) -> int:
     return value
 
 
+def _number_or(default: float) -> Field:
+    def parse(where: str, value: Any) -> float:
+        return default if value is MISSING else _number(where, value)
+    return parse
+
+
+def _short(most: int, required: bool = True) -> Field:
+    """Text that must stay short enough to read at a glance (one line on screen)."""
+    text = _text(required)
+
+    def parse(where: str, value: Any) -> str:
+        out = text(where, value)
+        if len(out.replace("*", "")) > most:
+            raise StoryboardError(f"{where} is {len(out)} characters; at most {most} (say the rest)")
+        return out
+    return parse
+
+
+def _icon(required: bool) -> Field:
+    def parse(where: str, value: Any) -> str:
+        if value is MISSING or value in ("", None):
+            if required:
+                raise StoryboardError(f"{where} is required (one of {', '.join(ICONS)})")
+            return ""
+        if value not in ICONS:
+            raise StoryboardError(f"{where}: unknown icon {value!r} (icons: {', '.join(ICONS)})")
+        return str(value)
+    return parse
+
+
 _items = _list(1, MAX_ITEMS, _text(True))
+_tone = _choice("neutral", "problem", "solution")
 _side = _object(label=_text(True), points=_items)
 _panel = _object(label=_text(True), src=_text(False))
 
@@ -190,6 +239,20 @@ SCHEMA: dict[str, dict[str, Field]] = {
     "logo": {"name": _text(True), "src": _text(False), "tagline": _text(False)},
     "map": {"title": _text(False), "focus": _text(False), "highlight": _list(0, 12, _text(True)),
             "route": _list(0, 6, _text(True)), "labels": _flag(True)},
+    # The explainer scenes (shared with /edit, remotion/src/edit/Scenes.tsx); *starred* words in their text
+    # set in the accent colour, in italic.
+    "statement": {"lines": _list(1, 3, _object(text=_short(30), tone=_tone, strike=_flag(False))), "sub": _short(60, False),
+                  "icon": _icon(False)},
+    "counter": {"value": _number, "start": _number_or(0), "prefix": _text(False), "suffix": _text(False),
+                "label": _short(50), "sub": _short(30, False), "tone": _tone},
+    "stack": {"title": _short(40, False), "tone": _choice("problem", "solution"),
+              "rows": _list(2, 4, _object(text=_short(32), icon=_icon(False), mark=_choice("none", "cross", "check")))},
+    "steps": {"title": _short(40, False), "steps": _list(2, 5, _object(label=_short(22), icon=_icon(False), sub=_short(24, False)))},
+    "points": {"title": _short(40), "items": _list(2, 4, _short(32)), "numbered": _flag(False), "struck": _flag(False)},
+    "bars": {"title": _short(40, False), "bars": _list(2, 3, _object(label=_short(18), value=_short(12), size=_number, tone=_tone))},
+    "balance": {"title": _short(40, False), "left": _short(24), "right": _short(24), "heavy": _choice("right", "left"),
+                "strike": _choice("none", "left", "right")},
+    "badge": {"icon": _icon(True), "text": _short(30), "badge": _short(30, False)},
 }
 def _json_object(where: str, value: Any) -> Mapping[str, Any]:
     if value is MISSING:
@@ -249,8 +312,12 @@ def _clipping(f: Mapping[str, Any]) -> str:
     return f"highlight {f['highlight']!r} is not in the headline" if missing else ""
 
 
+def _bars(f: Mapping[str, Any]) -> str:
+    return "" if all(0 < b["size"] <= 1 for b in f["bars"]) else "each bar's size is a share of the tallest, from 0 to 1"
+
+
 # Checks across a scene's fields, after each field is parsed.
-CHECKS: dict[str, Callable[[Mapping[str, Any]], str]] = {"chart": _chart, "clipping": _clipping, "map": _map}
+CHECKS: dict[str, Callable[[Mapping[str, Any]], str]] = {"chart": _chart, "clipping": _clipping, "map": _map, "bars": _bars}
 
 
 def files(value: Any) -> list[str]:

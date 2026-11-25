@@ -16,7 +16,7 @@ export const Rise: React.FC<{at?: number; frames?: number; style?: React.CSSProp
     const frame = useCurrentFrame();
     const p = ramp(frame, at, frames);
     return (
-      <div style={{overflow: "hidden", paddingBottom: "0.12em", marginBottom: "-0.12em", ...style}}>
+      <div style={{overflow: "hidden", padding: "0 0.18em 0.12em 0.06em", margin: "0 -0.18em -0.12em -0.06em", ...style}}>
         <div style={{transform: `translateY(${(1 - p) * 110}%)`, opacity: p > 0 ? 1 : 0}}>{children}</div>
       </div>
     );
@@ -85,10 +85,15 @@ export const useCount = (from: number, to: number, at: number, frames = 26) => {
   return frame >= at + frames ? to : from + (to - from) * k;
 };
 
-// Width estimate for one line of type at weight 600 (share of the font size per character), to size a line
-// so it never wraps: errs wide, never overflows.
-export const fitLine = (text: string, size: number, width: number, advance = 0.5) => {
-  const t = plain(text);
-  const units = [...t].reduce((n, c) => n + (/[iIl1.,:;'!|]/.test(c) ? 0.28 : /[MWmw@%₹]/.test(c) ? 0.86 : /[A-Z0-9]/.test(c) ? 0.6 : c === " " ? 0.24 : advance), 0);
+// How wide each family draws at weight 600 (share of the font size per lower-case letter); wider faces get
+// smaller sizes so a line never wraps.
+export const ADVANCE: Record<string, number> = {intertight: 0.5, inter: 0.55, manrope: 0.56, poppins: 0.6, montserrat: 0.63,
+  newsreader: 0.47, anton: 0.42, jetbrains: 0.6};
+
+// The largest size ≤ `size` at which `text` fits `width` px on one line in `font` (errs wide, never overflows).
+export const fitLine = (text: string, size: number, width: number, font = "intertight") => {
+  const k = (ADVANCE[font] ?? 0.58) / 0.5;
+  const units = [...plain(text)].reduce((n, c) => n + (/[iIl1.,:;'!|]/.test(c) ? 0.28 : /[MWmw@%₹]/.test(c) ? 0.86
+    : /[A-Z0-9]/.test(c) ? 0.6 : c === " " ? 0.24 : 0.5), 0) * k;
   return Math.min(size, Math.floor(width / Math.max(1, units)));
 };

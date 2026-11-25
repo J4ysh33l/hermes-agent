@@ -28,7 +28,7 @@ from orchestrator.handoff import Handoff
 from . import brief, rules
 
 HERE = Path(__file__).parent
-TOOLS = ("direction.py", "text.py", "storyboard.py", "rules.py")  # standard library only, copied as they are
+TOOLS = ("direction.py", "text.py", "storyboard.py", "rules.py", "icons.py")  # standard library only, copied as they are
 
 CHECK = '''"""Checks a studio answer before it is handed in. Written by Hermes; the rules are tools/studio/rules.py.
 

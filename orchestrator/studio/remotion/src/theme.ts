@@ -38,9 +38,9 @@ export interface Theme {
   background: "glow-grid" | "glow" | "flat";
 }
 
-export type Enter = "pop" | "rise" | "slide" | "drop" | "zoom" | "fade";
+export type Enter = "pop" | "rise" | "slide" | "drop" | "zoom" | "fade" | "mask";
 export type Exit = "lift" | "fade" | "whip" | "zoom" | "cut";
-export type Feel = "snappy" | "soft" | "bouncy";
+export type Feel = "snappy" | "soft" | "bouncy" | "settle";
 export type Transition = "none" | "cut" | "fade" | "push" | "whip" | "zoom" | "flash" | "burn";
 
 export interface Motion {

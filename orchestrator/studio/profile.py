@@ -85,7 +85,7 @@ USE = _use  # off | auto (only where it helps the video; never forced) | always
 SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
     "theme": {**{key: _colour for key in ("bg", "glow", "panel", "text", "muted", "accent", "cool", "bad", "good")},
               "font": FONT, "mono": FONT, "background": _choice("glow-grid", "glow", "flat")},
-    "motion": {"feel": _choice("snappy", "soft", "bouncy"),
+    "motion": {"feel": _choice("snappy", "soft", "bouncy", "settle"),
                "enter": _choice(*ENTERS),
                "exit": _choice(*EXITS),
                "exit_frames": _number(0, 15), "punch": _number(0, 0.3), "drift": _number(0, 0.2),

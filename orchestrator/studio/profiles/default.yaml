@@ -12,13 +12,13 @@ theme:
   cool: "#4cc9f0"           # *emphasised* words, second list colour
   bad: "#ff5d73"
   good: "#3ddc97"
-  font: inter               # inter | montserrat | anton
+  font: inter               # inter | intertight | montserrat | anton
   mono: jetbrains
   background: glow-grid     # glow-grid | glow | flat
 
 motion:
-  feel: snappy              # snappy | soft | bouncy
-  enter: pop                # pop | rise | slide | drop | zoom | fade
+  feel: settle              # settle (ease-out, no overshoot: the explainer scenes' motion) | snappy | soft | bouncy
+  enter: mask                # mask (rises out of its own baseline) | pop | rise | slide | drop | zoom | fade
   exit: lift                # lift | fade | whip | zoom | cut
   exit_frames: 5
   punch: 0.08               # camera punch-in on *emphasised* words (0.08 = 8%)

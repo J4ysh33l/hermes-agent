@@ -125,8 +125,13 @@ crosses (SVG strokes in a 16% disc).
   - `Strike`: a bar across the whole text (8% overshoot, -1.5° rise), drawn over 9 frames; struck text dims to
     50%. `Underline`, `Tick` (check or cross drawing itself), `useCount` (lands exactly on the number).
   - Exits are cuts. Nothing bounces.
-- **Scenes** (edit): statement, counter, stack, steps, compare, bars, points, badge, end; `library` draws
-  any faceless scene (chart, timeline, map, diagram, quote, clipping, ...) full-frame in the style's colours.
+- **Scenes**, one set for both pipelines: statement, counter, stack, steps, compare (faceless: "balance"),
+  bars, points, badge (`src/edit/Scenes.tsx` `EXPLAINERS`), plus the edit's end card. A faceless storyboard
+  uses them by type (`src/scenes/Explainer.tsx` builds the look from the page profile and times each part
+  on its sentence); an edit uses any faceless scene full-frame as type `library`.
+- **Faceless motion**: profiles may set `feel: settle` (the kit's ease, no spring) and `enter: mask` (parts
+  rise out of their own baseline); the default and paper profiles do. Custom scenes import the same marks
+  from `studio/kit`.
 - **Captions**: word pages, the spoken word in an accent box (`mode: box`), problem/solution words in
   alert/good.
 
@@ -135,7 +140,9 @@ crosses (SVG strokes in a 16% disc).
 - Do take every colour from the style or the profile. A new scene must pass in a dark and a light palette.
 - Do time every element to a word (`at`); a scene arrives about 0.6 s before its first element, never
   empty for longer.
-- Do size display type to fit one line; never let a phone wrap a heading into three.
+- Do size display type to fit one line with `fitLine(text, size, width, font)`; widths differ per family
+  (`ADVANCE` in kit.tsx), so pass the font; never let a phone wrap a heading into three.
+- Do leave room for italic overhang: masks are padded 0.18em right.
 - Don't add kickers or eyebrows, numbered sections unless the count matters, gradient text, glass, side
   stripes, or bouncing entrances.
 - Don't slide a panel: the footage under it cuts on one frame.

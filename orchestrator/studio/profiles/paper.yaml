@@ -15,8 +15,8 @@ theme:
   background: glow
 
 motion:
-  feel: soft
-  enter: rise
+  feel: settle
+  enter: mask
   exit: fade
   exit_frames: 8
   punch: 0.05
