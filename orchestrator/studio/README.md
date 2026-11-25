@@ -76,6 +76,12 @@ are cut, so the gap between lines is exactly `studio.pause`. `clone` also shorte
 recording to 0.2 s (breaths removed), because the clone copies the clip's pauses. `studio.omni_guidance`
 (default 2.0): lower follows your clip's delivery less closely. A paragraph of fewer than 10 words joins
 the one before it (two words alone came out empty in a test).
+Whisper: `clone` uses large-v3-turbo (~2.3 GB, once per voice): small mistimed words on an earphone
+recording and the pause trimming cut into speech; a "pause" holding speech-level sound is never cut.
+The per-video check uses small for English and `studio.voice_check_hi` (large-v3-turbo) for passes with
+Hindi lines, which small can't read; Hindi is compared letter by letter with common spelling variants
+(ँ/ं, ॉ/ौ, nukta) treated as one, so a correct line isn't spoken again. Earphone mics: Bluetooth
+headsets record narrowband (nothing above ~6 kHz measured) with noise gating; a phone's own mic is better.
 Hindi from an English recording comes out accented and less clear (Whisper misheard our test line):
 record a Hindi clip too.
 

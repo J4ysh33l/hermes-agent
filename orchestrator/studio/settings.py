@@ -91,6 +91,7 @@ class Settings:
     omni_wpm: int = 185  # speaking rate (pauses not counted) at speed 1.0, × the profile's speed: 1.15 → ~213, ~196 with pauses; 0 = the clip's own pace
     omni_guidance: float = 2.0  # how closely it follows your clip: lower = freer, less "read"; higher = closer copy
     voice_check: str = "small"  # faster-whisper model that listens to each OmniVoice line ("" = no check)
+    voice_check_hi: str = "large-v3-turbo"  # for passes with Hindi lines: small can't read Hindi (~2.3 GB, still alone in memory)
     voice_retries: int = 2  # a misheard line is spoken again this many times
     kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
     studio_python: str = ""  # "" = $HERMES_HOME/venvs/studio/bin/python (orchestrator/studio/install.sh)
@@ -147,6 +148,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         omni_wpm=max(0, int(studio.get("omni_wpm", base.omni_wpm))),
         omni_guidance=min(4.0, max(0.5, float(studio.get("omni_guidance", base.omni_guidance)))),
         voice_check=str(studio.get("voice_check", base.voice_check) or ""),
+        voice_check_hi=str(studio.get("voice_check_hi", base.voice_check_hi) or ""),
         voice_retries=min(5, max(0, int(studio.get("voice_retries", base.voice_retries)))),
         kokoro_model=str(studio.get("kokoro_model", base.kokoro_model)),
         studio_python=str(studio.get("studio_python", base.studio_python)),

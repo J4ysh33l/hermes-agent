@@ -42,6 +42,8 @@ class OmniVoice(unittest.TestCase):
         self.assertTrue(worker._heard_right(line, "Here's what actually moves your percentile in the final 30 days."))
         self.assertFalse(worker._heard_right(line, "Here is what the tape to move 38 in the final days"))
         self.assertTrue(worker._heard_right("[pause 0.5]", ""))
+        self.assertTrue(worker._heard_right("हर मॉक के बाद अपनी गलतियाँ लिखो.", "हर मौक के बाद अपनी गलतियां लिखो"))
+        self.assertFalse(worker._heard_right("हर मॉक के बाद अपनी गलतियाँ लिखो.", "हर दिन पढ़ाई करो और सो जाओ"))
 
 
     def test_lines_are_spoken_as_paragraphs_of_one_language_and_speed(self):

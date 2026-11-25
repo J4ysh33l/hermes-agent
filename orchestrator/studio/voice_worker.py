@@ -136,14 +136,24 @@ def _whisper(job: dict):
 
 def _words(text: str) -> list[str]:
     import re
-    return re.findall(r"[\w']+", re.sub(r"\[[^\]]*\]|\*", " ", text).lower())
+    # Devanagari vowel signs are not \w: without them a Hindi word would split at every matra
+    return re.findall(r"[\w\u0900-\u0963\u0966-\u097f']+", re.sub(r"\[[^\]]*\]|\*", " ", text).lower())
 
 
 def _heard_right(want: str, heard: str) -> bool:
     """Whisper heard (nearly) the words that were meant: 85% of them in order."""
     import difflib
     a, b = _words(want), _words(heard)
-    return not a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.85
+    if not a or difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
+        return True
+    if any("\u0900" <= ch <= "\u097f" for ch in want):  # Hindi: one sound has several spellings, so compare letters
+        flat = lambda words: "".join(words).translate(SAME_SOUND)
+        return difflib.SequenceMatcher(None, flat(a), flat(b)).ratio() >= 0.85
+    return False
+
+
+# Devanagari spellings Whisper uses for the same sound: ँ/ं (nasal), ॉ/ौ (the English "o"), nukta dropped
+SAME_SOUND = str.maketrans({"\u0901": "\u0902", "\u0949": "\u094c", "\u093c": None})
 
 
 PARAGRAPH_WORDS = 45  # ~15 s: one OmniVoice call and one Whisper pass per paragraph, not per line
@@ -277,7 +287,8 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
             for g, audio in spoken.items():
                 clips[groups[g][0]] = audio
             return clips, []
-        ear = _whisper(job)
+        hindi = any(lines[groups[g][0]]["lang"].startswith("hi") for g in todo)
+        ear = _whisper({**job, "check": job.get("check_hi") or job["check"]} if hindi else job)  # small can't read Hindi
         wrong = {}
         for g in todo:
             texts = [lines[i]["text"] for i in groups[g]]
@@ -312,6 +323,7 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
     return clips, [[groups[g][0], groups[g][-1], said] for g, said in sorted(wrong.items())]
 
 
+CLONE_EAR = "large-v3-turbo"  # once per voice: the best word times and words (Hindi too); ~2.3 GB, under the encode's peak
 REF_GAP = 0.2  # seconds: longer pauses (and the breaths in them) in your recording are shortened to this
 
 
@@ -320,7 +332,11 @@ def _tighten(audio, words) -> object:
     and breaths, so they are taken out of the clip it learns from."""
     import numpy as np
     keep, at = [], 0
+    loudest = float(np.abs(audio).max()) or 1.0
     for w, nxt in pairwise(words):
+        gap = audio[int(w.end * RATE):int(nxt.start * RATE)]
+        if gap.size and float(np.abs(gap).max()) > loudest * 0.3:
+            continue  # speech in the "pause": the word times are off here, cut nothing
         if nxt.start - w.end > REF_GAP:
             stop = int((w.end + REF_GAP / 2) * RATE)
             keep.append(_fade(audio[at:stop]) if stop > at else audio[at:at])
@@ -338,7 +354,7 @@ def clone(job: dict) -> dict:
                           "pipe:1"], capture_output=True, check=True, timeout=EDGE_TIMEOUT).stdout
     audio = np.frombuffer(pcm, dtype="<i2").astype("float32") / 32767
     longest, text = float(job.get("seconds", 10)), job.get("text", "").strip()
-    ear = _whisper({**job, "check": job.get("check") or "small"})
+    ear = _whisper({**job, "check": job.get("ear") or CLONE_EAR})
     words = [w for seg in ear.transcribe(_to16k(audio), language=job.get("lang") or None, word_timestamps=True)[0]
              for w in seg.words]
     del ear
