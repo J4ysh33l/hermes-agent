@@ -1,0 +1,9 @@
+.env
+auth.json
+state.db*
+memories/
+sessions/
+logs/
+edit/
+brief/
+cache/
