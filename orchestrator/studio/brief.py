@@ -177,12 +177,25 @@ WRITING_END = """
 """
 
 
-def writing(look: Profile, notes: str, seconds: float, job: str) -> str:
+RESEARCH_PART = """## Part 0: research, by a subagent
+Before part 1, start ONE subagent with the Agent tool, model "$model", with exactly this prompt:
+"Read studio/$job/research-brief.md and do what it says with web search. Reply with only the fact lines."
+Write its fact lines, as they are, to `studio/$job/research.txt`. They count as part of the notes below:
+use them in parts 1 and 2 like the notes (the checks read research.txt too). Do no searching yourself.
+If the subagent finds nothing, write an empty research.txt and go on with the notes alone.
+
+"""
+
+
+def writing(look: Profile, notes: str, seconds: float, job: str, researcher: str = "") -> str:
     """The handoff's first call: the script, then the direction for it, in one run (one fixed cost
-    instead of two; the director works with the script fresh in mind). The same checks gate each part."""
+    instead of two; the director works with the script fresh in mind). The same checks gate each part.
+    ``researcher`` ("sonnet" / "haiku"): a part 0 first, where a subagent on that model does the web
+    search from research-brief.md, so the long search results stay in its context, not this run's."""
     part2 = _direction(look, "(the same notes as in part 1)", "(your script.json from part 1)", job,
                        "(your script's title)")
-    return (Template(WRITING_HEAD).substitute(job=job) + "---\n\n" + _script(look, notes, seconds, job)
+    part0 = Template(RESEARCH_PART).substitute(model=researcher, job=job) if researcher else ""
+    return (Template(WRITING_HEAD).substitute(job=job) + part0 + "---\n\n" + _script(look, notes, seconds, job)
             + "\n\n---\n\n" + part2 + Template(WRITING_END).substitute(job=job))
 
 

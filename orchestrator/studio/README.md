@@ -305,8 +305,11 @@ moves writing jobs on and renders inside `studio.render_window`, one run at a ti
   when Claude writes, Claude researches and Gemini is not called: with `ANTHROPIC_API_KEY`, one Messages
   call with Claude's web search tool (`llm.claude_search`), made by a smaller Claude than the writer
   (`studio.research_claude`, default Sonnet 5.5; Haiku 5.5 is cheaper and uses the basic search tool) so the long
-  search results are read at its price and the writer only gets the fact lines; through the handoff, its own issue before the
-  script (a separate run on purpose: search results would otherwise ride along in the script run's context).
+  search results are read at its price and the writer only gets the fact lines; through the handoff (your plan), part 0 of the
+  script + direction run: Claude starts one subagent (Agent tool, Sonnet by default, Haiku if
+  `research_claude` is a Haiku) that searches from `research-brief.md` and returns only fact lines, so the
+  search results stay in the subagent's context and no extra run is paid for; the fact lines go to
+  `research.txt`, which the in-run checks and Hermes count as notes.
   When Gemini writes (or `researcher: gemini`), Google Search on Gemini (`studio.research_models`: on the
   free tier the 2.5 models could search, the 3.x ones could not, 2026-11-24). They are added to your notes under
   "Research", so the writer and director use them and the evidence checks count them; the sites go to

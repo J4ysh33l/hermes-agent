@@ -149,7 +149,10 @@ def _add(ctx: Any, notes: str, how: str, seconds: float, look: profile.Profile, 
                        "writer": "claude (handoff)" if how == "handoff" else how, "stage": "script", "round": 0, "fixes": 0, "calls": 0, "wishes": [],
                        "state": "writing", "outputs": {}, "research": research.summary(found)})
     job.log(research.summary(found))
-    if how == "handoff" and not found.facts and ctx.settings.research:  # Claude researches (or Gemini could not)
+    if how == "handoff" and not found.facts and ctx.settings.research and research.by_claude(ctx.settings, how):
+        _start(ctx, job, look, notes, with_research=True)  # a research subagent inside the writing run
+        return job
+    if how == "handoff" and not found.facts and ctx.settings.research:  # Gemini could not search: Claude does
         asked = folder.joinpath("asked.txt").read_text(encoding="utf-8")
         job.data.update(stage="research", calls=1)
         job.data["issue"] = _issue(ctx, job, "research", lambda hand: handoff.ask(hand, job.id, "research", research.for_claude(
@@ -193,12 +196,16 @@ def _keep(ctx: Any, job: Job, draft: writer.Draft) -> None:
 # ---------------------------------------------------------------- writing, call by call
 
 
-def _start(ctx: Any, job: Job, look: profile.Profile, notes: str) -> None:
-    """The first issue (script and direction, in one run), with the job's rules and the checker."""
-    prompt = brief.writing(look, notes, job.data["seconds"], job.id)
-    job.data.update(stage="script", round=0, calls=job.data["calls"] + 1, merged=True)
-    job.data["issue"] = _issue(ctx, job, brief.WRITING, lambda hand: handoff.start(
-        hand, job.id, brief.params(look, notes, job.data["seconds"]), prompt))
+def _start(ctx: Any, job: Job, look: profile.Profile, notes: str, with_research: bool = False) -> None:
+    """The first issue (script and direction, in one run), with the job's rules and the checker. With
+    ``with_research``, a subagent researches first in the same run (part 0)."""
+    seconds = brief.seconds_of(look, job.data["seconds"])
+    who = researcher_model(ctx.settings) if with_research else ""
+    prompt = brief.writing(look, notes, job.data["seconds"], job.id, who)
+    task = research.ask(notes, seconds, date.today()) + RESEARCH_REPLY if with_research else ""
+    job.data.update(stage="script", round=0, calls=job.data["calls"] + 1, merged=True, researched_in_run=with_research)
+    job.data["issue"] = _issue(ctx, job, brief.WRITING + (" (research by " + who + ")" if who else ""), lambda hand: handoff.start(
+        hand, job.id, brief.params(look, notes, job.data["seconds"]), prompt, task))
     job.log(f"{brief.WRITING}: handoff issue #{job.data['issue']} opened")
 
 
@@ -273,7 +280,32 @@ def _got_research(w: Writing) -> None:
     _start(w.ctx, w.job, w.look, notes)
 
 
+RESEARCH_REPLY = "\nReply with only the fact lines; whoever started you writes them down.\n"
+
+
+def researcher_model(settings: Any) -> str:
+    """The research subagent's model, as the Agent tool names them: haiku when studio.research_claude is a
+    Haiku, otherwise sonnet."""
+    return "haiku" if "haiku" in settings.research_claude else "sonnet"
+
+
+def _take_research(w: Writing) -> Writing:
+    """The facts the run's research subagent found → research.json and your notes (once)."""
+    if not w.job.data.get("researched_in_run") or w.job.data.get("research_taken"):
+        return w
+    w.job.data["research_taken"] = True
+    found = research.from_claude(_hand(w.ctx).read(f"studio/{w.job.id}/{research.ANSWER}") or "")
+    found = replace(found, model=f"claude {researcher_model(w.ctx.settings)} (subagent, handoff)") if found.facts else found
+    found.save(w.job.folder)
+    notes = found.notes(w.job.folder.joinpath("asked.txt").read_text(encoding="utf-8"), date.today())
+    w.job.folder.joinpath("notes.txt").write_text(notes, encoding="utf-8")
+    w.job.data["research"] = research.summary(found)
+    w.job.log(research.summary(found))
+    return replace(w, notes=notes)
+
+
 def _got_script(w: Writing) -> None:
+    w = _take_research(w)
     raw, wrong = handoff.answer(_hand(w.ctx), w.job.id, "script")
     problems = [wrong] if wrong else rules.check_script(raw, w.params)
     merged = bool(w.job.data.get("merged"))  # the storyboard came in the same run

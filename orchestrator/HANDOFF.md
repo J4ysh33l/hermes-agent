@@ -13,7 +13,9 @@ needs GitHub's GraphQL API, which the task's sessions block.
 
 Used by:
 - **Studio** (`/studio make` without an Anthropic API key): two issues per video: the script and the
-  direction (storyboard) in one run (Claude checks the script before it starts the storyboard), then
+  direction (storyboard) in one run (Claude checks the script before it starts the storyboard; first,
+  a Sonnet subagent does the web research from `research-brief.md`, so its long search results stay in
+  the subagent's context; `studio.research_claude`, `studio.researcher`), then
   the custom scenes' components (`orchestrator/studio/prompts/`). Fixes come back as their own issues.
   Hermes also keeps `tools/check.py` and `tools/studio/` in the repo: the same checks Hermes runs, so
   Claude checks its own answer before handing it in.

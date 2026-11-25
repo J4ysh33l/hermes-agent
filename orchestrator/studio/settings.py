@@ -109,11 +109,11 @@ class Settings:
     writer: str = "claude"  # who writes storyboards: claude (default; ANTHROPIC_API_KEY, paid) or gemini (free)
     claude_model: str = "claude-opus-5-5"  # writes storyboards and builds custom scenes (~$0.10–0.25 a storyboard)
     custom_review: bool = True  # Claude looks at frames of each custom scene it built and fixes what is off
-    claude_via: str = "auto"  # auto (default): the API when ANTHROPIC_API_KEY is set, else the handoff repo (your Claude plan) | api | handoff
+    claude_via: str = "handoff"  # handoff (default: your Claude plan, via the private handoff repo) | api (ANTHROPIC_API_KEY, paid) | auto
     handoff_repo: str = ""  # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
     direction_retries: int = 2  # a storyboard that fails its checks goes back to the director this many times
     research: bool = True  # before the script, a researcher finds current facts on the web (research.py)
-    research_claude: str = "claude-sonnet-5-5"  # the model that searches when Claude researches over the API (a smaller, cheaper one than the writer; claude-haiku-5-5 is cheaper still)
+    research_claude: str = "claude-sonnet-5-5"  # who searches when Claude researches: a smaller Claude than the writer (through the handoff: a subagent of that kind, sonnet or haiku; over the API: this model); claude-haiku-5-5 is cheaper still
     researcher: str = "auto"  # auto: Claude when Claude writes (API key: its web search; handoff: an issue), else Gemini | claude | gemini
     research_models: tuple[ModelChoice, ...] = RESEARCH_MODELS  # Gemini models that may search, tried in order
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now

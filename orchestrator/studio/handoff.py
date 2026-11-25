@@ -37,6 +37,7 @@ CHECK = '''"""Checks a studio answer before it is handed in. Written by Hermes; 
     python3 tools/check.py animation studio/<job>    the custom scenes' components
 """
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -54,6 +55,9 @@ def load(path):
 
 def problems(stage, folder):
     params = rules.Params.loads((folder / "rules.json").read_text(encoding="utf-8"))
+    found = folder / "research.txt"  # facts a research subagent found in this run count as notes
+    if found.is_file() and found.read_text(encoding="utf-8").strip():
+        params = dataclasses.replace(params, notes=params.notes + "\\n\\n" + found.read_text(encoding="utf-8"))
     script, wrong = load(folder / "script.json")
     if stage == "script":
         return [wrong] if wrong else rules.check_script(script, params)
@@ -87,11 +91,15 @@ def tools() -> dict[str, str]:
     return files
 
 
-def start(hand: Handoff, job: str, params: rules.Params, prompt: str) -> int:
-    """The job's first issue (script and direction), with its rules and the up-to-date checker."""
+def start(hand: Handoff, job: str, params: rules.Params, prompt: str, research_brief: str = "") -> int:
+    """The job's first issue (script and direction), with its rules and the up-to-date checker;
+    ``research_brief``: the research subagent's instructions (research-brief.md)."""
     for path, text in tools().items():
         hand.put(path, text)
-    return hand.send({f"studio/{job}/rules.json": params.dumps()}, f"studio {job}: {brief.WRITING}", prompt)
+    files = {f"studio/{job}/rules.json": params.dumps()}
+    if research_brief:
+        files[f"studio/{job}/research-brief.md"] = research_brief
+    return hand.send(files, f"studio {job}: {brief.WRITING}", prompt)
 
 
 def ask(hand: Handoff, job: str, stage: str, prompt: str, round_: int = 0) -> int:

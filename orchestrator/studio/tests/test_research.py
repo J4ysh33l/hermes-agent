@@ -156,29 +156,51 @@ class Researching(unittest.TestCase):
         self.assertEqual(research.facts("Facts:\n- One fact here.\n2. Another fact here."),
                          ("One fact here.", "Another fact here."))
 
-    def test_on_the_claude_path_claude_researches_when_gemini_cannot(self):
+    def test_on_the_plan_a_sonnet_subagent_researches_inside_the_writing_run_and_gemini_is_not_called(self):
         (self.home / ".env").write_text("GEMINI_API_KEY=g\nGITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")
-        self.brief("  writer: claude\n  handoff_repo: me/hand\n")
-        self.searchers = {}  # neither Gemini model may search
+        self.brief("  writer: claude\n  handoff_repo: me/hand\n")  # claude_via: handoff (the default)
         hub = Hub(self.http)
         reply = chat.handle("make " + TOPIC, self.home, self.http)
         self.assertIn("issue #1", reply)
-        ask = hub.issues[1]["body"]
-        self.assertIn("Studio research", ask)
-        self.assertIn("Use web search.", ask)
+        self.assertFalse([c for c in self.http.calls if c.url.startswith(GEMINI)])
         job_id = queue.jobs(self.home)[0].id
-        self.assertIn(f"studio/{job_id}/research.txt", ask)
-        hub.answer(1, {f"studio/{job_id}/research.txt": FOUND})
+        ask, folder = hub.issues[1]["body"], f"studio/{job_id}"
+        self.assertIn('Part 0: research, by a subagent', ask)
+        self.assertIn('model "sonnet"', ask)
+        self.assertIn(f"Read {folder}/research-brief.md", ask)
+        self.assertIn("1 of 3: the script", ask)  # the same run writes the script and the direction
+        self.assertIn("Studio research", hub.files[f"{folder}/research-brief.md"])
+        self.assertIn(TOPIC, hub.files[f"{folder}/research-brief.md"])
+        hub.answer(1, {f"{folder}/research.txt": FOUND, f"{folder}/script.json": json.dumps(RESEARCHED),
+                       f"{folder}/storyboard.json": json.dumps(SHOWN)})
         queue.run(chat.Context(self.home, self.http), DAY, False, Stand().tools())
-        script_ask = hub.issues[2]["body"]
-        self.assertIn("1 of 3: the script", script_ask)
-        self.assertIn("Only 12 candidates scored 100 percentile in CAT 2025", script_ask)
-        self.assertIn("research: 2 facts by claude (handoff) from iimcat.ac.in, careers360.com",
-                      queue.load(self.home, job_id).data["research"])
+        job = queue.load(self.home, job_id)
+        self.assertEqual(job.state, "ready")  # the researched 12 on screen passes: it counts as notes
+        self.assertIn("research: 2 facts by claude sonnet (subagent, handoff) from iimcat.ac.in, careers360.com",
+                      job.data["research"])
+        self.assertIn("Only 12 candidates scored 100 percentile", job.folder.joinpath("notes.txt").read_text(encoding="utf-8"))
+        self.assertEqual(len(hub.issues), 1)  # research, script and direction: one run
+
+    def test_the_checker_claude_runs_counts_its_research_as_notes(self):
+        import subprocess
+        from orchestrator.studio import brief, handoff, profile
+        for path, text in handoff.tools().items():
+            (self.home / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.home / path).write_text(text, encoding="utf-8")
+        job = self.home / "studio/j"
+        job.mkdir(parents=True)
+        job.joinpath("rules.json").write_text(brief.params(profile.load("default", self.home), TOPIC, 15).dumps())
+        job.joinpath("script.json").write_text(json.dumps(RESEARCHED))
+        job.joinpath("storyboard.json").write_text(json.dumps(SHOWN))
+        check = lambda: subprocess.run([sys.executable, "tools/check.py", "direction", "studio/j"], cwd=self.home,
+                                       capture_output=True, text=True, timeout=60, check=False)
+        self.assertIn("the number 12 is not in the notes", check().stdout)
+        job.joinpath("research.txt").write_text(FOUND)
+        self.assertEqual(check().stdout.strip(), "OK: ready to hand in")
 
     def test_whatever_stops_gemini_the_research_goes_to_claude_on_the_claude_path(self):
         (self.home / "brief/brief.yaml").write_text("studio:\n  profile: shorts\n  writer: claude\n"
-                                                    "  handoff_repo: me/hand\n", encoding="utf-8")
+                                                    "  researcher: gemini\n  handoff_repo: me/hand\n", encoding="utf-8")
         hub = Hub(self.http)
         failures = {"no connection": http_error(0), "quota used up": http_error(429),
                     "unreadable": lambda _c: Response(200, b"<html>busy</html>", {})}

@@ -85,7 +85,8 @@ class SettingsTest(unittest.TestCase):
         self.assertFalse(set(KEEP) & set(deny))
         self.assertFalse([d for d in deny if d.startswith("mcp__github__") and d.split("__")[2] in (
             "issue_read", "issue_write", "list_issues", "add_issue_comment", "get_file_contents", "push_files")])
-        self.assertTrue({"Agent", "Skill", "mcp__claude-code-remote"} <= set(deny))
+        self.assertTrue({"Skill", "mcp__claude-code-remote"} <= set(deny))
+        self.assertFalse({"Agent", "WebSearch"} & set(deny))  # the research subagent
         self.assertFalse({"WebSearch", "WebFetch"} & set(deny))  # Claude researches through the handoff
         self.assertEqual(len(deny), len(set(DENY)))
         self.assertIn("usage_hook.py", settings["hooks"]["Stop"][0]["hooks"][0]["command"])
