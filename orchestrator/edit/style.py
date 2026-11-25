@@ -73,8 +73,7 @@ SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
              "punch_ease": _choice("cut", "smooth"), "change_every": _number(0.5, 20), "broll": _number(0, 0.8)},
     "grade": {"warmth": _number(-1, 1), "contrast": _number(0.7, 1.4), "saturation": _number(0, 2),
               "brightness": _number(-0.2, 0.2), "sharpen": _number(0, 1.5)},
-    "sound": {"denoise": _choice("off", "light", "strong"), "deess": _flag, "music": _use, "music_query": _text,
-              "bed_db": _number(-40, -6), "duck_db": _number(0, 30), "sfx": _use},
+    "sound": {"denoise": _choice("off", "light", "strong"), "deess": _flag, "music": _use, "music_query": _text, "sfx": _use},
     "plan": {"hook": _text, "ending": _text, "tone": _text, "avoid": _texts, "language": _choice("hinglish", "en", "hi")},
 }
 

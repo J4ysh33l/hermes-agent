@@ -43,9 +43,9 @@ class Info:
                 f"{', HDR' if self.hdr else ''}, {self.seconds:.1f} s{'' if self.audio else ', NO SOUND'}")
 
 
-def run(args: list[str], timeout: int = TIMEOUT) -> str:
+def run(args: list[str], timeout: int = TIMEOUT, cwd: Path | None = None) -> str:
     try:
-        done = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        done = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False, cwd=cwd)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise MediaError(f"{args[0]} failed: {exc}") from None
     if done.returncode != 0:

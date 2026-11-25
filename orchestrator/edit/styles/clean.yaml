@@ -66,8 +66,6 @@ sound:
   deess: true
   music: off                # off | auto | always
   music_query: calm lofi
-  bed_db: -24               # music level under the voice (LUFS-ish)
-  duck_db: 12               # how far the music dips while you speak
   sfx: off                  # off | auto (pops on graphics, whooshes on cutaways) | always
 
 plan:                       # for the editor (Claude): what it aims for

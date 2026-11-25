@@ -50,8 +50,6 @@ grade:
 sound:
   music: auto
   music_query: light lofi beat
-  bed_db: -26
-  duck_db: 14
   sfx: auto
 
 plan:

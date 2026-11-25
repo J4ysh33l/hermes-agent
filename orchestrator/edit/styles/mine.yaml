@@ -9,7 +9,7 @@ title:
   font: newsreader
   bg: "#FFFFFF"
   fg: "#000000"
-  size: 56
+  size: 64
   subtitle: false
 
 graphics:
