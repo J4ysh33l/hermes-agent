@@ -40,6 +40,7 @@ MEDIA = {
           'becomes a title card. No other "src".',
 }
 STAGES = ("script", "direction", "animation")
+WRITING = "script + direction"  # the handoff's first call: both, in one run (``writing``)
 ANSWERS = {"script": "script.json", "direction": "storyboard.json"}
 
 HANDOFF = {
@@ -132,6 +133,10 @@ def look_lines(look: Profile) -> str:
 
 
 def script(look: Profile, notes: str, seconds: float, job: str, handoff: bool) -> str:
+    return _script(look, notes, seconds, job) + _ending("script", job, handoff)
+
+
+def _script(look: Profile, notes: str, seconds: float, job: str) -> str:
     w, p = look.section("writing"), params(look, notes, seconds)
     examples = "".join(f"\nA script this page liked:\n<example>\n{e}\n</example>\n" for e in w["examples"])
     wpm = round(WPM * float(look.section("voice")["speed"]))
@@ -142,15 +147,43 @@ def script(look: Profile, notes: str, seconds: float, job: str, handoff: bool) -
                  examples=examples, beats=_section(rf"^### {FORMATS[w['format']]}\. .*?(?=^### |^---)"),
                  families=", ".join(_families(look)[:3]),
                  hook_bank="\n".join(f"- {name}: {template}" for name, template in rules.HOOKS.items()),
-                 notes=notes.strip()) + _ending("script", job, handoff)
+                 notes=notes.strip())
 
 
 def direction(look: Profile, notes: str, script_raw: dict[str, Any], job: str, handoff: bool) -> str:
-    types = [s for s in allowed_scenes(look)]
-    return _fill("direction", job=job, script=json.dumps(script_raw, ensure_ascii=False, indent=1),
-                 look=look_lines(look), types=", ".join(types), scene_library=storyboard.__doc__ or "",
-                 media=MEDIA[footage(look)], limits=custom.LIMITS, notes=notes.strip(),
-                 title=str(script_raw.get("title", ""))) + _ending("direction", job, handoff)
+    return _direction(look, notes.strip(), json.dumps(script_raw, ensure_ascii=False, indent=1), job,
+                      str(script_raw.get("title", ""))) + _ending("direction", job, handoff)
+
+
+def _direction(look: Profile, notes: str, script_text: str, job: str, title: str) -> str:
+    return _fill("direction", job=job, script=script_text, look=look_lines(look),
+                 types=", ".join(allowed_scenes(look)), scene_library=storyboard.__doc__ or "",
+                 media=MEDIA[footage(look)], limits=custom.LIMITS, notes=notes, title=title)
+
+
+WRITING_HEAD = """# Studio job $job · script + direction, in one run
+
+Two jobs in order, both in this run. Part 1: as the head writer, write the script and check it.
+Part 2: as the director, write the storyboard for the script you wrote, and check it. The custom
+scenes' animation is a separate, later job: in part 2 you only describe them (brief and props).
+
+"""
+WRITING_END = """
+## Handing in both
+1. Write `studio/$job/script.json` and run `python3 tools/check.py script studio/$job`; fix what it
+   prints until it says OK. Only then start part 2: the storyboard copies the script's words.
+2. Write `studio/$job/storyboard.json`, then check and finish in one command:
+    python3 tools/check.py script studio/$job && python3 tools/check.py direction studio/$job
+"""
+
+
+def writing(look: Profile, notes: str, seconds: float, job: str) -> str:
+    """The handoff's first call: the script, then the direction for it, in one run (one fixed cost
+    instead of two; the director works with the script fresh in mind). The same checks gate each part."""
+    part2 = _direction(look, "(the same notes as in part 1)", "(your script.json from part 1)", job,
+                       "(your script's title)")
+    return (Template(WRITING_HEAD).substitute(job=job) + "---\n\n" + _script(look, notes, seconds, job)
+            + "\n\n---\n\n" + part2 + Template(WRITING_END).substitute(job=job))
 
 
 def _outline(board: dict[str, Any]) -> str:

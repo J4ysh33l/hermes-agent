@@ -221,7 +221,7 @@ class Queue(unittest.TestCase):
         self.assertIn("Drive: https://drive/v", self.sent("sendMessage")[-1].json_body["text"])
         self.assertEqual(json.loads((tokens / "drive.json").read_text())["folder"], "F")
 
-    def test_without_an_api_key_claude_makes_the_three_calls_through_the_handoff_repo(self):
+    def test_without_an_api_key_claude_writes_script_and_direction_in_one_run_then_the_animation(self):
         self.envfile("GITHUB_HANDOFF_TOKEN=g\n")
         self.brief("  handoff_repo: me/hand\n  research: false\n", via="")  # the default: no API key needed
         hub = Hub(self.http)  # (research has its own tests: test_research.py)
@@ -231,42 +231,44 @@ class Queue(unittest.TestCase):
         folder = f"studio/{job_id}"
         script_ask = hub.issues[1]
         self.assertEqual(script_ask["labels"], ["hermes"])  # the routine claims the oldest "hermes" issue
-        self.assertIn("1 of 3: the script", script_ask["body"])  # the body is the whole prompt
-        self.assertIn(f"python3 tools/check.py script {folder}", script_ask["body"])
+        self.assertIn("script + direction, in one run", script_ask["title"] + script_ask["body"])
+        self.assertIn("1 of 3: the script", script_ask["body"])  # the body is the whole prompt: both parts
+        self.assertIn("2 of 3: direction", script_ask["body"])
+        self.assertEqual(script_ask["body"].count(NOTES), 1)  # the notes once, not once per part
+        self.assertIn(f"python3 tools/check.py script {folder} && python3 tools/check.py direction {folder}",
+                      script_ask["body"])
         self.assertEqual(hub.files["tools/studio/rules.py"], Path(rules.__file__).read_text(encoding="utf-8"))
         self.assertEqual(rules.Params.loads(hub.files[f"{folder}/rules.json"]).notes, NOTES)
         self.assertEqual(self.run_queue(DAY), "")  # the issue is open: Claude has not answered
 
         greeting = {**SCRIPT, "hooks": [{"family": "question", "say": "Hello, why is Bun fast?"}, *SCRIPT["hooks"][1:]]}
-        hub.answer(1, {f"{folder}/script.json": json.dumps(greeting)})
+        hub.answer(1, {f"{folder}/script.json": json.dumps(greeting), f"{folder}/storyboard.json": "{}"})
         self.run_queue(DAY)
-        self.assertIn("starts with a greeting", hub.issues[2]["body"])  # the fix request
-        hub.answer(2, {f"{folder}/script.json": json.dumps(SCRIPT)})
-        self.run_queue(DAY)
-        self.assertIn("2 of 3: direction", hub.issues[3]["body"])
-        self.assertIn("A test runner. A bundler. A package manager.", hub.issues[3]["body"])
-
+        self.assertIn("starts with a greeting", hub.issues[2]["body"])  # a bad script: both again
+        self.assertIn("script + direction fix 1", hub.issues[2]["title"])
         invented = copy.deepcopy(WITH_RACE)
         invented["scenes"][3]["text"] = "Node is dead."
-        hub.answer(3, {f"{folder}/storyboard.json": json.dumps(invented)})
+        hub.answer(2, {f"{folder}/script.json": json.dumps(SCRIPT), f"{folder}/storyboard.json": json.dumps(invented)})
+        self.run_queue(DAY)  # the script passes; the storyboard's fix is a direction-only issue
+        self.assertIn("its text is not in the notes", hub.issues[3]["body"])
+        self.assertIn("direction fix 1", hub.issues[3]["title"])
+        self.assertIn("A test runner. A bundler. A package manager.", hub.issues[3]["body"])
+        hub.answer(3, {f"{folder}/storyboard.json": json.dumps(WITH_RACE)})
         self.run_queue(DAY)
-        self.assertIn("its text is not in the notes", hub.issues[4]["body"])
-        hub.answer(4, {f"{folder}/storyboard.json": json.dumps(WITH_RACE)})
-        self.run_queue(DAY)
-        self.assertIn("### scene03.tsx (scene 3)", hub.issues[5]["body"])
+        self.assertIn("### scene03.tsx (scene 3)", hub.issues[4]["body"])
 
-        hub.answer(5, {f"{folder}/scene03.tsx": TSX.replace("Math.min", "Math.random() + Math.min")})
+        hub.answer(4, {f"{folder}/scene03.tsx": TSX.replace("Math.min", "Math.random() + Math.min")})
         self.run_queue(DAY)  # refused by the static check: back once, with the reason
-        self.assertIn("scene03.tsx: missing, or refused by the static check", hub.issues[6]["body"])
-        hub.answer(6, {f"{folder}/scene03.tsx": RACE})
+        self.assertIn("scene03.tsx: missing, or refused by the static check", hub.issues[5]["body"])
+        hub.answer(5, {f"{folder}/scene03.tsx": RACE})
         self.assertIn("written, renders in", self.run_queue(DAY))
         job = queue.load(self.home, job_id)
-        self.assertEqual((job.state, job.data["writer"], job.data["calls"]), ("ready", "claude (handoff)", 6))
+        self.assertEqual((job.state, job.data["writer"], job.data["calls"]), ("ready", "claude (handoff)", 5))
         self.assertEqual(self.stand.verified, ["scene03.tsx"])
         self.assertEqual(job.folder.joinpath("scene03.tsx").read_text(encoding="utf-8"), RACE)
         board = json.loads(job.folder.joinpath("storyboard.json").read_text(encoding="utf-8"))
         self.assertEqual(board["scenes"][2]["component"], "scene03.tsx")
-        self.assertEqual(len(hub.issues), 6)
+        self.assertEqual(len(hub.issues), 5)
 
     def test_a_component_that_keeps_failing_is_drawn_as_its_fallback(self):
         self.http.on("POST", CLAUDE, writer_answers(WITH_RACE))

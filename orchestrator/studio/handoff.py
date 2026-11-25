@@ -1,11 +1,13 @@
 """Claude on your plan, through the handoff repo (orchestrator/HANDOFF.md): used when there is no
 ANTHROPIC_API_KEY (``studio.claude_via``). Asynchronous, which suits the overnight queue.
 
-The three writing calls (``brief.py``) become three issues, one at a time, each body the whole prompt:
+The three writing calls (``brief.py``) become two issues, one at a time, each body the whole prompt:
 
-1. ``script``: Claude writes ``studio/<job>/script.json``;
-2. ``direction``: ``studio/<job>/storyboard.json``;
-3. ``animation`` (when there are custom scenes): one ``sceneNN.tsx`` per custom scene.
+1. ``script + direction`` (``brief.writing``): in one run, Claude writes and checks
+   ``studio/<job>/script.json``, then ``studio/<job>/storyboard.json`` for it;
+2. ``animation`` (when there are custom scenes): one ``sceneNN.tsx`` per custom scene.
+
+A fix goes back as its own issue: a failed script redoes both; a failed storyboard, the direction only.
 
 Before the first, Hermes commits ``studio/<job>/rules.json`` (the job's ``rules.Params``) and keeps
 ``tools/check.py`` plus ``tools/studio/`` (``rules.py`` and the modules it needs, copied as they are) up to
@@ -86,10 +88,10 @@ def tools() -> dict[str, str]:
 
 
 def start(hand: Handoff, job: str, params: rules.Params, prompt: str) -> int:
-    """The job's first issue (the script), with its rules and the up-to-date checker."""
+    """The job's first issue (script and direction), with its rules and the up-to-date checker."""
     for path, text in tools().items():
         hand.put(path, text)
-    return hand.send({f"studio/{job}/rules.json": params.dumps()}, f"studio {job}: script", prompt)
+    return hand.send({f"studio/{job}/rules.json": params.dumps()}, f"studio {job}: {brief.WRITING}", prompt)
 
 
 def ask(hand: Handoff, job: str, stage: str, prompt: str, round_: int = 0) -> int:

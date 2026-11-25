@@ -12,8 +12,9 @@ one), so the prompt below has no commands to retype. They use `gh api` (REST) on
 needs GitHub's GraphQL API, which the task's sessions block.
 
 Used by:
-- **Studio** (`/studio make` without an Anthropic API key): three issues per video, one job each: the
-  script, the direction (storyboard), the custom scenes' components (`orchestrator/studio/prompts/`).
+- **Studio** (`/studio make` without an Anthropic API key): two issues per video: the script and the
+  direction (storyboard) in one run (Claude checks the script before it starts the storyboard), then
+  the custom scenes' components (`orchestrator/studio/prompts/`). Fixes come back as their own issues.
   Hermes also keeps `tools/check.py` and `tools/studio/` in the repo: the same checks Hermes runs, so
   Claude checks its own answer before handing it in.
 - **Smriti** (`/notes … claude`): a document from a meeting transcript (`smriti/<id>/transcript.md`).
@@ -53,7 +54,7 @@ GitHub-triggered session receives the issue's text, so the prompt fetches it wit
    to `main` in this repo.
 
 Runs use your plan's usage like an interactive session. API fires: 100 an hour per account, and
-"Run now" plus API fires share 30 an hour per task (a video takes 3–4). GitHub-event runs have their
+"Run now" plus API fires share 30 an hour per task (a video takes 2–3). GitHub-event runs have their
 own unpublished caps. A fire that is refused or dropped is not an error: the issue waits for the next
 run (each run takes the oldest waiting issue), or press **Run now**. The fire endpoint is a beta
 (`anthropic-beta: experimental-cc-routine-2026-04-01`), so its shape may change.
@@ -81,7 +82,8 @@ second task:
 2. Its prompt: the one below with step 1 changed to `sh tools/claim.sh hermes-sonnet` (and "labelled
    hermes-sonnet" in the GITHUB ERROR line). Its issues carry the label `hermes-sonnet`, so neither
    task takes the other's work.
-3. `studio.claude_sonnet_steps: [direction]` (any of research, script, direction, animation) in
+3. `studio.claude_sonnet_steps: [animation]` (any of research, "script + direction", animation;
+   fix rounds of a failed storyboard are "direction") in
    `brief.yaml`. Without the second task those steps go to the main one. Switch a step only after a
    side-by-side run shows the same quality (same checks passed, no extra fix rounds).
 

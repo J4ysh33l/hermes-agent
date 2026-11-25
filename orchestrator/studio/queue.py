@@ -194,12 +194,12 @@ def _keep(ctx: Any, job: Job, draft: writer.Draft) -> None:
 
 
 def _start(ctx: Any, job: Job, look: profile.Profile, notes: str) -> None:
-    """The script's issue, with the job's rules and the checker."""
-    prompt = brief.script(look, notes, job.data["seconds"], job.id, True)
-    job.data.update(stage="script", round=0, calls=job.data["calls"] + 1)
-    job.data["issue"] = _issue(ctx, job, "script", lambda hand: handoff.start(
+    """The first issue (script and direction, in one run), with the job's rules and the checker."""
+    prompt = brief.writing(look, notes, job.data["seconds"], job.id)
+    job.data.update(stage="script", round=0, calls=job.data["calls"] + 1, merged=True)
+    job.data["issue"] = _issue(ctx, job, brief.WRITING, lambda hand: handoff.start(
         hand, job.id, brief.params(look, notes, job.data["seconds"]), prompt))
-    job.log(f"script: handoff issue #{job.data['issue']} opened")
+    job.log(f"{brief.WRITING}: handoff issue #{job.data['issue']} opened")
 
 
 def _hand(ctx: Any) -> Handoff:
@@ -276,12 +276,18 @@ def _got_research(w: Writing) -> None:
 def _got_script(w: Writing) -> None:
     raw, wrong = handoff.answer(_hand(w.ctx), w.job.id, "script")
     problems = [wrong] if wrong else rules.check_script(raw, w.params)
+    merged = bool(w.job.data.get("merged"))  # the storyboard came in the same run
     if problems:
-        _retry(w, "script", writer.SCRIPT_RETRIES, brief.script(w.look, w.notes, w.seconds, w.job.id, True),
-               problems, _previous(raw))
+        prompt = brief.writing(w.look, w.notes, w.seconds, w.job.id) if merged else \
+            brief.script(w.look, w.notes, w.seconds, w.job.id, True)
+        _retry(w, brief.WRITING if merged else "script", writer.SCRIPT_RETRIES, prompt, problems, _previous(raw))
         return
     w.job.folder.joinpath("script.json").write_text(_previous(raw), encoding="utf-8")
     w.job.data["title"] = str(raw["title"]).strip()
+    if merged:
+        w.job.data.update(stage="direction", round=0)
+        _got_direction(w)  # its fixes, if any, are direction-only issues
+        return
     _ask(w, "direction", brief.direction(w.look, w.notes, raw, w.job.id, True))
 
 
