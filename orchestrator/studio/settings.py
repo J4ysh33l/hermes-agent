@@ -88,6 +88,8 @@ class Settings:
     omni_instruct: str = "male, indian accent"  # the described voice used while there is no voice file
     omni_steps: int = 32  # 16: ~2× faster, a little rougher
     omni_dtype: str = "bf16"  # bf16 halves the model's memory; fp32 if bf16 sounds wrong on your CPU
+    omni_wpm: int = 185  # speaking rate (pauses not counted) at speed 1.0, × the profile's speed: 1.15 → ~213, ~196 with pauses; 0 = the clip's own pace
+    omni_guidance: float = 2.0  # how closely it follows your clip: lower = freer, less "read"; higher = closer copy
     voice_check: str = "small"  # faster-whisper model that listens to each OmniVoice line ("" = no check)
     voice_retries: int = 2  # a misheard line is spoken again this many times
     kokoro_model: str = "kokoro-v1.0.fp16.onnx"  # 169 MB, ~520 MB RAM; kokoro-v1.0.int8.onnx: ~410 MB, slower
@@ -142,6 +144,8 @@ def parse(raw: dict[str, Any]) -> Settings:
         omni_instruct=str(studio.get("omni_instruct", base.omni_instruct)),
         omni_steps=min(64, max(4, int(studio.get("omni_steps", base.omni_steps)))),
         omni_dtype="fp32" if str(studio.get("omni_dtype", base.omni_dtype)) == "fp32" else "bf16",
+        omni_wpm=max(0, int(studio.get("omni_wpm", base.omni_wpm))),
+        omni_guidance=min(4.0, max(0.5, float(studio.get("omni_guidance", base.omni_guidance)))),
         voice_check=str(studio.get("voice_check", base.voice_check) or ""),
         voice_retries=min(5, max(0, int(studio.get("voice_retries", base.voice_retries)))),
         kokoro_model=str(studio.get("kokoro_model", base.kokoro_model)),

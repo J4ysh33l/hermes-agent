@@ -68,6 +68,14 @@ its lines at the quietest moment between them, so captions and [beat]s still wor
 paragraph that can't be cut is finally spoken line by line. The two models are never in
 memory together, so the peak is ~1.9 GB, not their sum. Lines still wrong are named in the video's
 notes. **Licence: the model weights are CC-BY-NC (non-commercial only)**; the code is Apache 2.0.
+Pace and pauses: `studio.omni_wpm` (speaking rate at speed 1.0, default 185, × the profile's speed) sets
+each paragraph's length; Whisper measures the rate it came out at and a paragraph more than 12% off is
+spoken again with the time corrected (measured on your clip C: 214 words/min speaking, 198 with pauses,
+for a target of 213 / 196). Each line keeps only its words: the breath before it and the room after it
+are cut, so the gap between lines is exactly `studio.pause`. `clone` also shortens every pause in your
+recording to 0.2 s (breaths removed), because the clone copies the clip's pauses. `studio.omni_guidance`
+(default 2.0): lower follows your clip's delivery less closely. A paragraph of fewer than 10 words joins
+the one before it (two words alone came out empty in a test).
 Hindi from an English recording comes out accented and less clear (Whisper misheard our test line):
 record a Hindi clip too.
 

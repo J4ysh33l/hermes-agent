@@ -183,6 +183,7 @@ def _omni_job(settings: Settings, home: Path) -> dict:
     return {"voice": str(found) if found.is_file() else "", "voice_hi": str(hindi) if hindi.is_file() else "",
             "omni_model": str(half) if half.is_dir() else "", "instruct": settings.omni_instruct,
             "steps": settings.omni_steps, "dtype": settings.omni_dtype, "check": settings.voice_check,
+            "wpm": settings.omni_wpm, "guidance": settings.omni_guidance,
             "retries": settings.voice_retries}
 
 

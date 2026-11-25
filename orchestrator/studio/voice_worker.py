@@ -147,6 +147,10 @@ def _heard_right(want: str, heard: str) -> bool:
 
 
 PARAGRAPH_WORDS = 45  # ~15 s: one OmniVoice call and one Whisper pass per paragraph, not per line
+SHORTEST = 10  # words: a shorter paragraph joins the one before it (same language and speed)
+FILL = 1.3  # OmniVoice's own pauses inside a paragraph (cut out later): time asked = speaking time × this (measured)
+PACE_SLACK = 0.12  # a paragraph whose speaking rate is further than this from the target is spoken again
+SHORTEST_SAY = 1.2  # seconds: never ask for less
 
 
 def _paragraphs(lines: list[dict], most: int = PARAGRAPH_WORDS) -> list[list[int]]:
@@ -159,7 +163,15 @@ def _paragraphs(lines: list[dict], most: int = PARAGRAPH_WORDS) -> list[list[int
             last.append(i)
         else:
             groups.append([i])
-    return groups
+    merged: list[list[int]] = []
+    for g in groups:  # a tail of a few words is too short to say well alone: it joins the paragraph before
+        prev = merged[-1] if merged else []
+        if prev and sum(len(_words(lines[k]["text"])) for k in g) < SHORTEST and \
+                (lines[prev[0]]["lang"], float(lines[prev[0]]["speed"])) == (lines[g[0]]["lang"], float(lines[g[0]]["speed"])):
+            prev.extend(g)
+        else:
+            merged.append(list(g))
+    return merged
 
 
 def _quietest(audio, start: float, end: float) -> int:
@@ -196,7 +208,37 @@ def _split(texts: list[str], heard: list[tuple[str, float, float]], audio) -> li
     if cuts != sorted(cuts):
         return None
     bounds = [0, *cuts, len(audio)]
-    return [audio[a:b] for a, b in pairwise(bounds)]
+    # Each line keeps its words only: the breath the model takes before a line (and any after it) sits
+    # outside them and is dropped; a short fade keeps the edges click-free.
+    pieces = []
+    for (a, b), (first, last) in zip(pairwise(bounds), placed):
+        start = max(a, int((heard[first][1] - LEAD) * RATE))
+        end = min(b, int((heard[last][2] + TAIL) * RATE))
+        pieces.append(_fade(audio[start:end] if end > start else audio[a:b]))
+    return pieces
+
+
+LEAD, TAIL, FADE = 0.06, 0.12, 0.025  # seconds kept before a line's first word and after its last; fade length
+GATE_DB = 30  # at a line's edges, 10 ms this far below its loudest is breath or room, not speech
+
+
+def _fade(samples):
+    """Edges below the line's own level (breath, room) off, then a short fade."""
+    import numpy as np
+    frame = int(0.01 * RATE)
+    if len(samples) > 4 * frame:
+        rms = np.sqrt((samples[: len(samples) // frame * frame].reshape(-1, frame) ** 2).mean(1)) + 1e-9
+        loud = np.flatnonzero(20 * np.log10(rms / rms.max()) > -GATE_DB)
+        if loud.size:
+            keep = int(0.03 * RATE)
+            samples = samples[max(0, loud[0] * frame - keep):min(len(samples), (loud[-1] + 1) * frame + keep)]
+    n = min(int(FADE * RATE), len(samples) // 4)
+    if n:
+        samples = samples.copy()
+        ramp = np.linspace(0.0, 1.0, n, dtype="float32")
+        samples[:n] *= ramp
+        samples[-n:] *= ramp[::-1]
+    return samples
 
 
 def _omnivoice_all(job: dict) -> tuple[list, list]:
@@ -210,6 +252,7 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
     groups = _paragraphs(lines) if job.get("check") else [[i] for i in range(len(lines))]  # no ears: no cutting
     clips: list = [None] * len(lines)
     todo, wrong, attempt = list(range(len(groups))), {}, 0
+    stretch = dict.fromkeys(range(len(groups)), FILL)  # per paragraph: time asked ÷ speaking time wanted
     while todo:
         model = _omni(job)
         prompts = {lang: VoiceClonePrompt.load(job[key]) for lang, key in (("en", "voice"), ("hi", "voice_hi"))
@@ -220,8 +263,13 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
             torch.manual_seed(1000 * attempt + g)
             prompt = prompts.get(first["lang"][:2]) or prompts.get("en")
             extra = {"voice_clone_prompt": prompt} if prompt else {"instruct": job.get("instruct") or None}
-            out = model.generate(text=" ".join(lines[i]["text"] for i in groups[g]), language=first["lang"][:2],
-                                 speed=float(first["speed"]), num_step=int(job.get("steps", 32)), **extra)
+            said = " ".join(lines[i]["text"] for i in groups[g])
+            pace = {"speed": float(first["speed"])}
+            if job.get("wpm"):  # a set speaking rate: so many words a minute × the line's speed, whatever the clip's own
+                wanted = len(_words(said)) * 60 / (float(job["wpm"]) * float(first["speed"]))
+                pace = {"duration": round(max(SHORTEST_SAY, wanted * stretch[g]), 2)}
+            out = model.generate(text=said, language=first["lang"][:2], num_step=int(job.get("steps", 32)),
+                                 guidance_scale=float(job.get("guidance", 2.0)), **pace, **extra)
             spoken[g] = np.asarray(torch.as_tensor(out[0]).float().reshape(-1))
         del model, prompts
         _collect()
@@ -238,6 +286,13 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
                 for word in seg.words for w in _words(word.word)]
             said = " ".join(w for w, _a, _b in heard)
             pieces = _split(texts, heard, spoken[g]) if _heard_right(" ".join(texts), said) else None
+            if pieces and job.get("wpm"):  # the pace it came out at, speaking time only (pauses cut)
+                rate = len(_words(" ".join(texts))) * 60 / max(0.1, sum(len(x) for x in pieces) / RATE)
+                target = float(job["wpm"]) * float(lines[groups[g][0]]["speed"])
+                if abs(rate / target - 1) > PACE_SLACK and attempt < int(job.get("retries", 2)):
+                    stretch[g] *= rate / target  # too fast: ask for more time next round
+                    wrong[g] = f"pace {rate:.0f} words/min, wanted {target:.0f}"
+                    continue
             if pieces:
                 for i, piece in zip(groups[g], pieces):
                     clips[i] = piece
@@ -257,29 +312,55 @@ def _omnivoice_all(job: dict) -> tuple[list, list]:
     return clips, [[groups[g][0], groups[g][-1], said] for g, said in sorted(wrong.items())]
 
 
+REF_GAP = 0.2  # seconds: longer pauses (and the breaths in them) in your recording are shortened to this
+
+
+def _tighten(audio, words) -> object:
+    """Your clip with every pause between words cut to REF_GAP: the clone copies the recording's pauses
+    and breaths, so they are taken out of the clip it learns from."""
+    import numpy as np
+    keep, at = [], 0
+    for w, nxt in pairwise(words):
+        if nxt.start - w.end > REF_GAP:
+            stop = int((w.end + REF_GAP / 2) * RATE)
+            keep.append(_fade(audio[at:stop]) if stop > at else audio[at:at])
+            at = int((nxt.start - REF_GAP / 2) * RATE)
+    keep.append(audio[at:])
+    return np.concatenate(keep)
+
+
 def clone(job: dict) -> dict:
-    """The voice file, made once from your recording."""
+    """The voice file, made once from your recording: Whisper times its words (and writes them when "text"
+    is empty, cutting after the last sentence or clause inside the limit), long pauses and breaths are
+    taken out, and OmniVoice encodes the rest."""
     import numpy as np
     pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", job["audio"], "-f", "s16le", "-ac", "1", "-ar", str(RATE),
                           "pipe:1"], capture_output=True, check=True, timeout=EDGE_TIMEOUT).stdout
     audio = np.frombuffer(pcm, dtype="<i2").astype("float32") / 32767
     longest, text = float(job.get("seconds", 10)), job.get("text", "").strip()
-    if not text:  # Whisper writes the transcript; cut after the last sentence or clause inside the limit
-        ear = _whisper({**job, "check": job.get("check") or "small"})
-        words = [w for seg in ear.transcribe(_to16k(audio), language=job.get("lang") or None, word_timestamps=True)[0]
-                 for w in seg.words]
-        del ear
-        _collect()
+    ear = _whisper({**job, "check": job.get("check") or "small"})
+    words = [w for seg in ear.transcribe(_to16k(audio), language=job.get("lang") or None, word_timestamps=True)[0]
+             for w in seg.words]
+    del ear
+    _collect()
+    before = len(audio) / RATE
+    if not text:
         inside = [w for w in words if w.end <= longest] or words[:1]
         stops = [n for n, w in enumerate(inside) if w.word.strip()[-1:] in ".!?,;:"]
         kept = inside[:stops[-1] + 1] if stops and stops[-1] >= len(inside) // 2 else inside
         end = min(kept[-1].end + 0.25, len(audio) / RATE, (words[len(kept)].start if len(words) > len(kept) else 1e9))
-        text, audio = "".join(w.word for w in kept).strip(), audio[:int(end * RATE)]
+        text, audio, words = "".join(w.word for w in kept).strip(), audio[:int(end * RATE)], kept
+    if words:
+        audio = _tighten(audio, words)
+    peak = float(np.abs(audio).max()) or 1.0
+    audio = audio * min(4.0, 0.7 / peak)  # a quiet recording brought up to a usual level (never clipped)
     import torch
     model = _omni(job)
     prompt = model.create_voice_clone_prompt(ref_audio=(torch.from_numpy(audio).unsqueeze(0), RATE), ref_text=text)
     prompt.save(job["out"])
-    return {"seconds": round(len(audio) / RATE, 2), "text": text}
+    wpm = round(len(_words(text)) / (len(audio) / RATE) * 60)
+    return {"seconds": round(len(audio) / RATE, 2), "text": text, "removed": round(before - len(audio) / RATE, 2),
+            "wpm": wpm}
 
 
 ENGINES = {"kokoro": _kokoro, "edge": _edge}

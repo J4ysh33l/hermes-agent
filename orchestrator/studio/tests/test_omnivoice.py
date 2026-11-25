@@ -48,7 +48,7 @@ class OmniVoice(unittest.TestCase):
         line = lambda text, lang="en-us", speed=1.0: {"text": text, "lang": lang, "speed": speed}
         lines = [line("One two three."), line("Four five."), line("नमस्ते दोस्तों.", "hi"), line("Six seven."),
                  line("Slow now.", speed=0.9), line("word " * 44), line("Last one.")]
-        self.assertEqual(worker._paragraphs(lines), [[0, 1], [2], [3], [4], [5], [6]])
+        self.assertEqual(worker._paragraphs(lines), [[0, 1], [2], [3], [4], [5, 6]])  # "Last one." is too short alone
         self.assertEqual(worker._paragraphs(lines[:2] + lines[3:4]), [[0, 1, 2]])
 
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "numpy not installed")
@@ -61,9 +61,12 @@ class OmniVoice(unittest.TestCase):
         heard = [("most", 0.0, 0.4), ("aspirants", 0.4, 1.0), ("here", 1.25, 1.6), ("is", 1.6, 1.8),
                  ("what", 1.8, 2.3), ("pick", 2.55, 3.0)]
         pieces = worker._split(["Most aspirants.", "Here is what.", "Pick."], heard, audio)
-        cuts = np.cumsum([len(x) / rate for x in pieces])[:2]
-        self.assertTrue(1.05 < cuts[0] < 1.25 and 2.35 < cuts[1] < 2.45, cuts)  # inside each silence, not at its edge
-        self.assertEqual(sum(len(x) for x in pieces), len(audio))
+        self.assertEqual([round(len(x) / rate, 2) for x in pieces], [1.03, 1.06, 0.51])  # its sound + 0.03 s: the silence each side is gated off
+        breath = np.concatenate([loud(1.0), quiet(0.1), np.full(int(0.3 * rate), 0.02, dtype="float32"), loud(0.6)])
+        heard2 = [("most", 0.0, 0.4), ("aspirants", 0.4, 1.0), ("pick", 1.4, 2.0)]
+        _first, second = worker._split(["Most aspirants.", "Pick."], heard2, breath)
+        self.assertLess(float(np.abs(second[: int(0.03 * rate)]).max()), 0.05)  # the inhale before "pick" is gone
+        self.assertAlmostEqual(len(second) / rate, 0.66, places=2)
         self.assertIsNone(worker._split(["Most aspirants.", "Something else entirely here."], heard[:2], audio))
 
 
