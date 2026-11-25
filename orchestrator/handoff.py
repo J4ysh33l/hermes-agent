@@ -29,11 +29,12 @@ MAX_BODY = 65_000  # GitHub refuses issue bodies over 65,536 characters
 # Kept in the repo with every request, so the task's prompt can stay plain English (nothing to retype).
 # `gh api` only: the task's sessions block GitHub's GraphQL API, which `gh issue` needs.
 CLAIM = """#!/bin/sh
-# Claims the oldest open "hermes" issue and prints it. Written by Hermes; do not edit.
+# Claims the oldest open issue labelled $1 (default "{label}") and prints it. Written by Hermes; do not edit.
 R={repo}
-n=$(gh api "repos/$R/issues?state=open&labels={label}&sort=created&direction=asc&per_page=1" --jq '.[0].number // empty') || {{ echo "GITHUB ERROR: listing issues failed"; exit 1; }}
+L=${{1:-{label}}}
+n=$(gh api "repos/$R/issues?state=open&labels=$L&sort=created&direction=asc&per_page=1" --jq '.[0].number // empty') || {{ echo "GITHUB ERROR: listing issues failed"; exit 1; }}
 [ -n "$n" ] || {{ echo "NOTHING TO DO"; exit 0; }}
-gh api -X DELETE "repos/$R/issues/$n/labels/{label}" >/dev/null || {{ echo "GITHUB ERROR: claiming issue $n failed"; exit 1; }}
+gh api -X DELETE "repos/$R/issues/$n/labels/$L" >/dev/null || {{ echo "GITHUB ERROR: claiming issue $n failed"; exit 1; }}
 echo "$n" > "$(git rev-parse --git-dir)/hermes-issue"  # for tools/usage_hook.py: whose tokens this run reports
 gh api "repos/$R/issues/$n" --jq '"ISSUE \\(.number)\\n\\(.body)"'
 """
@@ -90,8 +91,48 @@ try:
 except Exception:  # noqa: BLE001 - reporting must never break the run
     pass
 '''
-HOOK_SETTINGS = json.dumps({"hooks": {"Stop": [{"hooks": [
-    {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/tools/usage_hook.py"', "timeout": 60}]}]}}, indent=1) + "\n"
+# What every Claude run in the handoff repo may use. Each tool a session loads is sent again on every model
+# call of the run (~47k tokens before the issue is read), so the repo's settings remove what no Hermes job
+# needs. Generous on purpose: kept are the file tools, the shell, and GitHub's issue/file tools (the prompt's
+# fallback when `gh api` fails). A bare name in "deny" takes the tool out of Claude's context entirely
+# (code.claude.com/docs/en/permissions). Applies to every job, now and future, sent through Handoff.
+KEEP = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "ToolSearch", "TodoWrite")
+DENY = (
+    # other agents, the web, notebooks, skills, scheduling, messaging, artifacts, connectors, plugins
+    "Agent", "Task", "WebFetch", "WebSearch", "NotebookEdit", "Skill", "Workflow", "Monitor",
+    "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop", "CronCreate", "CronDelete", "CronList",
+    "ScheduleWakeup", "SendMessage", "ListAgents", "PushNotification", "ReadNotifications", "SendUserFile",
+    "Artifact", "ArtifactComments", "ArtifactData", "DesignSync", "EnterWorktree", "ExitWorktree",
+    "SearchMcpRegistry", "SuggestConnectors", "ListConnectors", "ListMcpResourcesTool", "ReadMcpResourceTool",
+    "ReadMcpResourceDirTool", "ListPlugins", "SearchPlugins", "SuggestPluginInstall", "PublishPlugin",
+    "ListSkills", "SearchSkills", "SuggestSkills", "ReportFindings", "ShareOnboardingGuide",
+    "ShowOnboardingRolePicker", "EnterPlanMode", "ExitPlanMode", "AskUserQuestion",
+    # session/scheduling tools of the cloud environment
+    "mcp__claude-code-remote", "mcp__claude-code-remote__*",
+    # GitHub tools no job needs (kept: issue_read/issue_write/list_issues/add_issue_comment,
+    # get_file_contents/create_or_update_file/push_files, list_commits/get_commit)
+    *(f"mcp__github__{t}" for t in (
+        "actions_get", "actions_list", "actions_run_trigger", "add_comment_to_pending_review",
+        "add_reply_to_pull_request_comment", "create_branch", "create_pull_request", "create_repository",
+        "delete_file", "disable_pr_auto_merge", "enable_pr_auto_merge", "fork_repository", "get_check_run",
+        "get_job_logs", "get_label", "get_latest_release", "get_me", "get_release_by_tag", "get_tag",
+        "get_team_members", "get_teams", "list_branches", "list_issue_fields", "list_issue_types",
+        "list_pull_requests", "list_releases", "list_repository_collaborators", "list_tags",
+        "merge_pull_request", "pull_request_read", "pull_request_review_write", "request_copilot_review",
+        "resolve_review_thread", "run_secret_scanning", "sub_issue_write", "unresolve_review_thread",
+        "update_issue_comment", "update_pull_request", "update_pull_request_branch")),
+)
+SETTINGS = json.dumps({
+    "permissions": {"deny": list(DENY)},
+    "enabledPlugins": {"github@synced": False},  # its GitHub tools duplicate the environment's own
+    "autoMemoryEnabled": False,
+    "includeGitInstructions": False,  # the prompt gives the exact git command
+    "hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/tools/usage_hook.py"', "timeout": 60}]}]},
+}, indent=1) + "\n"
+# Steps Hermes sends to Claude Sonnet go to a second scheduled task (same repo, same prompt but
+# `sh tools/claim.sh hermes-sonnet`), started by its own API trigger; without one they go to the main task.
+SONNET = "sonnet"
 FIRE_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01"}
 
 
@@ -106,6 +147,10 @@ class Handoff:
         self.token = secrets.get("GITHUB_HANDOFF_TOKEN")
         self.fire_url = secrets.get("CLAUDE_ROUTINE_URL")
         self.fire_token = secrets.get("CLAUDE_ROUTINE_TOKEN")
+        self.sonnet_url = secrets.get("CLAUDE_ROUTINE_SONNET_URL")
+        self.sonnet_token = secrets.get("CLAUDE_ROUTINE_SONNET_TOKEN")
+        self.lane = ""  # SONNET: the next send goes to the Sonnet task (when it is set up)
+        self.lane_used = ""  # where the last send went: SONNET or "" (the main task)
         self.fire_error = ""  # why the last fire failed ("" when it worked or was not set up)
         self.session = ""  # the Claude session the last fire started
 
@@ -144,24 +189,27 @@ class Handoff:
             tools = {"tools/claim.sh": CLAIM.format(repo=self.repo, label=LABEL),
                      "tools/close.sh": CLOSE.format(repo=self.repo),
                      "tools/usage_hook.py": USAGE_HOOK.format(repo=self.repo, mark=USAGE_MARK),
-                     ".claude/settings.json": HOOK_SETTINGS}
+                     ".claude/settings.json": SETTINGS}
             for path, text in {**tools, **files}.items():
                 self.put(path, text)
-            self._label()
-            number = int(self._call("POST", "issues", json_body={"title": title, "body": body, "labels": [LABEL]})["number"])
+            self.lane_used = SONNET if self.lane == SONNET and self.sonnet_url and self.sonnet_token else ""
+            label = f"{LABEL}-{SONNET}" if self.lane_used else LABEL
+            self._label(label)
+            number = int(self._call("POST", "issues", json_body={"title": title, "body": body, "labels": [label]})["number"])
         except HttpError as exc:
             raise HandoffError(f"GitHub handoff: HTTP {exc.status}") from None
-        self.fire(f"Hermes opened issue #{number}: {title}")
+        self.fire(f"Hermes opened issue #{number}: {title}", self.lane_used)
         return number
 
-    def fire(self, text: str = "") -> bool:
+    def fire(self, text: str = "", lane: str = "") -> bool:
         """Start the Claude task through its API trigger; False when not set up or refused (never raises)."""
         self.fire_error, self.session = "", ""
-        if not (self.fire_url and self.fire_token):
+        url, token = (self.sonnet_url, self.sonnet_token) if lane == SONNET else (self.fire_url, self.fire_token)
+        if not (url and token):
             return False
-        headers = {"Authorization": f"Bearer {self.fire_token}", "Content-Type": "application/json", **FIRE_HEADERS}
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", **FIRE_HEADERS}
         try:
-            done = self.http.request("POST", self.fire_url, headers=headers, json_body={"text": text[:2000]})
+            done = self.http.request("POST", url, headers=headers, json_body={"text": text[:2000]})
         except HttpError as exc:
             self.fire_error = f"Claude task fire: HTTP {exc.status}"
             return False
@@ -198,9 +246,9 @@ class Handoff:
                     continue
         return {}
 
-    def _label(self) -> None:
+    def _label(self, name: str = LABEL) -> None:
         try:
-            self._call("POST", "labels", json_body={"name": LABEL, "color": "5319e7",
+            self._call("POST", "labels", json_body={"name": name, "color": "5319e7",
                                                     "description": "Waiting for Claude (Hermes handoff)"})
         except HttpError as exc:
             if exc.status != 422:  # 422: it exists already

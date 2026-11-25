@@ -45,8 +45,8 @@ GitHub-triggered session receives the issue's text, so the prompt fetches it wit
      opens the pages you add. Smriti and the Studio need no web access.
    - Connectors: **remove them all**. Every connector's tools are sent on every step of every run;
      none of these jobs uses one.
-   - Model: pick it in the task's model selector (applies to every run). Sonnet uses less of your
-     plan than Opus.
+   - Model: **Opus** for this task, picked in its model selector (leaving it on the default lets
+     Claude choose; one test run on 2026-11-25 came back on Sonnet). Sonnet steps: see below.
    - Prompt: paste the one below. **If you set the task up before, replace its prompt:** the old one
      sent Claude to read `HANDOFF.md` files that no longer exist.
 5. **Branch:** the prompt says "push to main"; make sure no branch protection blocks your own pushes
@@ -57,6 +57,33 @@ Runs use your plan's usage like an interactive session. API fires: 100 an hour p
 own unpublished caps. A fire that is refused or dropped is not an error: the issue waits for the next
 run (each run takes the oldest waiting issue), or press **Run now**. The fire endpoint is a beta
 (`anthropic-beta: experimental-cc-routine-2026-04-01`), so its shape may change.
+
+## What a run can see (keep sessions small)
+
+Every model call in a run re-sends Claude Code's instructions plus the definitions of every tool the
+session loads, so that fixed part is paid on every call of every run. Hermes writes
+`.claude/settings.json` in the repo with each request (`SETTINGS` in `orchestrator/handoff.py`): a
+`permissions.deny` list that takes out the tools no Hermes job uses (other agents, web search/fetch,
+skills, scheduling, messaging, artifacts, connectors, the session tools, most GitHub tools), the
+GitHub plugin and auto memory, plus the Stop hook that reports tokens. Kept: shell, file tools, and
+GitHub's issue and file tools (the prompt's fallback). A bare tool name in `deny` removes the tool
+from Claude's context (code.claude.com/docs/en/permissions). Measured on the same one-line test
+issue: the first call went from ~46.8k to 13.7k tokens (2026-11-25; that run was served by Sonnet,
+so part of the drop may be the model). A new kind of job that needs a removed tool: take it out of
+`DENY` there; it applies to every job.
+
+## Claude Sonnet for some steps
+
+Sonnet uses less of your plan and is faster. A scheduled task has one model, so Sonnet steps go to a
+second task:
+1. claude.ai/code → Routines → New, same repo, environment and settings as the first, model
+   **Sonnet**, API trigger → `CLAUDE_ROUTINE_SONNET_URL=` and `CLAUDE_ROUTINE_SONNET_TOKEN=` in `.env`.
+2. Its prompt: the one below with step 1 changed to `sh tools/claim.sh hermes-sonnet` (and "labelled
+   hermes-sonnet" in the GITHUB ERROR line). Its issues carry the label `hermes-sonnet`, so neither
+   task takes the other's work.
+3. `studio.claude_sonnet_steps: [direction]` (any of research, script, direction, animation) in
+   `brief.yaml`. Without the second task those steps go to the main one. Switch a step only after a
+   side-by-side run shows the same quality (same checks passed, no extra fix rounds).
 
 ## The prompt to paste
 

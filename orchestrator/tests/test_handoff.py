@@ -12,7 +12,9 @@ sys.path.insert(0, str(ROOT / "orchestrator" / "brief" / "tests"))
 from fakes import FakeHttp, http_error
 
 from orchestrator.brief.creds import Secrets
-from orchestrator.handoff import Handoff
+import json
+
+from orchestrator.handoff import DENY, KEEP, SETTINGS, Handoff
 
 GH = "https://api.github.com/repos/me/hand/"
 FIRE = "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire"
@@ -44,6 +46,25 @@ class FireTest(unittest.TestCase):
         put = {c.url.rsplit("contents/", 1)[1] for c in http.calls if c.method == "PUT"}
         self.assertEqual(put, {"tools/claim.sh", "tools/close.sh", "tools/usage_hook.py", ".claude/settings.json"})
 
+    def test_sonnet_steps_go_to_the_sonnet_task_with_their_own_label(self):
+        sonnet = FIRE.replace("trig_x", "trig_s")
+        h, http = self.handoff(f"GITHUB_HANDOFF_TOKEN=g\nCLAUDE_ROUTINE_URL={FIRE}\nCLAUDE_ROUTINE_TOKEN=sk\n"
+                               f"CLAUDE_ROUTINE_SONNET_URL={sonnet}\nCLAUDE_ROUTINE_SONNET_TOKEN=ss\n", {})
+        http.on("POST", sonnet, {"claude_code_session_id": "cse_s"})
+        h.lane = "sonnet"
+        self.assertEqual(h.send({}, "studio 1: direction", "body"), 7)
+        issue = next(c for c in http.calls if c.url == GH + "issues")
+        self.assertEqual(issue.json_body["labels"], ["hermes-sonnet"])
+        self.assertEqual((http.calls[-1].url, http.calls[-1].headers["Authorization"]), (sonnet, "Bearer ss"))
+        self.assertEqual((h.lane_used, h.session), ("sonnet", "cse_s"))
+
+    def test_sonnet_without_its_own_task_goes_to_the_main_one(self):
+        h, http = self.handoff(f"GITHUB_HANDOFF_TOKEN=g\nCLAUDE_ROUTINE_URL={FIRE}\nCLAUDE_ROUTINE_TOKEN=sk\n", {})
+        h.lane = "sonnet"
+        h.send({}, "t", "b")
+        self.assertEqual(next(c for c in http.calls if c.url == GH + "issues").json_body["labels"], ["hermes"])
+        self.assertEqual((http.calls[-1].url, h.lane_used), (FIRE, ""))
+
     def test_not_set_up_means_no_fire(self):
         h, http = self.handoff("GITHUB_HANDOFF_TOKEN=g\n")
         self.assertEqual(h.send({}, "t", "b"), 7)
@@ -55,6 +76,18 @@ class FireTest(unittest.TestCase):
                             http_error(401))
         self.assertEqual(h.send({}, "t", "b"), 7)
         self.assertEqual(h.fire_error, "Claude task fire: HTTP 401")
+
+
+class SettingsTest(unittest.TestCase):
+    def test_the_repo_settings_keep_the_working_tools_and_remove_the_rest(self):
+        settings = json.loads(SETTINGS)
+        deny = settings["permissions"]["deny"]
+        self.assertFalse(set(KEEP) & set(deny))
+        self.assertFalse([d for d in deny if d.startswith("mcp__github__") and d.split("__")[2] in (
+            "issue_read", "issue_write", "list_issues", "add_issue_comment", "get_file_contents", "push_files")])
+        self.assertTrue({"Agent", "WebSearch", "Skill", "mcp__claude-code-remote"} <= set(deny))
+        self.assertEqual(len(deny), len(set(DENY)))
+        self.assertIn("usage_hook.py", settings["hooks"]["Stop"][0]["hooks"][0]["command"])
 
 
 if __name__ == "__main__":

@@ -106,6 +106,7 @@ class Settings:
     research_models: tuple[ModelChoice, ...] = RESEARCH_MODELS  # Gemini models that may search, tried in order
     render_window: str = "00:30-07:00"  # the queue renders only in this window (local time); /studio run = now
     hook_clips: bool = True  # also render hooks 2 and 3 as short clips, so you can pick one on Telegram
+    claude_sonnet_steps: tuple[str, ...] = ()  # handoff steps for Claude Sonnet (script, direction, animation…); see HANDOFF.md
     claude_effort: str = "medium"  # low | medium | high | xhigh | max: how hard Claude thinks
 
 
@@ -153,6 +154,7 @@ def parse(raw: dict[str, Any]) -> Settings:
         hook_clips=bool(studio.get("hook_clips", base.hook_clips)),
         custom_review=bool(studio.get("custom_review", base.custom_review)),
         claude_model=str(studio.get("claude_model", base.claude_model)),
+        claude_sonnet_steps=tuple(str(x) for x in studio.get("claude_sonnet_steps") or ()),
         claude_effort=_effort(str(studio.get("claude_effort", base.claude_effort))),
         script_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True))) for m in script)
         if script else base.script_models,

@@ -38,7 +38,7 @@ from typing import Any
 from orchestrator import usage
 from orchestrator.brief.net import HttpError
 from orchestrator.brief.settings import ModelChoice
-from orchestrator.handoff import Handoff, HandoffError
+from orchestrator.handoff import SONNET, Handoff, HandoffError
 from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 
@@ -209,8 +209,10 @@ def _hand(ctx: Any) -> Handoff:
 def _issue(ctx: Any, job: Job, stage: str, send: Callable[[Handoff], int], round_: int = 0) -> int:
     """Opens a handoff issue (``send``) and records it for the job's report."""
     hand = _hand(ctx)
+    hand.lane = SONNET if stage in ctx.settings.claude_sonnet_steps else ""
     number = send(hand)
-    steps.mark(job.folder, stage, "asked", issue=number, round=round_, session=hand.session, fire_error=hand.fire_error)
+    steps.mark(job.folder, stage, "asked", issue=number, round=round_, session=hand.session, fire_error=hand.fire_error,
+               lane=hand.lane_used)
     return number
 
 
