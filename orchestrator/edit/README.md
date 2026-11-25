@@ -53,7 +53,19 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
      - `stat`, `list`, `chapter`, `headline`, `quote`, `image`, `screenshot` cards;
      - `hide`: a blurred box over anything private (a patient's name, a phone number);
    - punch-ins (they zoom towards your face) and the music mood;
-   - optionally a colour fix for this footage ("grade": brighter, warmer, sharper...).
+   - optionally a colour fix for this footage ("grade": brighter, warmer, sharper...);
+   - **scenes**, storyboarded by idea: an explainer that stays up while an idea is said and builds as it is
+     said (`remotion/src/edit/Scenes.tsx`). Layouts: `panel` (top half on the brand colour, your face zoomed
+     into the bottom half), `full` (the whole frame while your voice carries on), `top` (big type over the
+     wall above your head). Types: statement (with strike-through or underline on a word), counter, stack
+     (rows with icons and ✓/✗), steps, compare (a balance), bars, points (bullets struck out, or 01/02),
+     badge, and an end card. Elements arrive on their words;
+   - words cut from inside a sentence ("cut"), caption words coloured problem/solution ("emphasis"), the end
+     card ("end").
+
+   The style can play the talk faster (`pace.speed`, pitch kept; the Medoc reels run at about 1.25×).
+   Everything drawn (graphics, scenes and the word-by-word captions with the spoken word in a box) is one
+   transparent Remotion render (`Timeline.tsx`) laid over the cut once.
 
    Claude never sees or writes times, so it can't cut into a word. The plan goes through your Claude plan
    via the handoff repo, the same as the studio. Claude runs `tools/check_edit.py` there before handing

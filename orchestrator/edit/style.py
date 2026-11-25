@@ -32,7 +32,7 @@ BUILT_IN = Path(__file__).with_name("styles")
 BASE = "clean"
 DEFAULT = "mine"
 MAX_DEPTH = 5
-FONTS = ("manrope", "inter", "intertight", "montserrat", "anton", "newsreader")  # files: fonts.py
+FONTS = ("manrope", "inter", "intertight", "poppins", "montserrat", "anton", "newsreader")  # files: fonts.py
 
 
 class StyleError(ValueError):
@@ -61,17 +61,18 @@ SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
     "captions": {"show": _flag, "script": _choice("latin"), "words": _number(1, 6), "case": _choice("sentence", "lower", "upper"),
                  "font": FONT, "size": _number(30, 140), "colour": _colour, "active": _colour_or_none,
                  "box": _colour_or_none, "box_opacity": _number(0, 1), "outline": _number(0, 12),
-                 "shadow": _number(0, 12), "y": _number(0.3, 0.9)},
+                 "shadow": _number(0, 12), "y": _number(0.3, 0.9), "mode": _choice("plain", "box", "colour"),
+                 "box_text": _colour},
     "title": {"kind": _choice("card", "pill", "none"), "font": FONT, "bg": _colour, "fg": _colour, "size": _number(36, 110),
               "y": _number(0.03, 0.3), "seconds": _number(0, 600), "subtitle": _flag, "weight": _number(300, 900),
               "accent": _colour_or_none},
     "graphics": {"font": FONT, "serif": FONT, "ink": _colour, "paper": _colour, "accent": _colour, "alert": _colour,
                  "good": _colour, "box_bg": _colour, "box_fg": _colour, "figure": _colour_or_none, "radius": _number(0, 60),
                  "kinds": _kinds, "emoji": _flag, "logo": _file, "logo_pos": _choice("top-right", "top-left", "none"),
-                 "progress": _flag},
+                 "progress": _flag, "handle": _file, "end_logo": _file},
     "pace": {"max_pause": _number(0.05, 2.0), "pad": _number(0.0, 0.3), "fillers": _choice("keep", "alone", "all"),
              "retakes": _flag, "punch_every": _number(0, 60), "punch": _number(1.0, 1.5),
-             "punch_ease": _choice("cut", "smooth"), "change_every": _number(0.5, 20), "broll": _number(0, 0.8)},
+             "punch_ease": _choice("cut", "smooth"), "speed": _number(0.8, 1.5), "change_every": _number(0.5, 20), "broll": _number(0, 0.8)},
     "grade": {"warmth": _number(-1, 1), "contrast": _number(0.7, 1.4), "saturation": _number(0, 2),
               "brightness": _number(-0.2, 0.2), "sharpen": _number(0, 1.5)},
     "sound": {"denoise": _choice("off", "light", "strong"), "deess": _flag, "music": _use, "music_query": _text, "sfx": _use},

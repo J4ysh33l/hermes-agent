@@ -183,7 +183,7 @@ def _collect(ctx: Any, job: Job) -> None:
         return
     look, ws, found = _parts(ctx, job)
     chosen, wrong = editor.answer(hand, job.id)
-    problems = [wrong] if wrong else plans.check(chosen, found, cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep),
+    problems = [wrong] if wrong else plans.check(chosen, found, cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep, chosen.cut),
                                                 look, job.data["asked"])
     if not problems:
         return _accept(ctx, job, chosen)
@@ -219,7 +219,7 @@ def _accept(ctx: Any, job: Job, chosen: plans.Plan, ask: bool = False) -> None:
 def summary(ctx: Any, job: Job) -> str:
     look, ws, found = _parts(ctx, job)
     chosen = plans.load((job.folder / "plan.json").read_text(encoding="utf-8"))
-    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
+    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep, chosen.cut)
     by_id = {s.id: s for s in found}
     lines = [f"✂️ **{chosen.title.replace('*', '') or job.id}** · job {job.id} · style {look.name}",
              f"{ws[-1].end if ws else 0:.0f} s raw → {cut.seconds:.0f} s edited"]

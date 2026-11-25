@@ -42,21 +42,31 @@ class CutList:
     dropped: dict[int, str] = field(default_factory=dict)  # sentence id → why
     fillers: list[str] = field(default_factory=list)  # "matlab @12.3s"
     kept_words: list[int] = field(default_factory=list)  # indexes into the transcript
+    speed: float = 1.0  # the edit plays this much faster than you spoke (pace.speed; pitch kept)
 
     @property
     def seconds(self) -> float:
-        return sum(r.seconds for r in self.ranges)
+        return sum(r.seconds for r in self.ranges) / self.speed
 
     def to_output(self, t: float) -> float:
         """A source time → its time in the edited video (a time inside a cut lands at the joint)."""
         out = 0.0
         for r in self.ranges:
             if t < r.start:
-                return out
+                return out / self.speed
             if t <= r.end:
-                return out + t - r.start
+                return (out + t - r.start) / self.speed
             out += r.seconds
-        return out
+        return out / self.speed
+
+    def to_source(self, t: float) -> float:
+        """A time in the edited video → the source time it shows."""
+        out, t = 0.0, t * self.speed
+        for r in self.ranges:
+            if t <= out + r.seconds:
+                return r.start + max(0.0, t - out)
+            out += r.seconds
+        return self.ranges[-1].end if self.ranges else t
 
     def as_dict(self) -> dict:
         return {"ranges": [[round(r.start, 3), round(r.end, 3)] for r in self.ranges], "seconds": round(self.seconds, 2),
@@ -108,7 +118,8 @@ def fillers(words: list[Word], mode: str) -> set[int]:
 
 
 def build(words: list[Word], found: list[Sentence], look: Style, drop: dict[int, str] | None = None,
-          trim: dict[int, tuple[int, int]] | None = None, keep_ids: set[int] | frozenset[int] = frozenset()) -> CutList:
+          trim: dict[int, tuple[int, int]] | None = None, keep_ids: set[int] | frozenset[int] = frozenset(),
+          cut: dict[int, list[tuple[int, int]]] | None = None) -> CutList:
     """``drop``: sentence id → reason (from the plan, added to the retakes found here); ``trim``: sentence id →
     (first word, last word) to keep, counted from 1 inside the sentence; ``keep_ids``: sentences the plan keeps
     although code took them for retakes."""
@@ -120,10 +131,14 @@ def build(words: list[Word], found: list[Sentence], look: Style, drop: dict[int,
         if s.id in dropped:
             continue
         a, b = (trim or {}).get(s.id, (1, len(s.words)))
-        keep += range(s.first + max(1, a) - 1, s.first + min(len(s.words), b))
+        out = set()  # words cut from the middle (plan "cut"): a repeat, "of all of these ... the best way to do"
+        for x, y in (cut or {}).get(s.id, []):
+            out |= set(range(s.first + x - 1, s.first + y))
+        keep += [n for n in range(s.first + max(1, a) - 1, s.first + min(len(s.words), b)) if n not in out]
     gone = fillers(words, pace["fillers"])
     keep = [n for n in keep if n not in gone]
-    cl = CutList([], dropped, [f"{words[n].text} @{words[n].start:.1f}s" for n in sorted(gone)], keep)
+    cl = CutList([], dropped, [f"{words[n].text} @{words[n].start:.1f}s" for n in sorted(gone)], keep,
+                 float(pace.get("speed", 1.0)))
     if not keep:
         return cl
     longest, pad = float(pace["max_pause"]), float(pace["pad"])

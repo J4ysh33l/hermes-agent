@@ -130,6 +130,17 @@ class CutTests(unittest.TestCase):
         self.assertEqual(cuts.fillers(ws, "alone"), {0})  # "toh" inside the sentence is grammar
         self.assertEqual(cuts.fillers(ws, "keep"), set())
 
+    def test_words_cut_from_inside_and_speed(self) -> None:
+        ws = talk("The best way to reduce costs of all these costs is prevention.")
+        found = words.sentences(ws)
+        cut = cuts.build(ws, found, self.look, cut={1: [(6, 9)]})
+        self.assertEqual(" ".join(ws[n].text for n in cut.kept_words), "The best way to reduce costs is prevention.")
+        self.assertGreater(len(cut.ranges), 1)
+        fast = cuts.build(ws, found, self.look)
+        fast.speed = 1.25
+        self.assertAlmostEqual(fast.seconds * 1.25, sum(r.seconds for r in fast.ranges), places=6)
+        self.assertAlmostEqual(fast.to_source(fast.to_output(ws[3].start)), ws[3].start, places=6)
+
     def test_plan_drop_and_trim(self) -> None:
         ws = talk("Hi guys welcome back.", "Mocks are not enough.", "Practice is.")
         found = words.sentences(ws)

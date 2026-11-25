@@ -14,6 +14,7 @@ import "@fontsource/inter-tight/600-italic.css";
 import "@fontsource/inter-tight/700.css";
 import "@fontsource/montserrat/700.css";
 import "@fontsource/anton/400.css";
+import "@fontsource/poppins/700.css";
 import React from "react";
 import {AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useCurrentFrame, useVideoConfig} from "remotion";
 
@@ -24,6 +25,7 @@ export const FAMILIES: Record<string, string> = {
   montserrat: "Montserrat, sans-serif",
   anton: "Anton, sans-serif",
   newsreader: "Newsreader, Georgia, serif",
+  poppins: "Poppins, sans-serif",
 };
 
 export type EditLook = {

@@ -54,7 +54,7 @@ def cmd_run(a: argparse.Namespace, home: Path) -> int:
         info = media.probe(src if src.is_file() else job / "source.mp4")  # the upload, as you recorded it
         watch.look(job, found, studio, home, info.describe(), info.seconds)
     chosen = plans.load(Path(a.plan).read_text(encoding="utf-8")) if a.plan else plans.basic(found, look)
-    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
+    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep, chosen.cut)
     problems = plans.check(chosen, found, cut, look, a.notes or "") if a.plan else []
     if not a.plan:
         print("no plan: cuts, captions and punch-ins only (not a finished edit; write one with `prompt`)", file=sys.stderr)
@@ -102,7 +102,7 @@ def cmd_check(a: argparse.Namespace, home: Path) -> int:
     found = words.sentences(ws)
     chosen = plans.load((job / "plan.json").read_text(encoding="utf-8"))
     asked = (job / "asked.txt").read_text(encoding="utf-8") if (job / "asked.txt").is_file() else ""
-    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
+    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep, chosen.cut)
     problems = plans.check(chosen, found, cut, look, asked)
     for tip in plans.advice(chosen, found, cut, look):
         print(f"suggestion (yours to take or leave): {tip}")

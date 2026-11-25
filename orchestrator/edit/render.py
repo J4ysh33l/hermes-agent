@@ -39,6 +39,7 @@ LOGO_PX = 96
 W, H = 1080, 1920
 SEAM = 960  # split screen: picture above, face below (Graphic.tsx SEAM)
 FACE_TOP = 150  # the band of the frame (FACE_TOP to FACE_TOP + SEAM) that holds head and shoulders
+SCENE_LEAD = 18  # frames a scene shows before its first element arrives
 LIST_HOLD = 1.8  # seconds a list stays after its last item arrives
 MASK_KINDS = {"hide"}  # done by ffmpeg, not drawn by Remotion
 PROGRESS_PX = 8
@@ -76,10 +77,10 @@ def _shots(cut: cuts.CutList, points: list[float], look: Style, fps: int) -> lis
         for k, (a, b) in enumerate(itertools.pairwise(edges)):
             if k:
                 zoomed = not zoomed
-            start_f, end_f = round(out * fps), round((out + b - a) * fps)
+            start_f, end_f = round(out * fps), round((out + (b - a) / cut.speed) * fps)
             zoom = (1.0, punch) if smooth and zoomed else (punch, punch) if zoomed else (1.0, 1.0)
-            shots.append({"src": a, "frames": max(1, end_f - start_f), "zoom": zoom})
-            out += b - a
+            shots.append({"src": a, "frames": max(1, end_f - start_f), "zoom": zoom, "speed": cut.speed})
+            out += (b - a) / cut.speed
     return shots
 
 
@@ -120,7 +121,8 @@ def build_base(job: Path, shots: list[dict[str, Any]], look: Style, edit: Settin
         out = folder / f"{n:03d}.mp4"
         seconds = shot["frames"] / edit.fps
         run(["ffmpeg", "-y", "-v", "error", "-ss", f"{shot['src']:.3f}", "-i", str(job / "source.mp4"),
-             "-vf", _zoom_filter(shot["zoom"], seconds, watch.focus(job, shot["src"], shot["src"] + seconds)) + grade + ",format=yuv420p", "-frames:v", str(shot["frames"]),
+             "-vf", (f"setpts=(PTS-STARTPTS)/{shot.get('speed', 1.0)}," if shot.get("speed", 1.0) != 1.0 else "")
+             + _zoom_filter(shot["zoom"], seconds, watch.focus(job, shot["src"], shot["src"] + seconds * shot.get("speed", 1.0))) + grade + ",format=yuv420p", "-frames:v", str(shot["frames"]),
              "-r", str(edit.fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-threads", str(edit.threads),
              "-an", str(out)])
         listing.append(f"file '{out.name}'")
@@ -133,8 +135,9 @@ def build_base(job: Path, shots: list[dict[str, Any]], look: Style, edit: Settin
 def cut_voice(job: Path, cut: cuts.CutList) -> Path:
     parts, chain = [], []
     for n, r in enumerate(cut.ranges):
-        chain.append(f"[0:a]atrim={r.start:.4f}:{r.end:.4f},asetpts=PTS-STARTPTS,afade=t=in:d={FADE},"
-                     f"afade=t=out:st={max(0.0, r.seconds - FADE):.4f}:d={FADE}[a{n}]")
+        tempo = f"atempo={cut.speed:.4f}," if cut.speed != 1.0 else ""  # faster, the pitch kept
+        chain.append(f"[0:a]atrim={r.start:.4f}:{r.end:.4f},asetpts=PTS-STARTPTS,{tempo}afade=t=in:d={FADE},"
+                     f"afade=t=out:st={max(0.0, r.seconds / cut.speed - FADE):.4f}:d={FADE}[a{n}]")
         parts.append(f"[a{n}]")
     chain.append(f"{''.join(parts)}concat=n={len(parts)}:v=0:a=1[out]")
     out = job / "voice-cut.wav"
@@ -182,8 +185,36 @@ def place(chosen: plans.Plan, found: list[Sentence], words: list[Word], cut: cut
                 b = max(b, a + item["beats"][-1] / fps + LIST_HOLD)  # the last item stays long enough to read
         if g.kind == "pop":
             item["side"] = "left" if sum(p.kind == "pop" for p in out) % 2 == 0 else "right"
+        if g.kind == "scene":
+            item.setdefault("layout", "panel")
+            by_id = {s.id: s for s in found}
+            _frames(item, lambda anchor: round((cut.to_output(plans._time(by_id, plans._anchor(anchor), "start")) - a) * fps))
+            beats = [f for f, _name in _beats(item)]
+            lead = min(beats) - SCENE_LEAD if beats and item.get("type") not in ("statement", "counter", "badge") else 0
+            if lead > 0:  # never an empty screen waiting: the scene arrives just before its first element
+                a += lead / fps
+                _shift(item, -lead)
         out.append(Placed(g.kind, a, max(b, a + 0.5), item))
     return sorted(out, key=lambda p: p.start), notes
+
+
+def _shift(value: Any, by: int) -> None:
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, v in list(items):
+        if isinstance(v, int) and not isinstance(v, bool) and (key == "at" or str(key).endswith("_at")):
+            value[key] = max(0, v + by)
+        elif isinstance(v, (dict, list)):
+            _shift(v, by)
+
+
+def _frames(value: Any, to_frame: Any) -> None:
+    """In a scene, every word anchor ("S4.12") of an element's "at" or any "*_at" → frames from the scene's start."""
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, v in list(items):
+        if isinstance(v, str) and (key == "at" or str(key).endswith("_at")) and plans.ANCHOR.match(v.strip()):
+            value[key] = max(0, to_frame(v))
+        elif isinstance(v, (dict, list)):
+            _frames(v, to_frame)
 
 
 def _assets(job: Path, placed: list[Placed], http: Http | None, keys: Keys, home: Path) -> tuple[list[Placed], list[str]]:
@@ -226,36 +257,80 @@ def _bundle(job: Path) -> Path:
     return out
 
 
-def render_graphics(job: Path, placed: list[Placed], look: Style, studio: StudioSettings, fps: int) -> list[Path]:
-    if not placed:
-        return []
-    bundle = _bundle(job)
+def _look_props(look: Style, home: Path) -> dict[str, Any]:
     g = dict(look["graphics"])
-    look_props = {**{k: g[k] for k in ("font", "serif", "ink", "paper", "accent", "alert", "good", "box_bg", "box_fg", "figure", "radius")},
-                  "title": dict(look["title"])}
-    files = []
-    for n, p in enumerate(placed):
-        frames = max(1, math.ceil((p.end - p.start) * fps))
-        props = job / "gfx" / f"{n:02d}.json"
-        props.write_text(json.dumps({"look": look_props, "item": p.item, "frames": frames}, ensure_ascii=False), encoding="utf-8")
-        out = job / "gfx" / f"{n:02d}.mov"
-        args = [str(PROJECT / "node_modules/.bin/remotion"), "render", str(bundle), "EditGraphic", str(out),
-                f"--props={props}", "--codec=prores", "--prores-profile=4444", "--image-format=png",
-                "--pixel-format=yuva444p10le", f"--concurrency={studio.video_concurrency}", "--log=error"]
-        if studio.video_browser:
-            args.append(f"--browser-executable={studio.video_browser}")
-        run(args, timeout=1800)
-        files.append(out)
-    return files
+    return {**{k: g[k] for k in ("font", "serif", "ink", "paper", "accent", "alert", "good", "box_bg", "box_fg", "figure", "radius")},
+            "handle": g.get("handle", ""), "title": dict(look["title"])}
+
+
+def _caption_props(look: Style) -> dict[str, Any]:
+    c, g = look["captions"], look["graphics"]
+    return {"font": c["font"], "size": c["size"], "case": c["case"], "colour": c["colour"],
+            "active": c["active"] if c["active"] != "none" else g["accent"], "mode": c["mode"], "box_text": c["box_text"],
+            "shadow": c["shadow"], "y": c["y"], "problem": g["alert"], "solution": g["accent"]}
+
+
+def caption_pages(words: list[Word], found: list[Sentence], cut: cuts.CutList, look: Style, chosen: plans.Plan,
+                  placed: list[Placed], fps: int) -> list[dict[str, Any]]:
+    """The caption pages for the overlay: frames, where they sit (on the face, on the panel's seam, low on a
+    full scene), and the words marked problem/solution in the plan."""
+    if not look["captions"]["show"]:
+        return []
+    hidden = [(p.start, p.end) for p in placed if p.kind in plans.CARD_KINDS or (p.kind == "scene" and p.item.get("type") == "end")]
+    tones = {}
+    by_id = {s.id: s for s in found}
+    for tone, anchors in chosen.emphasis.items():
+        for s, w in anchors:
+            if s in by_id and 1 <= w <= len(by_id[s].words):
+                word = by_id[s].words[w - 1]
+                tones[round(cut.to_output(word.start), 2)] = tone
+    out = []
+    for page in captions.pages(words, cut, look, hidden):
+        mid = (page.start + page.end) / 2
+        place = "face"
+        for p in placed:
+            if p.kind == "scene" and p.start - 0.05 <= mid <= p.end:
+                place = {"panel": "seam", "full": "scene"}.get(p.item.get("layout", "panel"), place)
+            elif p.kind in plans.SPLIT_KINDS and p.start - 0.05 <= mid <= p.end:
+                place = "seam"
+        out.append({"from": round(page.start * fps), "to": max(round(page.start * fps) + 1, round(page.end * fps)), "place": place,
+                    "words": [{"text": text, "from": round(a * fps), "to": round(b * fps), **({"tone": tones[round(a, 2)]}
+                               if round(a, 2) in tones else {})} for text, a, b in page.words]})
+    return out
+
+
+def render_overlay(job: Path, placed: list[Placed], pages: list[dict[str, Any]], look: Style, home: Path,
+                   studio: StudioSettings, fps: int, seconds: float) -> Path | None:
+    """Every graphic, scene and caption in one transparent ProRes 4444, as long as the edit."""
+    drawn = [p for p in placed if p.kind not in MASK_KINDS]
+    if not drawn and not pages:
+        return None
+    bundle = _bundle(job)
+    items = [{**p.item, "from": round(p.start * fps), "frames": max(1, math.ceil((p.end - p.start) * fps))} for p in drawn]
+    frames = max(1, math.ceil(seconds * fps))
+    props = job / "gfx" / "timeline.json"
+    props.write_text(json.dumps({"look": _look_props(look, home), "captions": _caption_props(look), "items": items,
+                                 "pages": pages, "frames": frames}, ensure_ascii=False), encoding="utf-8")
+    out = job / "gfx" / "overlay.mov"
+    args = [str(PROJECT / "node_modules/.bin/remotion"), "render", str(bundle), "EditTimeline", str(out),
+            f"--props={props}", "--codec=prores", "--prores-profile=4444", "--image-format=png",
+            "--pixel-format=yuva444p10le", f"--concurrency={max(1, studio.video_concurrency)}", "--log=error"]
+    if studio.video_browser:
+        args.append(f"--browser-executable={studio.video_browser}")
+    run(args, timeout=3600)
+    return out
 
 
 def _even(x: float) -> int:
     return max(2, round(x / 2) * 2)
 
 
-def _masks(placed: list[Placed], last: str) -> tuple[list[str], str]:
-    """Blur each "hide" box for its time, then move the face to the bottom half during each split. Both work
-    on the cut footage, before the graphics go on top."""
+PANEL_ZOOM = 1.3  # the face in the bottom half of a panel scene is this much closer than the shot
+
+
+def _masks(job: Path, cut: cuts.CutList, placed: list[Placed], last: str) -> tuple[list[str], str]:
+    """Blur each "hide" box for its time, then move the face into the bottom half during each split or panel
+    scene (zoomed in around the face). Both work on the cut footage, before the overlay goes on top."""
     chains = []
     for n, p in enumerate(q for q in placed if q.kind == "hide"):
         x, y, w, h = p.item["box"]
@@ -265,42 +340,48 @@ def _masks(placed: list[Placed], last: str) -> tuple[list[str], str]:
         chains.append(f"[hc{n}]crop={bw}:{bh}:{bx}:{by},scale=iw/16:ih/16,gblur=sigma=2,scale={bw}:{bh}:flags=bilinear[hb{n}]")
         chains.append(f"[hm{n}][hb{n}]overlay={bx}:{by}:enable='between(t,{p.start:.3f},{p.end:.3f})'[hv{n}]")
         last = f"[hv{n}]"
-    for n, p in enumerate(q for q in placed if q.kind == "split"):
+    halves = [q for q in placed if q.kind in plans.SPLIT_KINDS or (q.kind == "scene" and q.item.get("layout", "panel") == "panel")]
+    for n, p in enumerate(halves):
+        fx, fy = watch.focus(job, cut.to_source(p.start), cut.to_source(p.end))
+        cw, ch = _even(W / PANEL_ZOOM), _even(SEAM / PANEL_ZOOM)
+        cx = min(max(0, round(fx * W - cw / 2)), W - cw)
+        cy = min(max(0, round(fy * H - ch * 0.42)), H - ch)  # eyes a little above the middle of the half
         chains.append(f"{last}split=2[sm{n}][sc{n}]")
-        chains.append(f"[sc{n}]crop={W}:{SEAM}:0:{FACE_TOP}[sf{n}]")
+        chains.append(f"[sc{n}]crop={cw}:{ch}:{cx}:{cy},scale={W}:{SEAM}:flags=lanczos[sf{n}]")
         chains.append(f"[sm{n}][sf{n}]overlay=0:{SEAM}:enable='between(t,{p.start:.3f},{p.end:.3f})'[sv{n}]")
         last = f"[sv{n}]"
     return chains, last
 
 
-def finish(job: Path, base: Path, sound_file: Path, placed: list[Placed], gfx: list[Path], ass: Path | None, fonts: Path | None,
-           look: Style, home: Path, seconds: float, edit: Settings, out: Path) -> Path:
-    """``placed`` holds every graphic; ``gfx`` the Remotion clips for those that are drawn (all but "hide")."""
+def finish(job: Path, cut: cuts.CutList, base: Path, sound_file: Path, placed: list[Placed], overlay: Path | None,
+           look: Style, home: Path, seconds: float, speech: float, edit: Settings, out: Path) -> Path:
+    """The cut footage (held on its last frame through an end card) + masks + the overlay + logo + progress
+    bar, with the mixed sound."""
     inputs = ["-i", str(base)]
-    chains, last = _masks(placed, "[0:v]")
-    placed = [p for p in placed if p.kind not in MASK_KINDS]
-    for n, (p, clip) in enumerate(zip(placed, gfx), start=1):
-        inputs += ["-i", str(clip)]
-        chains.append(f"[{n}:v]setpts=PTS-STARTPTS+{p.start:.3f}/TB[g{n}]")
-        chains.append(f"{last}[g{n}]overlay=eof_action=pass:format=auto:enable='between(t,{p.start:.3f},{p.end + 0.05:.3f})'[v{n}]")
-        last = f"[v{n}]"
-    k = len(gfx) + 1
+    hold = max(0.0, seconds - speech)
+    chains, last = [f"[0:v]tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}[b0]"], "[b0]"
+    more, last = _masks(job, cut, placed, last)
+    chains += more
+    k = 1
+    if overlay is not None:
+        inputs += ["-i", str(overlay)]
+        chains.append(f"{last}[{k}:v]overlay=eof_action=pass:format=auto[vo]")
+        last, k = "[vo]", k + 1
     logo_name = look["graphics"]["logo"]
     logo = home / "edit" / "brand" / logo_name if logo_name else None
     if logo and logo.is_file() and look["graphics"]["logo_pos"] != "none":
         inputs += ["-loop", "1", "-i", str(logo)]
         x = "W-w-48" if look["graphics"]["logo_pos"] == "top-right" else "48"
+        covered = "+".join(f"between(t,{p.start:.3f},{p.end:.3f})" for p in placed
+                           if p.kind == "scene" and p.item.get("layout") == "full" or p.item.get("type") == "end") or "0"
         chains.append(f"[{k}:v]scale=-1:{LOGO_PX},format=rgba,colorchannelmixer=aa=0.92[logo]")
-        chains.append(f"{last}[logo]overlay={x}:64:shortest=1[vl]")
+        chains.append(f"{last}[logo]overlay={x}:64:shortest=1:enable='not({covered})'[vl]")
         last, k = "[vl]", k + 1
     if look["graphics"]["progress"]:
         accent = look["graphics"]["accent"].lstrip("#")
         chains.append(f"color=c=0x{accent}:s=1080x{PROGRESS_PX}:r={edit.fps}:d={seconds:.3f}[bar]")
         chains.append(f"{last}[bar]overlay=x='-W+W*t/{max(seconds, 0.1):.3f}':y=H-{PROGRESS_PX}:shortest=1[vp]")
         last = "[vp]"
-    if ass is not None:
-        chains.append(f"{last}subtitles='{ass}':fontsdir='{fonts}'[vs]")
-        last = "[vs]"
     chains.append(f"{last}format=yuv420p[vout]")
     inputs += ["-i", str(sound_file)]
     script = job / "finish.filter"
@@ -339,41 +420,69 @@ def _music_queries(asked: str, default: str) -> list[str]:
     return out[:6]
 
 
-def _cues(placed: list[Placed], use: str) -> list[sound.Cue]:
+def _beats(value: Any, key: str = "") -> list[tuple[int, str]]:
+    """(frame, effect) for every element that arrives inside a scene: a pop, or a tick for a strike."""
+    out = []
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for k, v in items:
+        if isinstance(v, int) and not isinstance(v, bool) and (k == "at" or str(k).endswith("_at")):
+            out.append((v, "tick" if "strike" in str(k) else "pop"))
+        elif isinstance(v, (dict, list)):
+            out += _beats(v, str(k))
+    return out
+
+
+def _cues(placed: list[Placed], use: str, fps: int = 30) -> list[sound.Cue]:
     if use == "off":
         return []
     out = []
     for p in placed:
         if p.kind in ("stat", "emoji", "lower_third", "chapter", "pop") or (use == "always" and p.kind in ("list", "headline", "quote")):
             out.append(sound.Cue(p.start, "pop"))
-        elif p.kind in ("cutaway", "split"):
+        elif p.kind in ("cutaway", "split") or (p.kind == "scene" and p.item.get("layout") in ("panel", "full")):
             out.append(sound.Cue(max(0.0, p.start - sound.EFFECTS["whoosh"][2]), "whoosh"))
+        elif p.kind == "scene":
+            out.append(sound.Cue(p.start, "pop"))
+        if p.kind == "scene":
+            last = -1.0
+            for frame, name in sorted(_beats(p.item)):
+                at = p.start + frame / fps
+                if frame > 3 and at - last >= 0.25:
+                    out.append(sound.Cue(at, name))
+                    last = at
     return out
 
 
 def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found: list[Sentence], edit: Settings,
            studio: StudioSettings, home: Path, out: Path, http: Http | None = None, keys: Keys = Keys()) -> Result:
-    cut = cuts.build(words, found, look, chosen.drop, chosen.trim, chosen.keep)
+    cut = cuts.build(words, found, look, chosen.drop, chosen.trim, chosen.keep, chosen.cut)
     if not cut.ranges:
         raise MediaError("nothing is left after the cuts")
     (job / "cuts.json").write_text(json.dumps(cut.as_dict(), indent=1), encoding="utf-8")
     shots = _shots(cut, plans.punch_points(chosen, found, cut, look), look, edit.fps)
-    seconds = sum(s["frames"] for s in shots) / edit.fps
+    speech = sum(s["frames"] for s in shots) / edit.fps
     base = build_base(job, shots, look, edit, chosen.grade)
     placed, notes = place(chosen, found, words, cut, look, edit.fps)
     placed, more = _assets(job, placed, http, keys, home)
     notes += more
-    gfx = render_graphics(job, [p for p in placed if p.kind not in MASK_KINDS], look, studio, edit.fps)
-    ass = fonts = None
-    if look["captions"]["show"]:
-        hidden = [(p.start, p.end) for p in placed if p.kind in plans.CARD_KINDS]
-        seam = [(p.start, p.end) for p in placed if p.kind in plans.SPLIT_KINDS]
-        ass, fonts = captions.write(captions.pages(words, cut, look, hidden), look, job, seam)
+    seconds = speech
+    if chosen.end:  # an end card after the last word, the picture held behind it
+        outro = float(chosen.end.get("seconds", 2.5))
+        logo = home / "edit" / "brand" / str(look["graphics"].get("end_logo", ""))
+        item = {"kind": "scene", "type": "end", "layout": "full", "cta": str(chosen.end.get("cta", "")),
+                "sub": str(chosen.end.get("sub", "")), "handle": str(look["graphics"].get("handle", ""))}
+        if logo.is_file():
+            shutil.copy(logo, job / "gfx" / "public" / logo.name)
+            item["logo"] = logo.name
+        placed.append(Placed("scene", max(0.0, speech - 0.3), speech + outro, item))
+        seconds = speech + outro
+    pages = caption_pages(words, found, cut, look, chosen, placed, edit.fps)
+    overlay = render_overlay(job, placed, pages, look, home, studio, edit.fps, seconds)
     voice = cut_voice(job, cut)
     track, music_notes = _music(http, home, look, chosen, chosen.title.replace("*", "") or job.name)
-    mixed = sound.mix(home, voice, sound.Plan(tuple(_cues(placed, look["sound"]["sfx"])), track, tuple(music_notes)), seconds,
-                      job / "mix.wav")
+    mixed = sound.mix(home, voice, sound.Plan(tuple(_cues(placed, look["sound"]["sfx"], edit.fps)), track, tuple(music_notes)),
+                      seconds, job / "mix.wav")
     final_sound = audio.normalize(mixed, job / "sound.wav")
-    finish(job, base, final_sound, placed, gfx, ass, fonts, look, home, seconds, edit, out)
+    finish(job, cut, base, final_sound, placed, overlay, look, home, seconds, speech, edit, out)
     report = qc.run(out, expected=seconds)
     return Result(out, seconds, notes + music_notes + ([chosen.notes] if chosen.notes else []), report.summary())
