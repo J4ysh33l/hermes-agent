@@ -6,7 +6,7 @@ captions:
   script: latin             # Hinglish is written as spoken, in Latin letters ("ye SIP aapko rich nahi banayega")
   words: 3                  # most words on screen at once
   case: sentence            # sentence | lower | upper
-  font: manrope             # manrope | inter | montserrat | anton | newsreader
+  font: manrope             # manrope | inter | intertight | montserrat | anton | newsreader
   size: 64                  # px on a 1080-wide frame
   colour: "#FFFFFF"
   active: none              # colour of the word being said; none = every word the same
@@ -25,6 +25,8 @@ title:                      # the headline at the top while the hook plays
   y: 0.07
   seconds: 0                # how long it stays; 0 = through the hook only
   subtitle: false           # a small second line ("Explained in 2 mins")
+  weight: 800               # 500 suits a serif or a calm sans, 800 a punchy sans
+  accent: none              # a colour: the editor may mark 1–2 key words of the title (*like this*) to show in it
 
 graphics:                   # drawn by Remotion over your footage
   font: manrope
@@ -36,6 +38,7 @@ graphics:                   # drawn by Remotion over your footage
   good: "#2ECC71"
   box_bg: "#111111"         # stat boxes and labels
   box_fg: "#FFFFFF"
+  figure: none              # the number in a stat box in its own colour (none = box_fg)
   radius: 14
   kinds: [stat, headline, list, chapter, lower_third, screenshot, image, cutaway]
   emoji: false

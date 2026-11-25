@@ -167,7 +167,10 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
             problems.append(f"trim S{sid}: from {a} to {b} must be inside its {size} words")
     if found and len(plan.drop) > 0.6 * len(found):
         problems.append(f"{len(plan.drop)} of {len(found)} sentences dropped: the talk is yours, cut only what fails")
-    title_words = len(plan.title.split())
+    title_words = len(plan.title.replace("*", " ").split())
+    starred = plan.title.count("*")
+    if starred and (starred % 2 or look["title"]["accent"] == "none" or starred > 4):
+        problems.append("title: mark at most two stretches with *stars*, in pairs, and only when the style's title has an accent")
     if look["title"]["kind"] != "none" and not 2 <= title_words <= 9:
         problems.append(f"title must be 2–9 words (it is {title_words})")
     allowed = set(look["graphics"]["kinds"]) | ({"emoji"} if look["graphics"]["emoji"] else set())

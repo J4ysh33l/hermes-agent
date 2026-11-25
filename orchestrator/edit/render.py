@@ -204,7 +204,7 @@ def render_graphics(job: Path, placed: list[Placed], look: Style, studio: Studio
         return []
     bundle = _bundle(job)
     g = dict(look["graphics"])
-    look_props = {**{k: g[k] for k in ("font", "serif", "ink", "paper", "accent", "alert", "good", "box_bg", "box_fg", "radius")},
+    look_props = {**{k: g[k] for k in ("font", "serif", "ink", "paper", "accent", "alert", "good", "box_bg", "box_fg", "figure", "radius")},
                   "title": dict(look["title"])}
     files = []
     for n, p in enumerate(placed):
@@ -303,7 +303,7 @@ def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found:
         hidden = [(p.start, p.end) for p in placed if p.kind in plans.CARD_KINDS]
         ass, fonts = captions.write(captions.pages(words, cut, look, hidden), look, job)
     voice = cut_voice(job, cut)
-    track, music_notes = _music(http, home, look, chosen, chosen.title or job.name)
+    track, music_notes = _music(http, home, look, chosen, chosen.title.replace("*", "") or job.name)
     mixed = sound.mix(home, voice, sound.Plan(tuple(_cues(placed, look["sound"]["sfx"])), track, tuple(music_notes)), seconds,
                       job / "mix.wav")
     final_sound = audio.normalize(mixed, job / "sound.wav")

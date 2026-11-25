@@ -21,8 +21,9 @@ const probePreview: ProbeProps = {profile: DEFAULT_PROFILE, scene: preview.scene
 
 const graphicPreview: GraphicProps = {
   look: {font: "manrope", serif: "newsreader", ink: "#111111", paper: "#FFFFFF", accent: "#FFD400", alert: "#E53935",
-    good: "#2ECC71", box_bg: "#000000", box_fg: "#FFFFFF", radius: 10,
-    title: {kind: "card", font: "newsreader", bg: "#FFFFFF", fg: "#000000", size: 56, y: 0.07, subtitle: false}},
+    good: "#2ECC71", box_bg: "#000000", box_fg: "#FFFFFF", figure: "none", radius: 10,
+    title: {kind: "card", font: "newsreader", bg: "#FFFFFF", fg: "#000000", size: 56, y: 0.07, subtitle: false,
+      weight: 500, accent: "none"}},
   item: {kind: "stat", text: "Same questions, 10×", sub: "beats one more mock"},
   frames: FPS * 3,
 };

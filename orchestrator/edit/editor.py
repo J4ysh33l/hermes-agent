@@ -73,7 +73,9 @@ def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], aske
         tone=style["plan"]["tone"], avoid=", ".join(style["plan"]["avoid"]) or "nothing listed",
         kinds=", ".join(g["kinds"]), emoji_note="" if "emoji" in g["kinds"] or not g["emoji"] else ", emoji",
         change_every=pace["change_every"], broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
-        subtitle_note=" with a short subtitle" if title["subtitle"] else "",
+        subtitle_note=(" with a short subtitle" if title["subtitle"] else "") + (
+            "; wrap the 1–2 words that carry the point in *stars* (shown in the brand accent, italic), e.g. "
+            "\"Care without *the chaos*\"" if title["accent"] != "none" else ""),
         asked=asked.strip() or "(nothing: edit it the way the style says)",
         seconds=words[-1].end if words else 0, kept=cut.seconds, sentences=numbered(found),
         auto="\n".join(auto) or "- nothing", folder=folder or f"edit/{job}", schema="    {" + SCHEMA)

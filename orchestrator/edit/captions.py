@@ -26,6 +26,7 @@ REMOTION = Path(__file__).resolve().parents[1] / "studio" / "remotion" / "node_m
 FONT_FILES = {
     "manrope": ("Manrope ExtraBold", "manrope/files/manrope-latin-800-normal.woff", True),
     "inter": ("Inter", "inter/files/inter-latin-700-normal.woff", True),
+    "intertight": ("Inter Tight", "inter-tight/files/inter-tight-latin-700-normal.woff", True),
     "montserrat": ("Montserrat", "montserrat/files/montserrat-latin-700-normal.woff", True),
     "anton": ("Anton", "anton/files/anton-latin-400-normal.woff", False),
     "newsreader": ("Newsreader SemiBold", "newsreader/files/newsreader-latin-600-normal.woff", True),

@@ -200,7 +200,7 @@ def _fallback(ctx: Any, job: Job, why: str) -> None:
 
 def _accept(ctx: Any, job: Job, chosen: plans.Plan) -> None:
     (job.folder / "plan.json").write_text(json.dumps(chosen.as_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
-    job.data["title"] = chosen.title or job.id
+    job.data["title"] = chosen.title.replace("*", "") or job.id
     job.log("plan ready", "planned")
     if ctx.edit.approve:
         Telegram(ctx.http, ctx.secrets).text(summary(ctx, job))
@@ -214,7 +214,7 @@ def summary(ctx: Any, job: Job) -> str:
     chosen = plans.load((job.folder / "plan.json").read_text(encoding="utf-8"))
     cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
     by_id = {s.id: s for s in found}
-    lines = [f"✂️ **{chosen.title or job.id}** · job {job.id} · style {look.name}",
+    lines = [f"✂️ **{chosen.title.replace('*', '') or job.id}** · job {job.id} · style {look.name}",
              f"{ws[-1].end if ws else 0:.0f} s raw → {cut.seconds:.0f} s edited"]
     for sid, why in sorted(cut.dropped.items()):
         lines.append(f"  cut S{sid} ({why}): {by_id[sid].text[:80] if sid in by_id else ''}")

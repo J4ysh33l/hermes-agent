@@ -7,6 +7,11 @@ import "@fontsource/newsreader/500.css";
 import "@fontsource/newsreader/600.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/800.css";
+import "@fontsource/inter-tight/500.css";
+import "@fontsource/inter-tight/500-italic.css";
+import "@fontsource/inter-tight/600.css";
+import "@fontsource/inter-tight/600-italic.css";
+import "@fontsource/inter-tight/700.css";
 import "@fontsource/montserrat/700.css";
 import "@fontsource/anton/400.css";
 import React from "react";
@@ -15,6 +20,7 @@ import {AbsoluteFill, Img, interpolate, OffthreadVideo, spring, staticFile, useC
 export const FAMILIES: Record<string, string> = {
   manrope: "Manrope, sans-serif",
   inter: "Inter, sans-serif",
+  intertight: "'Inter Tight', Inter, sans-serif",
   montserrat: "Montserrat, sans-serif",
   anton: "Anton, sans-serif",
   newsreader: "Newsreader, Georgia, serif",
@@ -30,8 +36,10 @@ export type EditLook = {
   good: string;
   box_bg: string;
   box_fg: string;
+  figure: string; // the number in a stat box ("none" = box_fg)
   radius: number;
-  title: {kind: "card" | "pill" | "none"; font: string; bg: string; fg: string; size: number; y: number; subtitle: boolean};
+  title: {kind: "card" | "pill" | "none"; font: string; bg: string; fg: string; size: number; y: number; subtitle: boolean;
+    weight: number; accent: string};
 };
 
 export type EditItem = {
@@ -79,15 +87,21 @@ const Card: React.FC<{children: React.ReactNode; top?: number; style?: React.CSS
 
 const shadow = "0 18px 50px rgba(0,0,0,0.35)";
 
+// "Care without *the chaos*": starred words in the style's accent colour, italic (title.accent; none = plain).
+const marked = (text: string, accent: string) =>
+  text.split(/(\*[^*]+\*)/).map((part, n) => part.startsWith("*") && part.endsWith("*") && part.length > 2
+    ? (accent === "none" ? part.slice(1, -1) : <span key={n} style={{color: accent, fontStyle: "italic"}}>{part.slice(1, -1)}</span>)
+    : part);
+
 const Title: React.FC<GraphicProps> = ({look, item}) => {
   const t = look.title;
   const pill = t.kind === "pill";
   return (
     <Card top={Math.round(t.y * 1920)}>
-      <div style={{background: t.bg, color: t.fg, fontFamily: FAMILIES[t.font], fontWeight: t.font === "newsreader" ? 500 : 800,
+      <div style={{background: t.bg, color: t.fg, fontFamily: FAMILIES[t.font], fontWeight: t.weight,
         fontSize: t.size, lineHeight: 1.12, textAlign: "center", padding: pill ? "16px 34px" : "18px 34px 22px",
-        borderRadius: pill ? 22 : 4, boxShadow: shadow, letterSpacing: t.font === "newsreader" ? -0.5 : -0.3}}>
-        {item.text}
+        borderRadius: pill ? 22 : 4, boxShadow: shadow, letterSpacing: t.weight < 700 ? -1.2 : -0.3}}>
+        {marked(item.text ?? "", t.accent)}
       </div>
       {t.subtitle && item.sub ? (
         <div style={{margin: "10px auto 0", width: "fit-content", background: "rgba(255,255,255,0.92)", color: "#222",
@@ -101,7 +115,8 @@ const Stat: React.FC<GraphicProps> = ({look, item}) => (
   <Card>
     <div style={{background: look.box_bg + "EB", color: look.box_fg, fontFamily: FAMILIES[look.font], borderRadius: look.radius,
       padding: "22px 34px", textAlign: "center", boxShadow: shadow}}>
-      <div style={{fontWeight: 800, fontSize: 60, lineHeight: 1.1}}>{item.text}</div>
+      <div style={{fontWeight: 800, fontSize: 84, lineHeight: 1.05, letterSpacing: -1,
+        color: look.figure === "none" ? look.box_fg : look.figure}}>{item.text}</div>
       {item.sub ? <div style={{fontWeight: 700, fontSize: 34, marginTop: 8, opacity: 0.85}}>{item.sub}</div> : null}
     </div>
   </Card>
@@ -145,7 +160,7 @@ const List: React.FC<GraphicProps> = ({look, item}) => {
 
 const Chapter: React.FC<GraphicProps> = ({look, item}) => (
   <Card top={CARD_TOP - 40}>
-    <div style={{display: "flex", alignItems: "center", gap: 22, background: "rgba(14,14,16,0.82)", color: "#fff",
+    <div style={{display: "flex", alignItems: "center", gap: 22, background: look.box_bg + "D1", color: "#fff",
       border: "1.5px solid rgba(255,255,255,0.35)", borderRadius: 18, padding: "18px 30px", fontFamily: FAMILIES[look.font],
       boxShadow: shadow}}>
       <span style={{color: look.accent, fontWeight: 800, fontSize: 54}}>{String(item.n ?? 1).padStart(2, "0")}</span>

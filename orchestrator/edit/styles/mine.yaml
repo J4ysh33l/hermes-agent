@@ -11,6 +11,7 @@ title:
   fg: "#000000"
   size: 64
   subtitle: false
+  weight: 500
 
 graphics:
   serif: newsreader
