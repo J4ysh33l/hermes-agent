@@ -1,0 +1,36 @@
+# Your default (chosen 2026-11-25): Zero1's captions, Aevy's serif headline card with Zero1's boxes inside the
+# video, a pace in between the two, Hinglish captions written as spoken in Latin letters.
+# Add your brand here when you have it: graphics.accent, graphics.logo (a file in $HERMES_HOME/edit/brand/).
+extends: zero1
+description: Yours. Zero1 captions, Aevy serif title card, Zero1 stat boxes and clippings, pace in between.
+
+title:
+  kind: card
+  font: newsreader
+  bg: "#FFFFFF"
+  fg: "#000000"
+  size: 56
+  subtitle: false
+
+graphics:
+  serif: newsreader
+  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image, cutaway, quote]
+
+pace:
+  max_pause: 0.26
+  punch_every: 10
+  punch: 1.12
+  punch_ease: cut
+  change_every: 2.5
+  broll: 0.35
+
+sound:
+  music: auto
+  music_query: light lofi beat
+  sfx: auto
+
+plan:
+  hook: A sharp claim or question inside 2–3 seconds; the title card says it in 3–7 words.
+  ending: End on the concrete takeaway; keep the call to action if you said one.
+  tone: Credible, warm, plain words; Hinglish as spoken.
+  language: hinglish

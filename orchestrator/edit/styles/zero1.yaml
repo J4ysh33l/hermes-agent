@@ -1,0 +1,60 @@
+# After Zero1 by Zerodha (Shorts, observed 2026-11-25; pacing estimated, not measured):
+# small white rounded-sans captions under the face, a white title pill, black stat boxes with 🔥,
+# newspaper headline cards, emoji/product icons, a warm grade, calm pace.
+# Free look-alike fonts: Manrope for their rounded sans.
+extends: clean
+description: Zero1-like. White rounded-sans captions, white title pill, black stat boxes, warm and calm.
+
+captions:
+  words: 3
+  case: sentence
+  font: manrope
+  size: 62
+  colour: "#FFFFFF"
+  active: none
+  shadow: 4
+  y: 0.58
+
+title:
+  kind: pill
+  font: manrope
+  bg: "#FFFFFF"
+  fg: "#111111"
+  size: 54
+  y: 0.07
+  seconds: 0
+
+graphics:
+  font: manrope
+  accent: "#FFD400"
+  alert: "#E53935"
+  box_bg: "#000000"
+  box_fg: "#FFFFFF"
+  radius: 10
+  kinds: [stat, headline, list, chapter, emoji, lower_third, screenshot, image]
+  emoji: true
+
+pace:
+  max_pause: 0.3
+  punch_every: 12
+  punch: 1.15
+  punch_ease: cut
+  change_every: 3.5
+  broll: 0.3
+
+grade:
+  warmth: 0.25
+  contrast: 1.04
+  saturation: 0.95
+
+sound:
+  music: auto
+  music_query: light lofi beat
+  bed_db: -26
+  duck_db: 14
+  sfx: auto
+
+plan:
+  hook: A money question or claim in the title pill and the first line, inside 3 seconds.
+  ending: A one-line takeaway, then the call to action if you said one.
+  tone: Friendly, numbers-first, everyday money.

@@ -1,0 +1,78 @@
+# The neutral base every style extends. It sets every field; other styles state only what differs.
+description: Clean and neutral. Small white captions, no title, gentle cuts, light grade.
+
+captions:
+  show: true
+  script: latin             # Hinglish is written as spoken, in Latin letters ("ye SIP aapko rich nahi banayega")
+  words: 3                  # most words on screen at once
+  case: sentence            # sentence | lower | upper
+  font: manrope             # manrope | inter | montserrat | anton | newsreader
+  size: 64                  # px on a 1080-wide frame
+  colour: "#FFFFFF"
+  active: none              # colour of the word being said; none = every word the same
+  box: none                 # a box behind the words (colour) or none
+  box_opacity: 0.85
+  outline: 0                # px; 0 with a soft shadow reads more "professional" than a thick stroke
+  shadow: 3                 # px, soft drop shadow
+  y: 0.62                   # height of the caption line, 0 = top, 1 = bottom (keep clear of the app's buttons: ≤ 0.75)
+
+title:                      # the headline at the top while the hook plays
+  kind: none                # card (box with a headline, serif or sans) | pill (rounded) | none
+  font: manrope
+  bg: "#FFFFFF"
+  fg: "#111111"
+  size: 58
+  y: 0.07
+  seconds: 0                # how long it stays; 0 = through the hook only
+  subtitle: false           # a small second line ("Explained in 2 mins")
+
+graphics:                   # drawn by Remotion over your footage
+  font: manrope
+  serif: newsreader
+  ink: "#111111"
+  paper: "#FFFFFF"
+  accent: "#FFD400"
+  alert: "#E53935"
+  good: "#2ECC71"
+  box_bg: "#111111"         # stat boxes and labels
+  box_fg: "#FFFFFF"
+  radius: 14
+  kinds: [stat, headline, list, chapter, lower_third, screenshot, image, cutaway]
+  emoji: false
+  logo: ""                  # a file in $HERMES_HOME/edit/brand/ ("" = none)
+  logo_pos: top-right
+  progress: false           # a thin bar along the bottom
+
+pace:
+  max_pause: 0.35           # longer silences inside your talk are cut down to this
+  pad: 0.06                 # kept before and after each word at a cut, so no consonant is clipped
+  fillers: alone            # keep | alone (cut "umm", "uh", "matlab"... only when they stand alone) | all
+  retakes: true             # a sentence you said again: the earlier take is cut
+  punch_every: 0            # seconds between punch-ins (0 = none)
+  punch: 1.1                # how far in (1.1 = 110%)
+  punch_ease: cut           # cut (an instant jump, like a second camera) | smooth (a slow push)
+  change_every: 4           # the editor aims for something new on screen this often (seconds)
+  broll: 0.2                # share of the video that may be covered by cutaways and full-screen graphics
+
+grade:
+  warmth: 0.0               # -1 cool … +1 warm
+  contrast: 1.0
+  saturation: 1.0
+  brightness: 0.0
+  sharpen: 0.0
+
+sound:
+  denoise: light            # off | light | strong (your voice track)
+  deess: true
+  music: off                # off | auto | always
+  music_query: calm lofi
+  bed_db: -24               # music level under the voice (LUFS-ish)
+  duck_db: 12               # how far the music dips while you speak
+  sfx: off                  # off | auto (pops on graphics, whooshes on cutaways) | always
+
+plan:                       # for the editor (Claude): what it aims for
+  hook: The first sentence must land within 2 seconds; cut any warm-up before it.
+  ending: End on the takeaway, not on a goodbye.
+  tone: Plain, credible, no hype.
+  avoid: []
+  language: hinglish        # what you speak: hinglish | en | hi
