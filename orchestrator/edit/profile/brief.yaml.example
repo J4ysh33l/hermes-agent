@@ -6,8 +6,8 @@ edit:
   asr_model: large-v3-turbo   # ~1.5–2.3 GB while it runs; small = faster, more misheard words
   asr_language: en            # en keeps Hinglish in Latin letters; hi would write Devanagari
   threads: 2                  # the host's cores
-  crf: 18
-  preset: medium
+  crf: 17
+  preset: slow
   approve: true               # the plan comes to you before the render
   max_minutes: 15
 

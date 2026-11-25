@@ -25,8 +25,8 @@ class Settings:
                        "toh, actually, you know, haan.")  # biases Whisper to Latin Hinglish and to keep fillers
     threads: int = 2  # CPU threads for transcription and encoding
     fps: int = 30
-    crf: int = 18  # the finished video (lower = sharper, bigger)
-    preset: str = "medium"  # x264 for the finished video
+    crf: int = 17  # the finished video (17 ≈ visually lossless, as the studio; lower = bigger file)
+    preset: str = "slow"  # x264 for the finished video (slower = smaller file at the same quality)
     mezzanine_crf: int = 14  # the normalised copy every step reads (near lossless)
     approve: bool = True  # the cut list and plan come to you on Telegram before the render
     plan_retries: int = 2  # a plan that fails its checks goes back to the editor this many times
