@@ -34,17 +34,18 @@ export const Marked: React.FC<{text: string; accent: string; italic?: boolean}> 
 
 export const plain = (text: string) => text.replace(/\*/g, "");
 
-// A marker stroke through the text, drawn left to right from `at` (a slight rise, round ends).
+// A marker stroke across the whole text (its parent is position: relative and as wide as the text), drawn
+// left to right from `at`, rising slightly, round ends; it overshoots the text a little each side.
 export const Strike: React.FC<{at?: number; colour: string; thick?: number}> = ({at, colour, thick = 8}) => {
   const frame = useCurrentFrame();
   if (at === undefined) return null;
   const p = ramp(frame, at, 9, Easing.inOut(Easing.cubic));
   return (
-    <svg viewBox="0 0 100 20" preserveAspectRatio="none" style={{position: "absolute", left: "-3%", width: "106%", top: "34%",
-      height: "34%", overflow: "visible", pointerEvents: "none"}}>
-      <path d="M1 13 C 30 11, 60 9, 99 6" fill="none" stroke={colour} strokeWidth={thick} strokeLinecap="round"
-        vectorEffect="non-scaling-stroke" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - p} />
-    </svg>
+    <div style={{position: "absolute", left: "-4%", width: "108%", top: `calc(54% - ${thick / 2}px)`, height: thick,
+      transform: "rotate(-1.5deg)", pointerEvents: "none"}}>
+      <div style={{width: "100%", height: "100%", background: colour, borderRadius: thick,
+        transform: `scaleX(${p})`, transformOrigin: "left center"}} />
+    </div>
   );
 };
 

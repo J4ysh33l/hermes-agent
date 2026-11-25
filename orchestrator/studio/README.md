@@ -385,3 +385,5 @@ moves writing jobs on and renders inside `studio.render_window`, one run at a ti
 - **Live** (opt-in `RealKokoro` test with `STUDIO_KOKORO_PYTHON`/`STUDIO_KOKORO_MODELS`, and the CLI): real
   Kokoro, English + Hindi in one 24 kHz file with line times. **Not run yet:** Edge TTS (blocked here),
   the installer on the host, the Gemini rewrite against the real API, Telegram for real.
+
+Design rules for every scene, mark and caption (shared with /edit): `remotion/DESIGN.md`.

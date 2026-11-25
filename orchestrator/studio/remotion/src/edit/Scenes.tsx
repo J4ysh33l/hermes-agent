@@ -26,7 +26,37 @@ import {EditLook, FAMILIES} from "./Graphic";
 export const SEAM = 960;
 const SIDE = 84; // margin each side
 const CW = 1080 - 2 * SIDE; // content width
-const LINE = "rgba(255,255,255,0.14)"; // hairlines on the field
+
+// Every colour a scene draws comes from the style: the field (box_bg), accent, alert, ink, paper. Text on the
+// field is white on a dark field and ink on a light one; hairlines, dim text and tints are made from those.
+const rgb = (hex: string) => {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h.slice(0, 6), 16);
+  return [n >> 16, (n >> 8) & 255, n & 255];
+};
+export const alpha = (hex: string, a: number) => `rgba(${rgb(hex).join(", ")}, ${a})`;
+const light = (hex: string) => {
+  const [r, g, b] = rgb(hex).map((c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4;
+};
+const mix = (hex: string, other: string, k: number) => {
+  const a = rgb(hex), b = rgb(other);
+  return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * k)).join(", ")})`;
+};
+const pal = (look: EditLook) => {
+  const fg = light(look.box_bg) ? look.ink : "#FFFFFF";
+  return {
+    fg,
+    fade: (a: number) => alpha(fg, a),
+    line: alpha(fg, 0.14),
+    alertTint: alpha(look.alert, 0.16),
+    accentTint: alpha(look.accent, 0.16),
+    alertSoft: mix(look.alert, fg, 0.45), // an icon in the alert's tint, readable on the field
+  };
+};
 
 // The icons a plan may name (plan.py ICONS lists the same names).
 export const ICONS: Record<string, React.FC<L.LucideProps>> = {
@@ -94,7 +124,7 @@ const display = (look: EditLook) => FAMILIES[look.font] ?? FAMILIES.intertight;
 const textFamily = (look: EditLook) => FAMILIES[look.font] ?? FAMILIES.intertight;
 
 const toneColour = (look: EditLook, tone: Tone | undefined, dark: boolean) =>
-  tone === "problem" ? look.alert : tone === "solution" ? (dark ? look.accent : look.good) : dark ? "#FFFFFF" : look.ink;
+  tone === "problem" ? look.alert : tone === "solution" ? (dark ? look.accent : look.good) : dark ? pal(look).fg : look.ink;
 
 const Icon: React.FC<{name?: string; size: number; colour: string; stroke?: number}> = ({name, size, colour, stroke = 1.8}) => {
   const C = name ? ICONS[name] : undefined;
@@ -111,6 +141,7 @@ const dimmed = (frame: number, at?: number) => (at === undefined ? 1 : interpola
 // (panel) or off the bottom (full) over 10 frames, uncovering the content.
 const Field: React.FC<{look: Look; layout: SceneItem["layout"]; bare?: boolean; children: React.ReactNode}> =
   ({look, layout, bare, children}) => {
+    const P = pal(look);
   const frame = useCurrentFrame();
   const height = layout === "panel" ? SEAM : 1920;
   const curtain = ramp(frame, 0, 11);
@@ -121,7 +152,7 @@ const Field: React.FC<{look: Look; layout: SceneItem["layout"]; bare?: boolean; 
         background: `linear-gradient(180deg, ${look.box_bg} 0%, ${shade(look.box_bg, -0.16)} 100%)`}}>
         {look.handle ? (
           <div style={{position: "absolute", right: SIDE - 20, top: layout === "panel" ? 44 : 250, display: "flex", alignItems: "center",
-            gap: 8, color: "rgba(255,255,255,0.62)", fontFamily: textFamily(look), fontWeight: 500, fontSize: 24}}>
+            gap: 8, color: P.fade(0.62), fontFamily: textFamily(look), fontWeight: 500, fontSize: 24}}>
             {look.handle}
           </div>
         ) : null}
@@ -148,6 +179,7 @@ const shade = (hex: string, amount: number) => {
 // part lands it moves up to its place above them (the list grows under it).
 const Heading: React.FC<{text?: string; look: Look; dark: boolean; first: number; below: number; size: number}> =
   ({text, look, dark, first, below, size}) => {
+    const P = pal(look);
     const frame = useCurrentFrame();
     if (!text) return null;
     const dock = ramp(frame, first - 2, 14);
@@ -156,7 +188,7 @@ const Heading: React.FC<{text?: string; look: Look; dark: boolean; first: number
         marginBottom: 44}}>
         <Rise at={0}>
           <div style={{fontFamily: display(look), fontWeight: 600, fontSize: size, lineHeight: 1.02, letterSpacing: "-0.035em",
-            color: dark ? "#FFFFFF" : look.ink, textWrap: "balance"} as React.CSSProperties}>
+            color: dark ? P.fg : look.ink, textWrap: "balance"} as React.CSSProperties}>
             <Marked text={text} accent={dark ? look.accent : look.good} />
           </div>
         </Rise>
@@ -167,6 +199,7 @@ const Heading: React.FC<{text?: string; look: Look; dark: boolean; first: number
 // ---- the scene types ----------------------------------------------------------------------------------
 
 const Statement: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const lines = item.lines ?? [{text: item.text ?? "", tone: item.tone, strike_at: item.strike_at, underline_at: item.underline_at}];
   const top = item.layout === "top";
@@ -188,7 +221,7 @@ const Statement: React.FC<Props> = ({look, item, dark}) => {
             </Rise>
           );
         })}
-        {item.sub ? <Rise at={item.sub_at ?? 10}><div style={{marginTop: 6, background: look.box_bg, color: "#FFFFFF", borderRadius: look.radius,
+        {item.sub ? <Rise at={item.sub_at ?? 10}><div style={{marginTop: 6, background: look.box_bg, color: P.fg, borderRadius: look.radius,
           padding: "10px 24px", fontFamily: textFamily(look), fontWeight: 500, fontSize: 42}}><Marked text={item.sub} accent={look.accent} /></div></Rise> : null}
       </AbsoluteFill>
     );
@@ -211,13 +244,14 @@ const Statement: React.FC<Props> = ({look, item, dark}) => {
         );
       })}
       {item.sub ? <Rise at={item.sub_at ?? 10} style={{marginTop: 30}}>
-        <div style={{fontFamily: textFamily(look), fontWeight: 500, fontSize: 54, lineHeight: 1.2, color: "rgba(255,255,255,0.82)"}}>
+        <div style={{fontFamily: textFamily(look), fontWeight: 500, fontSize: 54, lineHeight: 1.2, color: P.fade(0.82)}}>
           <Marked text={item.sub} accent={look.accent} /></div></Rise> : null}
     </div>
   );
 };
 
 const Counter: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const at = item.at ?? 0;
   const to = item.number ?? 0;
   const value = useCount(item.count_from ?? 0, to, at);
@@ -234,10 +268,10 @@ const Counter: React.FC<Props> = ({look, item, dark}) => {
           color: top ? (item.tone === "solution" ? look.good : look.alert) : colour, fontVariantNumeric: "tabular-nums"}}>{shown}</div>
       </Rise>
       {item.label ? <Rise at={at + 6} style={{marginTop: top ? 6 : 18}}><div style={{fontFamily: textFamily(look), fontWeight: 500,
-        fontSize: top ? 44 : 54, lineHeight: 1.15, letterSpacing: "-0.01em", color: top ? look.ink : "#FFFFFF", textAlign: top ? "center" : "left"}}>
+        fontSize: top ? 44 : 54, lineHeight: 1.15, letterSpacing: "-0.01em", color: top ? look.ink : P.fg, textAlign: top ? "center" : "left"}}>
         <Marked text={item.label} accent={top ? look.good : look.accent} /></div></Rise> : null}
-      {item.sub ? <Rise at={at + 14} style={{marginTop: 20}}><div style={{display: "inline-block", background: top ? look.box_bg : "rgba(255,255,255,0.1)",
-        color: "#FFFFFF", fontFamily: textFamily(look), fontWeight: 500, fontSize: 36, padding: "8px 22px", borderRadius: 999}}>
+      {item.sub ? <Rise at={at + 14} style={{marginTop: 20}}><div style={{display: "inline-block", background: top ? look.box_bg : P.fade(0.1),
+        color: P.fg, fontFamily: textFamily(look), fontWeight: 500, fontSize: 36, padding: "8px 22px", borderRadius: 999}}>
         {item.sub}</div></Rise> : null}
     </>
   );
@@ -245,7 +279,7 @@ const Counter: React.FC<Props> = ({look, item, dark}) => {
     return (
       <AbsoluteFill style={{alignItems: "center", paddingTop: 120}}>
         <div style={{background: look.paper, borderRadius: look.radius * 2, padding: "26px 56px 34px", display: "flex", flexDirection: "column",
-          alignItems: "center", boxShadow: "0 24px 60px rgba(0,0,0,0.2)", opacity: ramp(useCurrentFrame(), at - 4, 8)}}>{body}</div>
+          alignItems: "center", boxShadow: "0 18px 40px rgba(0,0,0,0.18)", opacity: ramp(useCurrentFrame(), at - 4, 8)}}>{body}</div>
       </AbsoluteFill>
     );
   }
@@ -255,6 +289,7 @@ const Counter: React.FC<Props> = ({look, item, dark}) => {
 const firstAt = (ats: (number | undefined)[], step: number) => Math.min(...ats.map((a, k) => a ?? k * step), 999);
 
 const Stack: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const rows = item.rows ?? [];
   const bad = (item.tone ?? "problem") === "problem";
   const rowH = 146;
@@ -266,13 +301,13 @@ const Stack: React.FC<Props> = ({look, item, dark}) => {
         const at = row.at ?? n * 10;
         return (
           <Rise key={n} at={at}>
-            <div style={{height: rowH, display: "flex", alignItems: "center", gap: 30, borderTop: `2px solid ${LINE}`}}>
+            <div style={{height: rowH, display: "flex", alignItems: "center", gap: 30, borderTop: `2px solid ${P.line}`}}>
               <div style={{width: 88, height: 88, borderRadius: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                background: bad ? "rgba(229,72,77,0.16)" : "rgba(65,193,186,0.16)"}}>
-                <Icon name={row.icon} size={48} colour={bad ? "#FF9C9F" : look.accent} />
+                background: bad ? P.alertTint : P.accentTint}}>
+                <Icon name={row.icon} size={48} colour={bad ? P.alertSoft : look.accent} />
               </div>
               <div style={{flex: 1, fontFamily: textFamily(look), fontWeight: 500, fontSize: 60, lineHeight: 1.08, letterSpacing: "-0.02em",
-                color: "#FFFFFF"}}><Marked text={row.text} accent={look.accent} /></div>
+                color: P.fg}}><Marked text={row.text} accent={look.accent} /></div>
               {row.mark && row.mark !== "none" ? <Tick at={at + 6} kind={row.mark} size={64}
                 colour={row.mark === "check" ? look.accent : look.alert} /> : null}
             </div>
@@ -284,6 +319,7 @@ const Stack: React.FC<Props> = ({look, item, dark}) => {
 };
 
 const Points: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const items = item.items ?? [];
   const rowH = item.numbered ? 170 : 128;
@@ -296,16 +332,16 @@ const Points: React.FC<Props> = ({look, item, dark}) => {
         const strikeAt = item.strike_at !== undefined ? item.strike_at + k * 5 : undefined;
         return (
           <Rise key={k} at={at}>
-            <div style={{minHeight: rowH, display: "flex", alignItems: "center", gap: 34, borderTop: item.numbered ? `2px solid ${LINE}` : "none",
+            <div style={{minHeight: rowH, display: "flex", alignItems: "center", gap: 34, borderTop: item.numbered ? `2px solid ${P.line}` : "none",
               opacity: dimmed(frame, strikeAt)}}>
               {item.numbered
                 ? <div style={{fontFamily: display(look), fontWeight: 600, fontSize: 112, lineHeight: 1, letterSpacing: "-0.05em", color: look.accent,
                     width: 120, fontVariantNumeric: "tabular-nums"}}>{k + 1}</div>
                 : <div style={{width: 30, height: 6, borderRadius: 6, background: look.accent, flexShrink: 0}} />}
               <div style={{position: "relative", fontFamily: textFamily(look), fontWeight: 500, fontSize: item.numbered ? 72 : 64,
-                lineHeight: 1.1, letterSpacing: "-0.02em", color: "#FFFFFF"}}>
+                lineHeight: 1.1, letterSpacing: "-0.02em", color: P.fg}}>
                 <Marked text={it.text} accent={look.accent} />
-                <Strike at={strikeAt} colour={look.alert} thick={7} />
+                <Strike at={strikeAt} colour={look.alert} thick={item.numbered ? 10 : 9} />
               </div>
             </div>
           </Rise>
@@ -316,6 +352,7 @@ const Points: React.FC<Props> = ({look, item, dark}) => {
 };
 
 const Steps: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const steps = item.steps ?? [];
   const n = steps.length;
@@ -328,7 +365,7 @@ const Steps: React.FC<Props> = ({look, item, dark}) => {
     <div>
       <Heading text={item.title} look={look} dark={dark} first={firstAt(ats, 12)} below={380} size={item.layout === "full" ? 96 : 80} />
       <div style={{position: "relative", height: 380}}>
-        <div style={{position: "absolute", left: gap / 2, right: gap / 2, top: 44, height: 4, background: LINE, borderRadius: 4}} />
+        <div style={{position: "absolute", left: gap / 2, right: gap / 2, top: 44, height: 4, background: P.line, borderRadius: 4}} />
         <div style={{position: "absolute", left: gap / 2, top: 44, height: 4, width: n > 1 ? (line / (n - 1)) * (CW - gap) : 0,
           background: look.accent, borderRadius: 4}} />
         {steps.map((s, k) => {
@@ -337,12 +374,12 @@ const Steps: React.FC<Props> = ({look, item, dark}) => {
           return (
             <div key={k} style={{position: "absolute", left: gap * k, width: gap, top: 0, display: "flex", flexDirection: "column", alignItems: "center"}}>
               <div style={{width: 92, height: 92, borderRadius: 92, display: "flex", alignItems: "center", justifyContent: "center",
-                background: on ? look.accent : look.box_bg, border: `3px solid ${on ? look.accent : LINE}`, transform: `scale(${0.9 + 0.1 * p})`}}>
-                {s.icon ? <Icon name={s.icon} size={44} colour={on ? look.ink : "rgba(255,255,255,0.5)"} />
-                  : <span style={{fontFamily: display(look), fontWeight: 600, fontSize: 40, color: on ? look.ink : "rgba(255,255,255,0.5)"}}>{k + 1}</span>}
+                background: on ? look.accent : look.box_bg, border: `3px solid ${on ? look.accent : P.line}`, transform: `scale(${0.9 + 0.1 * p})`}}>
+                {s.icon ? <Icon name={s.icon} size={44} colour={on ? look.ink : P.fade(0.5)} />
+                  : <span style={{fontFamily: display(look), fontWeight: 600, fontSize: 40, color: on ? look.ink : P.fade(0.5)}}>{k + 1}</span>}
               </div>
               <div style={{marginTop: 26, opacity: 0.35 + 0.65 * p, transform: `translateY(${(1 - p) * 16}px)`, fontFamily: textFamily(look),
-                fontWeight: 600, fontSize: n > 3 ? 34 : 40, lineHeight: 1.1, textAlign: "center", color: "#FFFFFF", padding: "0 8px"}}>{s.label}</div>
+                fontWeight: 600, fontSize: n > 3 ? 34 : 40, lineHeight: 1.1, textAlign: "center", color: P.fg, padding: "0 8px"}}>{s.label}</div>
               {s.sub ? <div style={{marginTop: 10, fontFamily: textFamily(look), fontWeight: 500, fontSize: 28, textAlign: "center",
                 color: look.accent, opacity: ramp(frame, s.sub_at ?? ats[k] + 10, 10)}}>{s.sub}</div> : null}
             </div>
@@ -354,6 +391,7 @@ const Steps: React.FC<Props> = ({look, item, dark}) => {
 };
 
 const Compare: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const at = item.at ?? 10;
   const tilt = ramp(frame, at, 22) * (item.heavy === "left" ? -7 : 7);
@@ -362,11 +400,11 @@ const Compare: React.FC<Props> = ({look, item, dark}) => {
     const strikeAt = item.strike === side ? item.strike_at : undefined;
     return (
       <Rise at={side === "left" ? 0 : 6}>
-        <div style={{position: "relative", background: heavy ? look.alert : "rgba(255,255,255,0.1)", color: "#FFFFFF", borderRadius: look.radius,
+        <div style={{position: "relative", background: heavy ? look.alert : P.fade(0.1), color: P.fg, borderRadius: look.radius,
           padding: heavy ? "30px 34px" : "20px 28px", fontFamily: textFamily(look), fontWeight: 600, fontSize: heavy ? 48 : 38, lineHeight: 1.1,
           opacity: dimmed(frame, strikeAt)}}>
           {text}
-          <Strike at={strikeAt} colour={heavy ? "#FFFFFF" : look.alert} thick={7} />
+          <Strike at={strikeAt} colour={heavy ? P.fg : look.alert} thick={7} />
         </div>
       </Rise>
     );
@@ -378,7 +416,7 @@ const Compare: React.FC<Props> = ({look, item, dark}) => {
         <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24}}>
           {box("left", item.left?.text)}{box("right", item.right?.text)}
         </div>
-        <div style={{height: 10, background: "rgba(255,255,255,0.32)", borderRadius: 8, marginTop: 12}} />
+        <div style={{height: 10, background: P.fade(0.32), borderRadius: 8, marginTop: 12}} />
       </div>
       <div style={{width: 0, height: 0, borderLeft: "48px solid transparent", borderRight: "48px solid transparent",
         borderBottom: `84px solid ${look.accent}`, marginTop: 2}} />
@@ -387,6 +425,7 @@ const Compare: React.FC<Props> = ({look, item, dark}) => {
 };
 
 const Bars: React.FC<Props> = ({look, item, dark}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const bars = item.bars ?? [];
   const tall = item.layout === "panel" ? 380 : 620;
@@ -394,7 +433,7 @@ const Bars: React.FC<Props> = ({look, item, dark}) => {
   return (
     <div>
       <Heading text={item.title} look={look} dark={dark} first={0} below={0} size={item.layout === "full" ? 116 : 96} />
-      <div style={{display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: tall + 110, borderBottom: `3px solid ${LINE}`}}>
+      <div style={{display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: tall + 110, borderBottom: `3px solid ${P.line}`}}>
         {bars.map((b, k) => {
           const at = b.at ?? k * 15;
           const g = ramp(frame, at, 22);
@@ -404,32 +443,33 @@ const Bars: React.FC<Props> = ({look, item, dark}) => {
             <div key={k} style={{display: "flex", flexDirection: "column", alignItems: "center", width: colW}}>
               <div style={{fontFamily: display(look), fontWeight: 600, fontSize: 58, letterSpacing: "-0.03em", color: colour, opacity: g,
                 marginBottom: 14, whiteSpace: "nowrap"}}>{b.value}</div>
-              <div style={{width: colW * 0.72, height: h, background: colour, borderRadius: "16px 16px 0 0"}} />
+              <div style={{width: colW * 0.72, height: h, background: colour, borderRadius: "24px 24px 0 0"}} />
             </div>
           );
         })}
       </div>
       <div style={{display: "flex", justifyContent: "space-around", marginTop: 18}}>
         {bars.map((b, k) => <div key={k} style={{width: colW, textAlign: "center", fontFamily: textFamily(look), fontWeight: 500, fontSize: 36,
-          color: "rgba(255,255,255,0.8)", opacity: ramp(frame, b.at ?? k * 15, 12)}}>{b.label}</div>)}
+          color: P.fade(0.8), opacity: ramp(frame, b.at ?? k * 15, 12)}}>{b.label}</div>)}
       </div>
     </div>
   );
 };
 
 const Badge: React.FC<Props> = ({look, item}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const at = item.at ?? 12;
   return (
     <div style={{display: "flex", flexDirection: "column", alignItems: "flex-start"}}>
-      <div style={{width: 132, height: 132, borderRadius: 34, background: "rgba(65,193,186,0.16)", display: "flex", alignItems: "center",
+      <div style={{width: 132, height: 132, borderRadius: 34, background: P.accentTint, display: "flex", alignItems: "center",
         justifyContent: "center", opacity: ramp(frame, 0, 10), transform: `scale(${0.9 + 0.1 * ramp(frame, 0, 14)})`}}>
         <Icon name={item.icon ?? "hospital"} size={72} colour={look.accent} /></div>
       <Rise at={5} style={{marginTop: 34}}><div style={{fontFamily: display(look), fontWeight: 600, fontSize: fitLine(item.text ?? "", 120, CW),
-        lineHeight: 1.02, letterSpacing: "-0.04em", color: "#FFFFFF"}}><Marked text={item.text ?? ""} accent={look.accent} /></div></Rise>
+        lineHeight: 1.02, letterSpacing: "-0.04em", color: P.fg}}><Marked text={item.text ?? ""} accent={look.accent} /></div></Rise>
       {item.badge ? <div style={{marginTop: 30, display: "flex", alignItems: "center", gap: 16}}>
         <Tick at={at} kind="check" colour={look.accent} size={64} />
-        <Rise at={at + 4}><div style={{fontFamily: textFamily(look), fontWeight: 500, fontSize: 46, color: "#FFFFFF"}}>{item.badge}</div></Rise>
+        <Rise at={at + 4}><div style={{fontFamily: textFamily(look), fontWeight: 500, fontSize: 46, color: P.fg}}>{item.badge}</div></Rise>
       </div> : null}
     </div>
   );
@@ -440,13 +480,14 @@ const Badge: React.FC<Props> = ({look, item}) => {
 const toProfile = (look: Look): Profile => ({
   ...DEFAULT_PROFILE,
   name: "edit",
-  theme: {...DEFAULT_PROFILE.theme, bg: look.box_bg, glow: look.box_bg, panel: shade(look.box_bg, 0.25), text: "#FFFFFF",
-    muted: "rgba(255,255,255,0.7)", accent: look.accent, cool: look.figure && look.figure !== "none" ? look.figure : look.accent,
+  theme: {...DEFAULT_PROFILE.theme, bg: look.box_bg, glow: look.box_bg, panel: shade(look.box_bg, 0.25), text: pal(look).fg,
+    muted: pal(look).fade(0.7), accent: look.accent, cool: look.figure && look.figure !== "none" ? look.figure : look.accent,
     bad: look.alert, good: look.good, font: look.font === "intertight" ? "intertight" : "inter", background: "flat"},
   motion: {...DEFAULT_PROFILE.motion, feel: "soft", enter: "rise", exit: "cut", exit_frames: 1, drift: 0.02, transition: "none"},
 });
 
 const Library: React.FC<{look: Look; item: SceneItem; frames: number}> = ({look, item, frames}) => {
+  const P = pal(look);
   const scene = {start: 0, end: frames / 30, enter: "", exit: "", transition: "", emoji: "",
     beats: (item.beats ?? []).map((b) => b.at / 30), ...item.scene} as unknown as LibraryScene;
   const entry = SCENES[scene.type];
@@ -462,6 +503,7 @@ const Library: React.FC<{look: Look; item: SceneItem; frames: number}> = ({look,
 };
 
 const End: React.FC<{look: Look; item: SceneItem}> = ({look, item}) => {
+  const P = pal(look);
   const frame = useCurrentFrame();
   const curtain = ramp(frame, 0, 12);
   return (
@@ -471,7 +513,7 @@ const End: React.FC<{look: Look; item: SceneItem}> = ({look, item}) => {
       {item.sub ? <Rise at={10} style={{marginTop: 26}}><div style={{fontFamily: display(look), fontWeight: 500, fontSize: 46,
         letterSpacing: "-0.02em", color: look.ink}}><Marked text={item.sub} accent={look.good} /></div></Rise> : null}
       {item.cta ? (
-        <div style={{marginTop: 96, display: "flex", alignItems: "center", gap: 18, maxWidth: 900, background: look.box_bg, color: "#FFFFFF",
+        <div style={{marginTop: 96, display: "flex", alignItems: "center", gap: 18, maxWidth: 900, background: look.box_bg, color: P.fg,
           padding: "26px 44px", borderRadius: 999, fontFamily: textFamily(look), fontWeight: 600, fontSize: 42, lineHeight: 1.15,
           opacity: ramp(frame, 16, 10), transform: `translateY(${(1 - ramp(frame, 16, 16)) * 30}px)`}}>
           <span style={{textAlign: "center"}}>{plain(item.cta)}</span>
@@ -490,6 +532,7 @@ const TYPES: Record<string, React.FC<Props>> = {
 };
 
 export const Scene: React.FC<{look: Look; item: SceneItem; frames: number}> = ({look, item, frames}) => {
+  const P = pal(look);
   if (item.type === "end") return <End look={look} item={item} />;
   if (item.type === "library") {
     return <Field look={{...look, handle: undefined}} layout="full" bare><Library look={look} item={item} frames={frames} /></Field>;

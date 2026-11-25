@@ -189,7 +189,7 @@ def place(chosen: plans.Plan, found: list[Sentence], words: list[Word], cut: cut
             by_id = {s.id: s for s in found}
             _frames(item, lambda anchor: round((cut.to_output(plans._time(by_id, plans._anchor(anchor), "start")) - a) * fps))
             beats = [f for f, _name in _beats(item)]
-            lead = min(beats) - SCENE_LEAD if beats and item.get("type") not in ("statement", "counter", "badge") else 0
+            lead = min(beats) - SCENE_LEAD if beats and item.get("type") not in ("counter", "badge") else 0
             if lead > 0:  # never an empty screen waiting: the scene arrives just before its first element
                 a += lead / fps
                 _shift(item, -lead)
@@ -283,18 +283,33 @@ def caption_pages(words: list[Word], found: list[Sentence], cut: cuts.CutList, l
             if s in by_id and 1 <= w <= len(by_id[s].words):
                 word = by_id[s].words[w - 1]
                 tones[round(cut.to_output(word.start), 2)] = tone
-    out = []
-    for page in captions.pages(words, cut, look, hidden):
-        mid = (page.start + page.end) / 2
+    def place_at(t: float) -> str:
         place = "face"
         for p in placed:
-            if p.kind == "scene" and p.start - 0.05 <= mid <= p.end:
+            if p.kind == "scene" and p.start - 0.05 <= t < p.end:
                 place = {"panel": "seam", "full": "scene"}.get(p.item.get("layout", "panel"), place)
-            elif p.kind in plans.SPLIT_KINDS and p.start - 0.05 <= mid <= p.end:
+            elif p.kind in plans.SPLIT_KINDS and p.start - 0.05 <= t < p.end:
                 place = "seam"
-        out.append({"from": round(page.start * fps), "to": max(round(page.start * fps) + 1, round(page.end * fps)), "place": place,
-                    "words": [{"text": text, "from": round(a * fps), "to": round(b * fps), **({"tone": tones[round(a, 2)]}
-                               if round(a, 2) in tones else {})} for text, a, b in page.words]})
+        return place
+
+    def word(text: str, a: float, b: float) -> dict[str, Any]:
+        return {"text": text, "from": round(a * fps), "to": round(b * fps), **({"tone": tones[round(a, 2)]} if round(a, 2) in tones else {})}
+
+    out = []
+    for page in captions.pages(words, cut, look, hidden):
+        # a page that runs across a panel's edge splits there: its words move with the layout, never stay behind
+        groups: list[tuple[str, list[tuple[str, float, float]]]] = []
+        for w in page.words:
+            here = place_at(w[1])
+            if groups and groups[-1][0] == here:
+                groups[-1][1].append(w)
+            else:
+                groups.append((here, [w]))
+        for n, (place, ws_) in enumerate(groups):
+            start = page.start if n == 0 else ws_[0][1]
+            end = groups[n + 1][1][0][1] if n + 1 < len(groups) else page.end
+            out.append({"from": round(start * fps), "to": max(round(start * fps) + 1, round(end * fps)), "place": place,
+                        "words": [word(*w) for w in ws_]})
     return out
 
 

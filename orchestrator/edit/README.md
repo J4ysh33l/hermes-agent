@@ -138,3 +138,6 @@ never in memory together.
   your real footage.
 - **Not yet run end to end on real footage with a real Claude plan.** Tested on a synthetic clip carrying
   your voice recording, with a hand-written plan.
+
+Design rules for every scene, mark and caption (both pipelines): `orchestrator/studio/remotion/DESIGN.md`.
+New graphics take every colour from the style, pass in a dark and a light palette, and use `src/kit.tsx` for motion.
