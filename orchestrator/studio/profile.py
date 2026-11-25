@@ -93,7 +93,7 @@ SCHEMA: dict[str, dict[str, Callable[[str, Any], Any]]] = {
                "transition": _choice(*TRANSITIONS), "transition_frames": _number(3, 20)},
     "captions": {"words": _number(1, 6), "size": _number(48, 140), "upper": _flag, "font": FONT,
                  "stroke": _number(0, 24), "fill": _colour, "outline": _colour},
-    "voice": {"engine": _choice("kokoro", "edge"), "voice_en": _text, "voice_hi": _text,
+    "voice": {"engine": _choice("kokoro", "edge", "omnivoice"), "voice_en": _text, "voice_hi": _text,
               "speed": _number(0.5, 2.0), "pause": _number(0, 1.0)},
     "writing": {"format": _choice("explainer", "news", "how-it-works", "business-case", "hindi-explainer"),
                 "language": _choice("en", "hi", "hinglish"), "hooks": _texts, "humour": _text, "tone": _text,
