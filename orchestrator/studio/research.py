@@ -109,16 +109,18 @@ def by_claude(settings: Settings, how: str) -> bool:
 
 
 def _claude(http: Http, keys: Keys, settings: Settings, prompt: str) -> Findings:
+    """A separate, smaller Claude (studio.research_claude) does the searching: search results are long and
+    are read at that model's price, and the writer only gets the fact lines."""
+    model = settings.research_claude or settings.claude_model
     try:
-        answer, sources = llm.claude_search(http, keys.claude, settings.claude_model, prompt, workflow="studio",
-                                            step="research", effort=settings.claude_effort)
+        answer, sources = llm.claude_search(http, keys.claude, model, prompt, workflow="studio", step="research",
+                                            effort="medium")
     except HttpError as exc:
-        return Findings((), (), skipped=f"{settings.claude_model}: {'no connection' if exc.status == 0 else f'HTTP {exc.status}'}")
+        return Findings((), (), skipped=f"{model}: {'no connection' if exc.status == 0 else f'HTTP {exc.status}'}")
     except ValueError as exc:
-        return Findings((), (), skipped=f"{settings.claude_model}: {exc}")
+        return Findings((), (), skipped=f"{model}: {exc}")
     found = facts(answer)
-    return Findings(found, tuple(sources), settings.claude_model) if found else \
-        Findings((), (), skipped=f"{settings.claude_model}: no facts in the answer")
+    return Findings(found, tuple(sources), model) if found else Findings((), (), skipped=f"{model}: no facts in the answer")
 
 
 def gather(http: Http, keys: Keys, settings: Settings, notes: str, seconds: float, today: date,

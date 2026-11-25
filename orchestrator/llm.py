@@ -111,7 +111,9 @@ def claude_search(http, api_key: str, model: str, prompt: str, *, workflow: str,
                   max_tokens: int = 16000, effort: str = "medium") -> tuple[str, list[tuple[str, str]]]:
     """Claude with its web search tool: (the answer, its sources as (site, link) pairs). The search runs on
     Anthropic's side; a long search may pause the turn, which is continued (each call logged)."""
-    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": max_uses}]
+    # the dynamic-filtering search runs on Opus/Sonnet/Fable; Haiku takes the basic one
+    kind = "web_search_20250305" if "haiku" in model else "web_search_20260209"
+    tools = [{"type": kind, "name": "web_search", "max_uses": max_uses}]
     messages: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     headers = {"x-api-key": api_key, "anthropic-version": CLAUDE_VERSION, "anthropic-beta": CLAUDE_FALLBACK}
     blocks: list[dict[str, Any]] = []

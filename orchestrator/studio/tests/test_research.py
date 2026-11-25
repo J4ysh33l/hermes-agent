@@ -134,11 +134,14 @@ class Researching(unittest.TestCase):
         self.http.on("POST", claude, searched)
         st = settings.Settings(writer="claude", claude_via="api")
         found = research.gather(self.http, settings.Keys("g", "sk"), st, TOPIC, 45, date(2026, 11, 24), "claude-api")
-        self.assertEqual((found.model, len(found.facts)), ("claude-opus-5-5", 2))
+        self.assertEqual((found.model, len(found.facts)), ("claude-sonnet-5-5", 2))  # the smaller searcher
         self.assertEqual(found.sites(), ["iimcat.ac.in", "careers360.com"])
         body = self.http.calls[-1].json_body
-        self.assertEqual(body["tools"][0]["type"], "web_search_20260209")
+        self.assertEqual((body["model"], body["tools"][0]["type"]), ("claude-sonnet-5-5", "web_search_20260209"))
         self.assertFalse([c for c in self.http.calls if c.url.startswith(GEMINI)])
+        research.gather(self.http, settings.Keys("g", "sk"), settings.Settings(research_claude="claude-haiku-5-5"),
+                        TOPIC, 45, date(2026, 11, 24), "claude-api")
+        self.assertEqual(self.http.calls[-1].json_body["tools"][0]["type"], "web_search_20250305")  # Haiku: basic search
         handoff = research.gather(self.http, settings.Keys("g"), st, TOPIC, 45, date(2026, 11, 24), "handoff")
         self.assertEqual(handoff.skipped, "Claude researches through the handoff")  # its own issue, not Gemini
         self.assertFalse([c for c in self.http.calls if c.url.startswith(GEMINI)])

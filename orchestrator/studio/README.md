@@ -303,7 +303,9 @@ moves writing jobs on and renders inside `studio.render_window`, one run at a ti
 - **Research first** (`research.py`, `prompts/research.md`): a researcher finds the current facts on the
   topic on the web, one line each with its site. **Who searches** (`studio.researcher`, default `auto`):
   when Claude writes, Claude researches and Gemini is not called: with `ANTHROPIC_API_KEY`, one Messages
-  call with Claude's web search tool (`llm.claude_search`); through the handoff, its own issue before the
+  call with Claude's web search tool (`llm.claude_search`), made by a smaller Claude than the writer
+  (`studio.research_claude`, default Sonnet 5.5; Haiku 5.5 is cheaper and uses the basic search tool) so the long
+  search results are read at its price and the writer only gets the fact lines; through the handoff, its own issue before the
   script (a separate run on purpose: search results would otherwise ride along in the script run's context).
   When Gemini writes (or `researcher: gemini`), Google Search on Gemini (`studio.research_models`: on the
   free tier the 2.5 models could search, the 3.x ones could not, 2026-11-24). They are added to your notes under
