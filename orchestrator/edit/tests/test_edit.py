@@ -25,7 +25,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from orchestrator.edit import captions, cuts, media, plan as plans, queue, render, settings, style, words
+from orchestrator.edit import captions, cuts, media, plan as plans, queue, render, settings, style, watch, words
 from orchestrator.edit.words import Word
 import itertools
 
@@ -175,6 +175,21 @@ class PlanTests(unittest.TestCase):
         bare = plans.Plan.parse({"title": "Queues waste the morning", "punch": []})
         self.assertEqual(plans.check(bare, found, cut, self.look), [])  # no b-roll and no graphics is allowed
         self.assertTrue(any("nothing new on screen" in p for p in plans.advice(bare, found, cut, self.look)))
+
+    def test_the_editor_is_told_what_the_camera_saw(self) -> None:
+        face = [0.35, 0.25, 0.3, 0.17]
+        samples = [{"t": float(t), "face": None if t in (8, 9) else face, "faces": 1, "light": 40.0 if t >= 6 else 130.0,
+                    "sharp": 400.0, "motion": 2.0, "cut": t == 9} for t in range(14)]
+        found = words.sentences(talk("First point is short.", "Second point runs a bit longer here.",
+                                     "Third point is said in the dark.", pause=1.5))
+        found = [words.Sentence(s.id, s.words, s.first) for s in found]
+        text = watch.overview({"samples": samples}, "1080×1920", "sound: clean")
+        self.assertIn("head and shoulders", text)
+        self.assertIn("changes a lot", text)
+        log = watch.log({"samples": samples}, found)
+        self.assertEqual(len(log.splitlines()), len(found))
+        self.assertTrue(any("dark" in line for line in log.splitlines()))
+        self.assertEqual(watch.focus(Path("/nowhere"), 0, 1), (0.5, 0.42))
 
     def test_a_good_plan_passes(self) -> None:
         self.assertEqual(self.check({"graphics": [{"kind": "stat", "at": "S2.5", "text": "10× the same questions"},

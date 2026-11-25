@@ -31,7 +31,7 @@ from orchestrator.handoff import Handoff, HandoffError
 from orchestrator.notes.telegram import Telegram
 from orchestrator.studio import drive
 
-from . import cuts, editor, media, plan as plans, render, style, transcript, words
+from . import cuts, editor, media, plan as plans, render, style, transcript, watch, words
 
 DRIVE_ID = re.compile(r"(?:/d/|id=)([A-Za-z0-9_-]{20,})")
 TELEGRAM_MB = 48
@@ -135,7 +135,8 @@ def _ingest(ctx: Any, job: Job) -> None:
     ws = words.load(job.folder / "transcript.json")
     if words.has_devanagari(ws):
         job.data.setdefault("warnings", []).append("Some words came out in Devanagari; captions want Latin (edit.asr_language: en)")
-    job.data["sheets"] = media.sheets(job.folder / "source.mp4", words.sentences(ws), job.folder)
+    job.data["sheets"] = watch.look(job.folder, words.sentences(ws), ctx.settings, ctx.home, info.describe(),
+                                    info.seconds)["sheets"]
     raw.unlink(missing_ok=True)  # source.mp4 and voice.wav hold everything from here on
     job.log(f"ingested: {info.describe()}; {len(ws)} words", "transcribed")
 
@@ -155,7 +156,8 @@ def _plan(ctx: Any, job: Job) -> None:
     look, ws, found = _parts(ctx, job)
     sheets = [n for n in job.data.get("sheets", []) if (job.folder / n).is_file()]
     assets = sorted(p.name for p in (job.folder / "assets").glob("*") if p.is_file()) if (job.folder / "assets").is_dir() else []
-    text = editor.prompt(job.id, look, ws, found, job.data["asked"], sheets=sheets, assets=assets)
+    seen = (job.folder / "watch.md").read_text(encoding="utf-8") if (job.folder / "watch.md").is_file() else ""
+    text = editor.prompt(job.id, look, ws, found, job.data["asked"], sheets=sheets, assets=assets, seen=seen)
     via = ctx.settings.claude_via
     if via == "auto":
         via = "api" if ctx.keys.claude else "handoff"

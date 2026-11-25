@@ -28,7 +28,24 @@ name or fact they didn't say or write in the notes.
 
 ## What the camera saw
 
+You can't play the video, so here it is measured and in pictures. Read the log, then look at the sheets.
+
+{seen}
+
 {frames_note}
+
+## What you can change in the picture
+
+- **Colour and light** for this video, on top of the style's grade: "grade": {{"brightness": -0.1…0.1,
+  "contrast": -0.15…0.15, "saturation": -0.3…0.3, "warmth": -0.5…0.5, "sharpen": 0…0.8}}. Brighten dark
+  footage a little, cool a yellow tube light, add sharpening when focus is soft. A grade can't recover a
+  face lost in shadow or real blur; for those, cover the moment or cut it.
+- **Framing:** punch-ins zoom towards your face (found in every shot), so a punch also re-centres a face
+  that sits off-centre. A wide shot can take more punch-ins than a close-up.
+- **Bad moments** (face lost, blurred, a jump, someone walking past, looking away): cut them, cover them
+  with b-roll or a split, or blur part of the frame with "hide".
+- **Where graphics go:** the title sits at the top and cards in the lower third. If the log says the head
+  is near the top edge, or a card would cover hands showing something, choose another kind or moment.
 
 ## The creator's own files (assets/)
 
@@ -77,10 +94,11 @@ How to direct it:
    overlap; captions step aside while a card shows and sit on the seam during a split.
 6. "punch": [] lets code place punch-ins on the style's rhythm; list anchors only for deliberate emphasis
    (the word the zoom lands on).
-7. "music": two or three mood words that fit the tone ("calm minimal piano"), or "" for none.
-8. "title": 3–8 words that make a stranger stay: the claim or question of the video, in the creator's words
+7. "grade" (optional): only when the log or the sheets show a problem; leave it out otherwise.
+8. "music": two or three mood words that fit the tone ("calm minimal piano"), or "" for none.
+9. "title": 3–8 words that make a stranger stay: the claim or question of the video, in the creator's words
    where possible. Sentence case, no clickbait they didn't earn.
-9. "notes": one or two lines for the creator: what you cut and why, any word Whisper may have misheard that
+10. "notes": one or two lines for the creator: what you cut and why, any word Whisper may have misheard that
    shows on screen, and any shot or file that would make it better (a screen recording, a photo).
 
 When the file is written, run `python3 tools/check_edit.py {folder}` and fix every problem it lists until it

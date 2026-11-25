@@ -35,9 +35,15 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
    that also keeps "umm"/"matlab" from being dropped). The words are grouped into numbered sentences
    (`words.py`).
 3. **Plan** (`editor.py`, `plan.py`, `prompts/plan.md`). Claude directs the edit. It reads the numbered
-   sentences, the style, your notes, the list of your own files in the job's `assets/`, and **frame
-   sheets** (`frames-*.jpg`: one frame from each sentence, labelled), so it sees what the camera saw. It
-   writes `plan.json`:
+   sentences, the style, your notes, the list of your own files in the job's `assets/`, and what the camera
+   saw (`watch.py`, with OpenCV in the studio venv). Claude can't play a video, so it gets:
+   - `watch.md`: how it was recorded, measured: framing (where your face is, how big), light, focus, the
+     room's noise; then a log per sentence of what the picture does (face lost or moving, another face in
+     frame, dark, blurred, a jump);
+   - **frame sheets** (`frames-*.jpg`): a frame about every second, each labelled with its time and the word
+     being said ("21.0s S4.12").
+
+   It writes `plan.json`:
    - sentences to drop and words to trim (how much is its call);
    - the title card;
    - optionally, what covers or joins the face, anchored to words (`S3.5` = sentence 3, word 5):
@@ -46,7 +52,8 @@ python -m orchestrator.edit styles · style new <name> [--from mine] · queue
      - `pop`: a 1–3 word chip that springs in beside your face;
      - `stat`, `list`, `chapter`, `headline`, `quote`, `image`, `screenshot` cards;
      - `hide`: a blurred box over anything private (a patient's name, a phone number);
-   - punch-ins and the music mood.
+   - punch-ins (they zoom towards your face) and the music mood;
+   - optionally a colour fix for this footage ("grade": brighter, warmer, sharper...).
 
    Claude never sees or writes times, so it can't cut into a word. The plan goes through your Claude plan
    via the handoff repo, the same as the studio. Claude runs `tools/check_edit.py` there before handing

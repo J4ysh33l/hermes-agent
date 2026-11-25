@@ -67,8 +67,9 @@ class Brief:
 def frames_note(sheets: list[str], folder: str) -> str:
     if not sheets:
         return "(no frame sheets: decide from the words, and don't use \"hide\")"
-    return ("Frame sheets, one frame from the middle of each sentence, labelled S<n>; open and look at every one "
-            "before deciding (what is on screen, framing, focus, anything private):\n"
+    return ("Frame sheets: a frame about every second, each labelled with its time and the word being said "
+            "(\"21.0s S4.12\"). Open and look at every sheet before deciding: framing, expression, gestures, what "
+            "is behind you, focus, anything private, a bad moment to cut away from:\n"
             + "\n".join(f"- {folder}/{name}" for name in sheets))
 
 
@@ -79,7 +80,7 @@ def assets_note(names: list[str]) -> str:
 
 
 def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], asked: str, folder: str = "",
-           sheets: list[str] = (), assets: list[str] = ()) -> str:
+           sheets: list[str] = (), assets: list[str] = (), seen: str = "") -> str:
     cut = cuts.build(words, found, look)
     style = look.as_dict()
     g, pace, title = style["graphics"], style["pace"], style["title"]
@@ -90,7 +91,8 @@ def prompt(job: str, look: Style, words: list[Word], found: list[Sentence], aske
         tone=style["plan"]["tone"], avoid=", ".join(style["plan"]["avoid"]) or "nothing listed",
         kinds=", ".join(g["kinds"]), emoji_note="" if "emoji" in g["kinds"] or not g["emoji"] else ", emoji",
         change_every=pace["change_every"], 
-        frames_note=frames_note(list(sheets), folder or f"edit/{job}"), assets_note=assets_note(list(assets)), broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
+        frames_note=frames_note(list(sheets), folder or f"edit/{job}"),
+        seen=seen.strip() or "(the footage was not measured: judge from the frame sheets)", assets_note=assets_note(list(assets)), broll_pct=round(pace["broll"] * 100), title_kind=title["kind"],
         subtitle_note=(" with a short subtitle" if title["subtitle"] else "") + (
             "; wrap the 1–2 words that carry the point in *stars* (shown in the brand accent, italic), e.g. "
             "\"Care without *the chaos*\"" if title["accent"] != "none" else ""),

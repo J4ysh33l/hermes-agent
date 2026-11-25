@@ -20,7 +20,7 @@ from pathlib import Path
 
 from orchestrator.brief.store import default_state_dir
 
-from . import cuts, editor, media, plan as plans, render, settings, style, transcript, words
+from . import cuts, editor, media, plan as plans, render, settings, style, transcript, watch, words
 
 
 def _home() -> Path:
@@ -50,8 +50,9 @@ def cmd_run(a: argparse.Namespace, home: Path) -> int:
         print(f"transcript: {time.monotonic() - t:.0f} s", flush=True)
     ws = words.load(job / "transcript.json")
     found = words.sentences(ws)
-    if not any(job.glob("frames-*.jpg")):
-        media.sheets(job / "source.mp4", found, job)
+    if not (job / "watch.md").is_file():
+        info = media.probe(src if src.is_file() else job / "source.mp4")  # the upload, as you recorded it
+        watch.look(job, found, studio, home, info.describe(), info.seconds)
     chosen = plans.load(Path(a.plan).read_text(encoding="utf-8")) if a.plan else plans.basic(found, look)
     cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
     problems = plans.check(chosen, found, cut, look, a.notes or "") if a.plan else []
@@ -83,11 +84,14 @@ def cmd_prompt(a: argparse.Namespace, home: Path) -> int:
     ws = words.load(job / "transcript.json")
     asked = a.notes or ((job / "asked.txt").read_text(encoding="utf-8") if (job / "asked.txt").is_file() else "")
     found = words.sentences(ws)
-    if not any(job.glob("frames-*.jpg")) and (job / "source.mp4").is_file():
-        media.sheets(job / "source.mp4", found, job)
+    if not (job / "watch.md").is_file() and (job / "source.mp4").is_file():
+        _edit, studio = settings.load(home / "brief")
+        info = media.probe(job / "source.mp4")
+        watch.look(job, found, studio, home, info.describe(), info.seconds)
     sheets = sorted(p.name for p in job.glob("frames-*.jpg"))
+    seen = (job / "watch.md").read_text(encoding="utf-8") if (job / "watch.md").is_file() else ""
     assets = sorted(p.name for p in (job / "assets").glob("*") if p.is_file()) if (job / "assets").is_dir() else []
-    print(editor.prompt(job.name, look, ws, found, asked, str(job), sheets=sheets, assets=assets))
+    print(editor.prompt(job.name, look, ws, found, asked, str(job), sheets=sheets, assets=assets, seen=seen))
     return 0
 
 

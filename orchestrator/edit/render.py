@@ -26,7 +26,7 @@ from orchestrator.studio import audio, broll, qc, sound
 from orchestrator.studio.settings import Keys, Settings as StudioSettings
 from orchestrator.studio.video import PROJECT
 
-from . import captions, cuts, plan as plans
+from . import captions, cuts, plan as plans, watch
 from .media import MediaError, run
 from .settings import Settings
 from .style import Style
@@ -82,8 +82,11 @@ def _shots(cut: cuts.CutList, points: list[float], look: Style, fps: int) -> lis
     return shots
 
 
-def grade_filter(look: Style) -> str:
-    g = look["grade"]
+def grade_filter(look: Style, extra: dict[str, float] | None = None) -> str:
+    """The style's grade, plus what the editor added for this footage (plan "grade", already range-checked)."""
+    g = dict(look["grade"])
+    for key, value in (extra or {}).items():
+        g[key] = round(float(g.get(key, 0)) + value, 3)
     w = float(g["warmth"])
     steps = [f"eq=contrast={g['contrast']}:saturation={g['saturation']}:brightness={g['brightness']}"]
     if w:
@@ -94,27 +97,29 @@ def grade_filter(look: Style) -> str:
     return ",".join(steps)
 
 
-def _zoom_filter(zoom: tuple[float, float], seconds: float) -> str:
+def _zoom_filter(zoom: tuple[float, float], seconds: float, focus: tuple[float, float] = (0.5, 0.42)) -> str:
     a, b = zoom
     if a == b == 1.0:
         return ""
     z = f"{a}+({b - a})*min(t/{max(seconds, 0.1):.3f},1)" if a != b else f"{a}"
-    # scale up, crop the middle (a little above centre, where a face is)
+    # scale up and crop around the face (watch.focus), so the face stays where it is while the frame closes in
+    fx, fy = (min(max(v, 0.0), 1.0) for v in focus)
     return (f"scale=w='trunc(1080*({z})/2)*2':h='trunc(1920*({z})/2)*2':eval=frame:flags=bicubic,"
-            "crop=1080:1920:(iw-1080)/2:(ih-1920)*0.42,")
+            f"crop=1080:1920:(iw-1080)*{fx:.3f}:(ih-1920)*{fy:.3f},")
 
 
-def build_base(job: Path, shots: list[dict[str, Any]], look: Style, edit: Settings) -> Path:
+def build_base(job: Path, shots: list[dict[str, Any]], look: Style, edit: Settings, extra: dict[str, float] | None = None
+               ) -> Path:
     folder = job / "shots"
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
-    grade = grade_filter(look)
+    grade = grade_filter(look, extra)
     listing = []
     for n, shot in enumerate(shots):
         out = folder / f"{n:03d}.mp4"
         seconds = shot["frames"] / edit.fps
         run(["ffmpeg", "-y", "-v", "error", "-ss", f"{shot['src']:.3f}", "-i", str(job / "source.mp4"),
-             "-vf", _zoom_filter(shot["zoom"], seconds) + grade + ",format=yuv420p", "-frames:v", str(shot["frames"]),
+             "-vf", _zoom_filter(shot["zoom"], seconds, watch.focus(job, shot["src"], shot["src"] + seconds)) + grade + ",format=yuv420p", "-frames:v", str(shot["frames"]),
              "-r", str(edit.fps), "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-threads", str(edit.threads),
              "-an", str(out)])
         listing.append(f"file '{out.name}'")
@@ -345,7 +350,7 @@ def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found:
     (job / "cuts.json").write_text(json.dumps(cut.as_dict(), indent=1), encoding="utf-8")
     shots = _shots(cut, plans.punch_points(chosen, found, cut, look), look, edit.fps)
     seconds = sum(s["frames"] for s in shots) / edit.fps
-    base = build_base(job, shots, look, edit)
+    base = build_base(job, shots, look, edit, chosen.grade)
     placed, notes = place(chosen, found, words, cut, look, edit.fps)
     placed, more = _assets(job, placed, http, keys, home)
     notes += more

@@ -24,6 +24,7 @@ time. Checked here (``check``), so a plan that would break the video goes back w
         {"kind": "hide", "at": "S2.1", "to": "S2.9", "box": [0.1, 0.55, 0.5, 0.2]}       # blur x, y, w, h (0–1)
       ],
       "music": "calm focused lofi",                 # mood words for the bed ("" = none)
+      "grade": {"brightness": 0.04, "sharpen": 0.3}, # optional: on top of the style's grade, for this footage
       "notes": "what you should know"               # goes to you with the preview
     }
 
@@ -55,6 +56,8 @@ FULL_KINDS = {"cutaway", "image", "screenshot"}  # cover the picture; captions s
 SPLIT_KINDS = {"split"}  # the top half shows the picture, your face moves to the bottom half
 BROLL_KINDS = FULL_KINDS | SPLIT_KINDS
 FILE_OR_QUERY = {"cutaway", "split"}
+GRADE = {"brightness": (-0.1, 0.1), "contrast": (-0.15, 0.15), "saturation": (-0.3, 0.3), "warmth": (-0.5, 0.5),
+         "sharpen": (0.0, 0.8)}  # what the editor may add to the style's grade for one video
 QUIET_MAX = 2.6  # × pace.change_every: the longest stretch with nothing new on screen
 LONGEST_CARD = 7.0
 MIN_GAP = 0.4  # between two graphics in the same place
@@ -84,6 +87,7 @@ class Plan:
     graphics: list[dict[str, Any]] = field(default_factory=list)
     music: str = ""
     notes: str = ""
+    grade: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def parse(cls, raw: Any) -> Plan:
@@ -99,13 +103,17 @@ class Plan:
         for at in raw.get("punch") or []:
             plan.punch.append(_anchor(str(at)))
         plan.graphics = [dict(g) for g in raw.get("graphics") or [] if isinstance(g, dict)]
+        grade = raw.get("grade") or {}
+        if not isinstance(grade, dict):
+            raise PlanError("grade must be an object like {\"brightness\": 0.04}")
+        plan.grade = {str(k): float(v) for k, v in grade.items()}
         return plan
 
     def as_dict(self) -> dict[str, Any]:
         return {"title": self.title, "subtitle": self.subtitle,
                 "drop": [{"s": k, "why": v} for k, v in sorted(self.drop.items())],
                 "trim": [{"s": k, "from": a, "to": b} for k, (a, b) in sorted(self.trim.items())], "keep": sorted(self.keep),
-                "punch": [f"S{s}.{w}" for s, w in self.punch], "graphics": self.graphics, "music": self.music,
+                "punch": [f"S{s}.{w}" for s, w in self.punch], "graphics": self.graphics, "music": self.music, "grade": self.grade,
                 "notes": self.notes}
 
 
@@ -176,6 +184,11 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
             problems.append(f"trim S{sid}: from {a} to {b} must be inside its {size} words")
     if found and len(plan.drop) > 0.7 * len(found):
         problems.append(f"{len(plan.drop)} of {len(found)} sentences dropped: the talk is yours, cut only what fails")
+    for key, value in plan.grade.items():
+        if key not in GRADE:
+            problems.append(f"grade: unknown {key!r}; use {', '.join(GRADE)}")
+        elif not GRADE[key][0] <= value <= GRADE[key][1]:
+            problems.append(f"grade: {key} must be between {GRADE[key][0]} and {GRADE[key][1]}")
     title_words = len(plan.title.replace("*", " ").split())
     starred = plan.title.count("*")
     if starred and (starred % 2 or look["title"]["accent"] == "none" or starred > 4):

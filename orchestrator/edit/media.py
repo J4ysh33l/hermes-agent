@@ -130,29 +130,3 @@ def clean(raw: Path, dst: Path, look: Style) -> Path:
     run(["ffmpeg", "-y", "-v", "error", "-i", str(dst), "-ac", "1", "-ar", "16000", str(dst.with_name(dst.stem + "16.wav"))])
     return dst
 
-
-SHEET = (4, 3)  # thumbnails per frame sheet (columns, rows)
-
-
-def sheets(source: Path, found: list, folder: Path, font: Path | None = None) -> list[str]:
-    """One frame from the middle of each sentence, labelled S<n>, tiled 4×3 per JPEG (frames-1.jpg, ...), so
-    the editor can see what is on screen before it decides. Returns the file names, in order."""
-    thumbs = folder / "thumbs"
-    shutil.rmtree(thumbs, ignore_errors=True)
-    thumbs.mkdir(parents=True)
-    font = font or Path(__file__).resolve().parents[1] / "studio/remotion/node_modules/@fontsource/inter/files/inter-latin-700-normal.woff"
-    font_arg = f"fontfile='{font}':" if font.is_file() else ""
-    for n, s in enumerate(found):
-        label = (f"drawtext={font_arg}text='S{s.id}':fontsize=34:fontcolor=white:box=1:boxcolor=black@0.7:"
-                 "boxborderw=8:x=10:y=10")
-        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{(s.start + s.end) / 2:.3f}", "-i", str(source), "-frames:v", "1",
-             "-vf", f"scale=270:480,{label}", "-q:v", "4", str(thumbs / f"{n:03d}.jpg")])
-    per = SHEET[0] * SHEET[1]
-    names = []
-    for k in range(0, len(found), per):
-        name = f"frames-{k // per + 1}.jpg"
-        run(["ffmpeg", "-y", "-v", "error", "-start_number", str(k), "-i", str(thumbs / "%03d.jpg"),
-             "-vf", f"tile={SHEET[0]}x{SHEET[1]}:padding=6:color=white", "-frames:v", "1", "-q:v", "4", str(folder / name)])
-        names.append(name)
-    shutil.rmtree(thumbs, ignore_errors=True)
-    return names

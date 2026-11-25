@@ -14,7 +14,8 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
 "$VENV/bin/python" -m pip install --quiet "kokoro-onnx==0.6.1" "onnxruntime==1.32.0" "numpy==2.5.5" \
-    "phonemizer==3.6.0" "espeakng-loader==0.2.4" "edge-tts==7.3.1"
+    "phonemizer==3.6.0" "espeakng-loader==0.2.4" "edge-tts==7.3.1" \
+    "opencv-python-headless==4.10.0.84"   # the editor looks at your footage with it (edit/watch_worker.py)
 echo "ready   $VENV (kokoro-onnx 0.6.1, edge-tts 7.3.1)"
 
 mkdir -p "$MODELS"
