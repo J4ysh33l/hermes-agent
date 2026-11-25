@@ -8,6 +8,11 @@ claims it), do what its body says and close it. Hermes reads the answer files on
 
 Token: ``GITHUB_HANDOFF_TOKEN`` in ``$HERMES_HOME/.env``, fine-grained, that repo only, Contents and
 Issues read/write.
+
+Issues opened with the Claude GitHub App's own credentials don't start the task (seen 2026-11-24), so
+after opening an issue Hermes also fires the task through its API trigger when ``CLAUDE_ROUTINE_URL``
+(the task's Fire URL) and ``CLAUDE_ROUTINE_TOKEN`` are in ``.env``. A failed fire is not an error: the
+issue waits for the next run (any fire or issue-opened event takes the oldest waiting issue).
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from orchestrator.brief.net import Http, HttpError
 API = "https://api.github.com"
 LABEL = "hermes"  # open + labelled = waiting for Claude; the scheduled task removes it when it starts
 MAX_BODY = 65_000  # GitHub refuses issue bodies over 65,536 characters
+FIRE_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "experimental-cc-routine-2026-04-01"}
 
 
 class HandoffError(Exception):
@@ -31,6 +37,9 @@ class Handoff:
         self.http = http
         self.repo = repo
         self.token = secrets.get("GITHUB_HANDOFF_TOKEN")
+        self.fire_url = secrets.get("CLAUDE_ROUTINE_URL")
+        self.fire_token = secrets.get("CLAUDE_ROUTINE_TOKEN")
+        self.fire_error = ""  # why the last fire failed ("" when it worked or was not set up)
 
     @property
     def ready(self) -> bool:
@@ -67,9 +76,27 @@ class Handoff:
             for path, text in files.items():
                 self.put(path, text)
             self._label()
-            return int(self._call("POST", "issues", json_body={"title": title, "body": body, "labels": [LABEL]})["number"])
+            number = int(self._call("POST", "issues", json_body={"title": title, "body": body, "labels": [LABEL]})["number"])
         except HttpError as exc:
             raise HandoffError(f"GitHub handoff: HTTP {exc.status}") from None
+        self.fire(f"Hermes opened issue #{number}: {title}")
+        return number
+
+    def fire(self, text: str = "") -> bool:
+        """Start the Claude task through its API trigger; False when not set up or refused (never raises)."""
+        self.fire_error = ""
+        if not (self.fire_url and self.fire_token):
+            return False
+        headers = {"Authorization": f"Bearer {self.fire_token}", "Content-Type": "application/json", **FIRE_HEADERS}
+        try:
+            self.http.request("POST", self.fire_url, headers=headers, json_body={"text": text[:2000]})
+        except HttpError as exc:
+            self.fire_error = f"Claude task fire: HTTP {exc.status}"
+            return False
+        except OSError as exc:  # network down: the issue simply waits
+            self.fire_error = f"Claude task fire: {exc.__class__.__name__}"
+            return False
+        return True
 
     def _label(self) -> None:
         try:
