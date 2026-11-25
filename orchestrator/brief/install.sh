@@ -37,6 +37,21 @@ for job in morning tick; do
 done
 echo "wrote   $HOME_DIR/scripts/myday_morning.py and myday_tick.py (My day: card, reminders, bills from Gmail)"
 
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/recap/launcher.py.template" > "$HOME_DIR/scripts/deadline_recap.py"
+echo "wrote   $HOME_DIR/scripts/deadline_recap.py (the 20:00 deadline recap)"
+
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/notes/launcher.py.template" > "$HOME_DIR/scripts/smriti.py"
+mkdir -p "$HOME_DIR/notes" && chmod 700 "$HOME_DIR/notes"
+echo "wrote   $HOME_DIR/scripts/smriti.py (Smriti: meeting notes; needs ffmpeg and the Teams permissions)"
+
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/watch/launcher.py.template" > "$HOME_DIR/scripts/watch.py"
+mkdir -p "$HOME_DIR/watch" && chmod 700 "$HOME_DIR/watch"
+echo "wrote   $HOME_DIR/scripts/watch.py (Watches: new jobs, uploads and posts on pages you name)"
+
+sed "s|@REPO_ROOT@|$REPO_ROOT|" "$REPO_ROOT/orchestrator/studio/launcher.py.template" > "$HOME_DIR/scripts/studio.py"
+echo "wrote   $HOME_DIR/scripts/studio.py (Studio queue: collects Claude's storyboards, renders overnight)"
+echo "studio  run orchestrator/studio/install.sh once for voices and video (Kokoro, Remotion, ~500 MB, CPU only)"
+
 # Older installs linked plugins/brief; the plugin is now one for every orchestrator command.
 [ -L "$HOME_DIR/plugins/brief" ] && rm "$HOME_DIR/plugins/brief"
 ln -sfn "$REPO_ROOT/orchestrator/plugin" "$HOME_DIR/plugins/orchestrator"
@@ -54,5 +69,13 @@ Next (run these yourself):
       --script myday_tick.py --deliver telegram --name myday-tick
   hermes cron create "0 10,17 * * *" --timezone Asia/Kolkata --no-agent \\
       --script hr_inbox.py --deliver telegram --name hr-inbox
+  hermes cron create "0 20 * * *" --timezone Asia/Kolkata --no-agent \\
+      --script deadline_recap.py --deliver telegram --name deadline-recap
+  hermes cron create "*/15 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script smriti.py --deliver telegram --name smriti
+  hermes cron create "*/30 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script watch.py --deliver telegram --name watch
+  hermes cron create "*/5 * * * *" --timezone Asia/Kolkata --no-agent \\
+      --script studio.py --deliver telegram --name studio
   python -m orchestrator.brief run --dry-run      # from $REPO_ROOT: preview without saving
 NEXT

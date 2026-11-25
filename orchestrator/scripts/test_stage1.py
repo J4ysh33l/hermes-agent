@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Self-check for changed.py, bigfile.py, usagetier.py and dashboard.py:  python3 test_stage1.py   (uses a temp state dir, touches nothing else)."""
-import json, os, subprocess, sys, tempfile, unittest
+import json, os, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -9,6 +9,7 @@ HERE = Path(__file__).parent
 class T(unittest.TestCase):
     def setUp(self):
         self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
         self.env = {**os.environ, "AGENT_STATE_DIR": str(self.d / "state")}
 
     def run_(self, script, *args):

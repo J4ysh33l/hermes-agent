@@ -3,7 +3,9 @@
 A plan is numbered lines; each line holds the actions for one person or one event (an invite and
 the Slack note that goes with it). ``/slack yes`` runs the waiting Slack plan, ``/meet yes`` the
 waiting meeting plan; ``yes 1,3`` runs only those lines. A plan expires after
-``preview_minutes``. One waiting plan per kind: a new draft replaces the old one.
+``preview_minutes``; an expired one is kept as ``pending-<kind>.expired.json`` so the evening recap
+reminds you, until a new draft of that kind or ``no`` clears it. One waiting plan per kind: a new
+draft replaces the old one.
 
 Files in ``$HERMES_HOME/brief/outreach/``: ``pending-slack.json``, ``pending-meet.json``, and
 ``sent.jsonl`` (one line per message, invite or post actually sent, with its time).
@@ -19,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
+
+from orchestrator import expiry
 
 Kind = Literal["slack", "meet"]
 ActionKind = Literal["dm", "scheduled", "channel_post", "event"]
@@ -122,6 +126,7 @@ class Store:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(plan.to_json(), ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(path)
+        expiry.clear(path)
 
     def waiting(self, kind: Kind, now: float, minutes: int) -> Plan | None:
         path = self._pending(kind)
@@ -129,9 +134,12 @@ class Store:
             return None
         plan = Plan.load(json.loads(path.read_text(encoding="utf-8")))
         if now - plan.created > minutes * 60:
-            path.unlink()
+            expiry.expire(path)
             return None
         return plan
+
+    def forget_expired(self, kind: Kind) -> bool:
+        return expiry.clear(self._pending(kind))
 
     def drop(self, kind: Kind) -> bool:
         path = self._pending(kind)

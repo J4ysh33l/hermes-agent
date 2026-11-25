@@ -181,3 +181,71 @@ hr:
     candidate_subject: "Interview for {position} at {company} | {day}, {start} IST"
     # candidate_body: HTML; must contain {join}. The panel's also take {positions} {schedule}.
     panel_subject: "Interviews: {positions} | {day}"
+  # /hr reply: Gemini drafts with names, emails and numbers hidden; templates use no model.
+  redact_names: []            # more names to hide from Gemini, e.g. [Rishabh Jain, Nidhi Rao]
+  reply_bulk_max: 30          # applications answered by one /hr reply applications ack
+  # replies:                  # change or add a template (the middle of the mail; greeting and sign-off are added)
+  #   ack: "Thank you for applying{for_role} at {company}. ..."
+  # reply_models:             # default: gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemma-4-31b-it (json_mode: false)
+
+# ---------------------------------------------------------------- Smriti (/notes): meeting notes
+# Teams meetings you organise (recorded + transcribed). See orchestrator/notes/README.md.
+notes:
+  check_hours: [10, 12, 14, 16, 18, 20]   # find ended meetings and ask what to make
+  chunk_minutes: 45           # audio per Gemini call (an hour ≈ 115k tokens: 32 a second)
+  gap_seconds: 70             # at least this long between two audio calls
+  tokens_per_minute: 250000   # your Gemini limit; a call waits until it fits the last 60 seconds
+  daily_audio_minutes: 180    # beyond this, transcription waits for the next day
+  models: [gemini-3.1-flash-lite, gemini-3.5-flash-lite]   # must take audio (Gemma does not)
+  handoff_repo: ""            # owner/name of your private repo for "claude" (GITHUB_HANDOFF_TOKEN in .env)
+  max_attempts: 3             # a document failing this often is reported instead of retried
+
+# ---------------------------------------------------------------- Watches (/watch)
+# A script reads each page and tells you only when something is added. See orchestrator/watch/README.md.
+watch:
+  every_hours: 12             # how often a new watch is read (/watch every <n> <hours> per watch)
+  claude: true                # Claude researches a new plain page for a steadier source (handoff repo)
+  notes: true                 # Gemini adds a note to each change: which new items matter to you and why
+  # handoff_repo: you/hermes-handoff   # default: notes.handoff_repo
+  about: ""                   # a line on you and what matters, for Gemini's notes (keep private details out)
+  fail_after: 3               # failed reads in a row before you're told (once)
+  max_lines: 15               # new items listed in one message
+
+# ---------------------------------------------------------------- Studio (/studio): video, audio, b-roll, images
+# See orchestrator/studio/README.md. The voices are installed by orchestrator/studio/install.sh.
+studio:
+  engine: kokoro              # kokoro (server CPU, free, no limits) or edge (Microsoft's online voices, unofficial)
+  voice_en: am_puck           # Kokoro (your picks: am_puck, then am_fenrir): /studio voices lists them (af_/am_ US, bf_/bm_ UK, hf_/hm_ Hindi)
+  voice_hi: hm_omega          # for Hindi in Devanagari (Hinglish in Latin script is converted first)
+  edge_voice_en: en-IN-PrabhatNeural   # Edge: /studio voices edge
+  edge_voice_hi: hi-IN-MadhurNeural
+  speed: 1.0                  # 0.5 to 2.0; 1.0 ≈ 196 words a minute (1.15 with pause 0.12 ≈ 217)
+  pause: 0.15                 # seconds after each sentence
+  profile: default            # page profile for videos: orchestrator/studio/profiles or $HERMES_HOME/studio/profiles
+  threads: 2                  # CPU threads Kokoro may use (the host has 2)
+  kokoro_model: kokoro-v1.0.fp16.onnx  # or kokoro-v1.0.int8.onnx (KOKORO_INT8=1 install.sh) if RAM is tight
+  # Videos are 1080×1920 at 30 fps. Quality of the render:
+  video_crf: 17               # lower = sharper and bigger (17 ≈ visually lossless; 23 is ffmpeg's default)
+  video_preset: slow          # x264 speed: ultrafast … medium … slow … veryslow (slower = smaller file)
+  video_jpeg_quality: 95      # frames as Chrome draws them, before encoding
+  video_audio_bitrate: 320k   # AAC
+  video_concurrency: 1        # frames drawn at once; each needs ~0.5–1 GB (the host has 4 GB)
+  video_browser: ""           # a Chrome headless shell to use; "" = the one install.sh downloaded
+  # Notes → storyboard (python -m orchestrator.studio write). Tried in order; a stronger model writes better scripts.
+  script_models:
+    - {id: gemini-3.5-flash-lite}
+    - {id: gemini-3.1-flash-lite}
+  writer: claude                  # who writes storyboards: claude (default) or gemini (free, weaker)
+  custom_review: true             # Claude reviews frames of each custom scene it builds, and fixes what is off
+  claude_model: claude-opus-5-5   # `write --claude` / `/studio write claude`: needs ANTHROPIC_API_KEY; paid (~$0.10–0.25 a storyboard)
+  claude_effort: medium           # low | medium | high | xhigh | max: how hard Claude thinks (more = slower, dearer)
+  # The overnight queue (/studio make, the `studio` cron; README § Overnight queue):
+  claude_via: handoff             # handoff (default: your Claude plan via the private handoff repo, no API key) | api | auto
+  handoff_repo: ""                # "" = notes.handoff_repo (orchestrator/HANDOFF.md)
+  direction_retries: 2            # a storyboard that fails its checks goes back to the director this many times
+  research: true                  # before the script, a researcher finds current facts with Google Search
+  # research_models:              # Gemini models that may search on your tier, tried in order
+  #   - id: gemini-2.5-flash-lite
+  #   - id: gemini-2.5-flash
+  render_window: "00:30-07:00"    # local time the queue may render in; /studio run renders now
+  hook_clips: true                # also render hooks 2 and 3 as short clips, to pick one on Telegram

@@ -1,0 +1,63 @@
+# After Aevy TV (Shorts, observed 2026-11-25; pacing estimated, not measured):
+# tiny 1–2 word captions mid-frame in yellow, a white card with a black editorial-serif headline and a small
+# subtitle, full-bleed news photos, a yellow accent, a filmic warm grade, fast changes, whooshes and risers.
+# Free look-alike fonts: Newsreader for their editorial serif.
+extends: clean
+description: Aevy-like. Tiny yellow captions, serif headline card, full-bleed photos, fast and cinematic.
+
+captions:
+  words: 2
+  case: lower
+  font: inter
+  size: 46
+  colour: "#F5E400"
+  active: none
+  shadow: 3
+  y: 0.55
+
+title:
+  kind: card
+  font: newsreader
+  bg: "#FFFFFF"
+  fg: "#000000"
+  size: 64
+  y: 0.07
+  seconds: 0
+  subtitle: true
+
+graphics:
+  font: inter
+  serif: newsreader
+  accent: "#F5E400"
+  ink: "#111111"
+  paper: "#FFFFFF"
+  box_bg: "#000000"
+  box_fg: "#FFFFFF"
+  radius: 2
+  kinds: [headline, image, cutaway, stat, quote, chapter, split, pop]
+  emoji: false
+  progress: true
+
+pace:
+  max_pause: 0.22
+  punch_every: 7
+  punch: 1.1
+  punch_ease: smooth
+  change_every: 1.8
+  broll: 0.45
+
+grade:
+  warmth: 0.2
+  contrast: 0.96
+  saturation: 0.9
+
+sound:
+  music: always
+  music_query: cinematic ambient documentary
+  sfx: auto
+
+plan:
+  hook: A contrarian or confessional claim inside 2 seconds ("we were wrong."), then the question.
+  ending: Close the loop opened by the hook.
+  tone: Curious, documentary, confident.
+  language: en

@@ -1,0 +1,20 @@
+# $HERMES_HOME/brief/brief.yaml for the editor profile (HERMES_HOME=~/.hermes/profiles/editor).
+# Only the sections the editor reads. Every edit: key is in orchestrator/edit/settings.py.
+
+edit:
+  style: mine                 # your default (/edit styles); per job: /edit <link> zero1 ...
+  asr_model: large-v3-turbo   # ~1.5–2.3 GB while it runs; small = faster, more misheard words
+  asr_language: en            # en keeps Hinglish in Latin letters; hi would write Devanagari
+  threads: 2                  # the host's cores
+  crf: 17
+  preset: slow
+  approve: true               # the plan comes to you before the render
+  max_minutes: 15
+
+studio:
+  # Share the main profile's studio install (one venv, one set of models) instead of installing it twice:
+  studio_python: /home/ubuntu/.hermes/venvs/studio/bin/python
+  models_dir: /home/ubuntu/.hermes/studio/models
+  claude_via: handoff         # your Claude plan; api = ANTHROPIC_API_KEY (paid per call)
+  handoff_repo: you/hermes-handoff
+  video_concurrency: 1        # one Chrome tab at a time on a 4 GB host

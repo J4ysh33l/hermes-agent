@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Self-check for media/logoswap.py, compare.py and the editplan qc/music additions:  python3 test_media.py
 Builds tiny synthetic media in a temp dir (needs ffmpeg + Pillow); touches nothing else."""
-import json, re, subprocess, sys, tempfile, unittest
+import json, re, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from PIL import Image, ImageDraw
 
@@ -18,6 +18,10 @@ def ff(*args):
     rc, out = sh("ffmpeg", "-v", "error", "-y", *args); assert rc == 0, out
 
 class T(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
     @classmethod
     def setUpClass(cls):
         cls.d = d = Path(tempfile.mkdtemp())

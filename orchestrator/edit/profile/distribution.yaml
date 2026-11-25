@@ -1,0 +1,29 @@
+name: editor
+version: 0.1.0
+description: "Edits your own talking-head and screen footage into finished 9:16 reels in a style you declare (/edit)"
+author: "Hermes orchestrator"
+license: "MIT"
+
+env_requires:
+  - name: TELEGRAM_BOT_TOKEN
+    description: "The editor's Telegram bot (a second bot from @BotFather keeps /edit apart from your main assistant)"
+    required: true
+  - name: TELEGRAM_ALLOWED_USERS
+    description: "Your Telegram user id (only you can send /edit)"
+    required: true
+  - name: GITHUB_HANDOFF_TOKEN
+    description: "Fine-grained token for the private handoff repo: Claude plans each edit on your Claude plan"
+    required: false
+    default: ""
+  - name: CLAUDE_ROUTINE_URL
+    description: "Fire URL of the Claude routine that works the handoff repo (orchestrator/HANDOFF.md)"
+    required: false
+    default: ""
+  - name: CLAUDE_ROUTINE_TOKEN
+    description: "Its token"
+    required: false
+    default: ""
+  - name: PEXELS_API_KEY
+    description: "Stock footage for cutaways (free key from pexels.com/api); without it Openverse photos only"
+    required: false
+    default: ""

@@ -55,8 +55,8 @@ Handler = Callable[[Call], Any]
 
 @dataclass
 class FakeHttp:
-    """Routes match on 'METHOD url-prefix'. A handler returns a dict/list (JSON), a str (text),
-    or raises HttpError. Unmatched requests fail loudly."""
+    """Routes match on 'METHOD url-prefix'. A handler returns a dict/list (JSON), a str (text), bytes,
+    a ready ``Response`` (to set headers), or raises HttpError. Unmatched requests fail loudly."""
 
     routes: dict[str, Handler] = field(default_factory=dict)
     calls: list[Call] = field(default_factory=list)
@@ -73,7 +73,9 @@ class FakeHttp:
         if not matches:
             raise AssertionError(f"unexpected request: {method} {full}")
         value = self.routes[max(matches, key=len)](call)
-        body = value.encode() if isinstance(value, str) else json.dumps(value).encode()
+        if isinstance(value, Response):
+            return value
+        body = value if isinstance(value, bytes) else value.encode() if isinstance(value, str) else json.dumps(value).encode()
         return Response(200, body)
 
     def count(self, prefix: str) -> int:

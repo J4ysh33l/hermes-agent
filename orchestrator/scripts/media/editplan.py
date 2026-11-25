@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """editplan.py - transcript -> edit plan -> ffmpeg render -> QC. The LLM step is only "write the plan JSON".
 
-  editplan.py transcribe VIDEO --out transcript.json [--model base] [--language en]    (local faster-whisper, CPU int8)
+  editplan.py transcribe VIDEO --out transcript.json [--model small] [--language en]    (local faster-whisper, CPU int8)
   editplan.py brief      transcript.json [--from S] [--to S] [--max-chars 6000]        (compact text for Claude to read)
   editplan.py validate   plan.json [--video VIDEO]                                      (schema + bounds, no render)
   editplan.py render     plan.json --out out.mp4 [--transcript transcript.json] [--keep-tmp]
@@ -257,7 +257,7 @@ def plan_loud(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("transcribe"); s.add_argument("video"); s.add_argument("--out", required=True); s.add_argument("--model", default="base"); s.add_argument("--language")
+    s = sub.add_parser("transcribe"); s.add_argument("video"); s.add_argument("--out", required=True); s.add_argument("--model", default="small"); s.add_argument("--language")
     s = sub.add_parser("brief"); s.add_argument("transcript"); s.add_argument("--from", dest="from_", type=float); s.add_argument("--to", type=float); s.add_argument("--max-chars", type=int, default=6000)
     s = sub.add_parser("validate"); s.add_argument("plan"); s.add_argument("--video")
     s = sub.add_parser("render"); s.add_argument("plan"); s.add_argument("--out", required=True); s.add_argument("--transcript"); s.add_argument("--tmp"); s.add_argument("--keep-tmp", action="store_true")

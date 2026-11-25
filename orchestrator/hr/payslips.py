@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
+from orchestrator import expiry
 from orchestrator.brief.render import indian_grouping
 
 from . import docfill, pdf, sheet
@@ -158,6 +159,8 @@ def prepare(sheet_path: Path, period: Period, settings: Settings, paths: Paths, 
     now = time.time() if now is None else now
     checked = check(sheet_path, period, settings, paths)
     agreed = leave_out is not None and checked.batch is not None and checked.batch.left_out == leave_out
+    expiry.clear(paths.pending)  # a new run replaces an expired one in the evening recap
+    expiry.clear(paths.blocked)
     if not checked.ready(leave_out=agreed):
         paths.blocked.unlink(missing_ok=True)
         head = ("The sheet changed since you said skip. Nothing was made:" if leave_out is not None

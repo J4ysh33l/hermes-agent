@@ -1,0 +1,138 @@
+"""The per-step report: Claude's own token count (the Stop hook Hermes keeps in the handoff repo), reading it
+back from the issue, and the report's rows and totals."""
+
+import json
+import os
+import subprocess
+import sys
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "orchestrator" / "brief" / "tests"))
+
+from fakes import FakeHttp
+
+from orchestrator import usage
+from orchestrator.brief.creds import Secrets
+from orchestrator.handoff import USAGE_HOOK, USAGE_MARK, Handoff
+from orchestrator.studio import steps
+
+GH = "https://api.github.com/repos/me/hand/"
+
+
+def transcript(path: Path) -> None:
+    """Two model calls; the first is logged twice (one line per content block), as Claude Code does."""
+    lines = [{"type": "user", "timestamp": "2026-11-25T04:35:41Z"},
+             {"type": "assistant", "timestamp": "2026-11-25T04:35:46Z",
+              "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {
+                  "input_tokens": 2, "output_tokens": 16, "cache_creation_input_tokens": 15199,
+                  "cache_read_input_tokens": 31653}}},
+             {"type": "assistant", "timestamp": "2026-11-25T04:35:47Z",
+              "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {
+                  "input_tokens": 2, "output_tokens": 16, "cache_creation_input_tokens": 15199,
+                  "cache_read_input_tokens": 31653}}},
+             {"type": "assistant", "timestamp": "2026-11-25T04:36:47Z",
+              "message": {"id": "m2", "model": "claude-opus-5-5", "usage": {
+                  "input_tokens": 2, "output_tokens": 431, "cache_creation_input_tokens": 241,
+                  "cache_read_input_tokens": 59456}}},
+             "not json"]
+    path.write_text("\n".join(x if isinstance(x, str) else json.dumps(x) for x in lines), encoding="utf-8")
+
+
+class Hook(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / "bin").mkdir()
+        gh = self.tmp / "bin" / "gh"  # records its arguments instead of calling GitHub
+        gh.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {self.tmp}/gh-args\n', encoding="utf-8")
+        gh.chmod(0o755)
+        (self.tmp / "hook.py").write_text(USAGE_HOOK.format(repo="me/hand", mark=USAGE_MARK), encoding="utf-8")
+        transcript(self.tmp / "t.jsonl")
+        (self.tmp / "repo" / ".git").mkdir(parents=True)
+        self.claimed = self.tmp / "repo" / ".git" / "hermes-issue"  # what tools/claim.sh writes
+
+    def run_hook(self) -> subprocess.CompletedProcess:
+        stdin = json.dumps({"transcript_path": str(self.tmp / "t.jsonl"), "session_id": "s1"})
+        env = {**os.environ, "PATH": f"{self.tmp / 'bin'}:{os.environ['PATH']}", "CLAUDE_PROJECT_DIR": str(self.tmp / "repo")}
+        return subprocess.run([sys.executable, str(self.tmp / "hook.py")], input=stdin, text=True, env=env,
+                              capture_output=True, timeout=60, check=False)
+
+    def test_posts_the_runs_tokens_on_the_claimed_issue(self):
+        self.claimed.write_text("7\n")
+        self.assertEqual(self.run_hook().returncode, 0)
+        args = (self.tmp / "gh-args").read_text().split("\n")
+        self.assertIn("repos/me/hand/issues/7/comments", args)
+        body = next(a for a in args if a.startswith("body="))[len("body="):]
+        self.assertTrue(body.startswith(USAGE_MARK))
+        posted = json.loads(body[len(USAGE_MARK):] + "\n".join(args[args.index(next(a for a in args if a.startswith("body="))) + 1:]))
+        self.assertEqual((posted["calls"], posted["output_tokens"], posted["cache_read_input_tokens"]), (2, 447, 91109))
+        self.assertEqual((posted["issue"], posted["session"], posted["model"]), (7, "s1", "claude-opus-5-5"))
+        self.assertEqual((posted["first"], posted["last"]), ("2026-11-25T04:35:41Z", "2026-11-25T04:36:47Z"))
+
+    def test_a_run_that_claimed_nothing_posts_nothing_and_never_fails(self):
+        self.claimed.unlink(missing_ok=True)
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.assertFalse((self.tmp / "gh-args").exists())
+
+
+class Report(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        (self.tmp / ".env").write_text("GITHUB_HANDOFF_TOKEN=g\n", encoding="utf-8")
+        self.http = FakeHttp()
+        self.hand = Handoff(self.http, Secrets(self.tmp / ".env", self.tmp / "t", environ={}), "me/hand")
+
+    def test_reads_the_last_token_report_on_the_issue(self):
+        posted = {"issue": 2, "calls": 3, "output_tokens": 6239, "first": "a", "last": "b"}
+        self.http.on("GET", GH + "issues/2/comments", [
+            {"body": "a person's comment"}, {"body": USAGE_MARK + "\n" + json.dumps({"calls": 1})},
+            {"body": USAGE_MARK + "\n" + json.dumps(posted) + "\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_"}])
+        self.assertEqual(self.hand.usage(2), posted)
+        self.http.on("GET", GH + "issues/9/comments", [])
+        self.assertEqual(self.hand.usage(9), {})
+
+    def test_one_row_per_step_with_times_tokens_and_totals(self):
+        folder = self.tmp / "job"
+        folder.mkdir()
+        rows = [{"ts": "2026-11-25T10:05:00+05:30", "step": "direction", "event": "asked", "issue": 2, "session": "s"},
+                {"ts": "2026-11-25T10:07:00+05:30", "step": "direction", "event": "answered", "issue": 2},
+                {"ts": "2026-11-25T10:20:00+05:30", "step": "video (hook 1)", "event": "done",
+                 "started": "2026-11-25T10:16:49+05:30", "seconds": 191.0, "note": "voice + render"}]
+        folder.joinpath(steps.FILE).write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+        calls = [usage.Call("2026-11-25T10:00:00+05:30", "studio", "research", "gemini", "gemini-2.5-flash", 374, 786,
+                            2573, 3398, True, 23441, "", "J"),
+                 usage.Call("2026-11-25T10:00:30+05:30", "studio", "research", "gemini", "gemini-2.5-flash", 0, 0,
+                            0, 0, False, 500, "503", "J")]
+        claude = {"2": {"created_at": "2026-11-25T04:35:40Z", "closed_at": "2026-11-25T04:36:48Z", "tokens": {
+            "model": "claude-opus-5-5", "calls": 6, "input_tokens": 14, "output_tokens": 6239,
+            "cache_creation_input_tokens": 28970, "cache_read_input_tokens": 312166,
+            "first": "2026-11-25T04:35:41Z", "last": "2026-11-25T04:36:53Z"}}}
+        text = steps.build({"id": "J", "title": "CAT", "created": "2026-11-25T09:59:00+05:30"}, folder, calls, claude)
+        self.assertIn("| 1 | research | gemini-2.5-flash | 25 Nov 10:00:00 | 24 s | 374 / 4.2k / 2.6k | "
+                      "1 call(s), 1 busy/failed attempt(s) |", text)
+        self.assertIn("| 2 | direction | claude-opus-5-5 | 25 Nov 10:05:40 | 1 min 8 s | 29.0k / 6.2k / 312.2k | "
+                      "issue #2, 6 call(s), Claude worked 1 min 12 s |", text)
+        self.assertIn("| 3 | video (hook 1) | Hermes (this server) | 25 Nov 10:16:49 | 3 min 11 s | — | voice + render |", text)
+        self.assertIn("Started 25 Nov 2026 09:59 IST · finished 25 Nov 10:20 · total 21 min 0 s", text)
+        self.assertIn("- Claude: 29.0k in, 6.2k out, 312.2k cached over 6 call(s)", text)
+        self.assertIn("about $0.42", text)  # the session's own figure was $0.419
+        self.assertIn("no price known for gemini-2.5-flash", text)
+        self.assertIn("📊", steps.short(text))
+
+    def test_a_step_claude_has_not_reported_says_so(self):
+        folder = self.tmp / "job2"
+        folder.mkdir()
+        steps.mark(folder, "script", "asked", issue=5, fire_error="Claude task fire: HTTP 401")
+        text = steps.build({"id": "J"}, folder, [], {"5": {}})
+        self.assertIn("not reported", text)
+        self.assertIn("issue #5 (still open); fire failed: Claude task fire: HTTP 401", text)
+
+
+if __name__ == "__main__":
+    unittest.main()

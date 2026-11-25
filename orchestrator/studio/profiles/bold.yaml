@@ -1,0 +1,37 @@
+# Black and yellow, money/business advice (Hormozi-like): heavier type, harder punches, whip cuts.
+description: Bold. Crushed black, yellow, Anton captions, whip transitions, strong punch-ins.
+
+theme:
+  bg: "#050505"
+  glow: "#1a1a1a"
+  panel: "#151515"
+  accent: "#ffd400"
+  cool: "#3ddc97"
+  font: montserrat
+  background: glow
+
+motion:
+  feel: bouncy
+  enter: drop
+  exit: whip
+  exit_frames: 6
+  punch: 0.15
+  drift: 0.06
+  transition: whip
+  transition_frames: 7
+
+captions:
+  words: 2
+  size: 104
+  font: anton
+  stroke: 16
+
+writing:
+  format: explainer
+  hooks: [pain-point, contrarian, number]
+  humour: blunt, no jokes for their own sake
+  tone: direct, second person, short sentences
+
+elements:
+  music_query: energetic electronic beat
+  memes: off

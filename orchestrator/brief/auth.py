@@ -83,6 +83,23 @@ def google(http: Http, secrets: Secrets, ask: Callable[[str], str] = input, say:
     say(f"Gmail login saved: {email} as '{account}'.")
 
 
+def google_scoped(http: Http, secrets: Secrets, scope: str, ask: Callable[[str], str] = input,
+                  say: Callable[[str], None] = print) -> dict:
+    """A Google sign-in for one more scope (another workflow's login, e.g. the studio's Drive); returns
+    the token response with its refresh token. Client id/secret are the Gmail ones."""
+    client_id, client_secret = secrets.get("GOOGLE_CLIENT_ID"), secrets.get("GOOGLE_CLIENT_SECRET")
+    if not (client_id and client_secret):
+        raise SystemExit("Put GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in $HERMES_HOME/.env first.")
+    verifier, challenge = _pkce()
+    params = {"client_id": client_id, "redirect_uri": REDIRECT, "response_type": "code", "scope": scope,
+              "access_type": "offline", "prompt": "select_account consent", "code_challenge": challenge,
+              "code_challenge_method": "S256"}
+    code = _paste_back(GOOGLE_AUTH + "?" + urllib.parse.urlencode(params), "Google", ask, say)
+    form = {"client_id": client_id, "client_secret": client_secret, "code": code, "code_verifier": verifier,
+            "grant_type": "authorization_code", "redirect_uri": REDIRECT}
+    return _exchange(http, gmail.TOKEN_URL, form, "Google")
+
+
 def microsoft(http: Http, secrets: Secrets, ask: Callable[[str], str] = input,
               say: Callable[[str], None] = print) -> None:
     client_id, tenant = secrets.get("MS_CLIENT_ID"), secrets.get("MS_TENANT_ID") or "organizations"

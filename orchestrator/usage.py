@@ -15,6 +15,7 @@ Writers:
 from __future__ import annotations
 
 import argparse
+import contextvars
 import json
 import os
 import sys
@@ -29,6 +30,8 @@ import yaml
 TZ = ZoneInfo("Asia/Kolkata")
 PRICES = Path(__file__).resolve().parent / "prices.yaml"
 PERIODS = {"today": 1, "day": 1, "week": 7, "month": 30}
+# The studio job (or other unit of work) the current calls belong to; logged as "job" when set.
+JOB: contextvars.ContextVar[str] = contextvars.ContextVar("hermes_usage_job", default="")
 
 USAGE_HELP = """**/usage** — tokens used by every model call (no command here uses the AI model)
 /usage — today
@@ -53,12 +56,15 @@ class Call:
     ok: bool = True
     ms: int = 0
     note: str = ""
+    job: str = ""
 
     def line(self) -> str:
         data = asdict(self)
         ordered = {k: data[k] for k in ("ts", "workflow", "step", "provider", "model")}
         ordered |= {"in": data["input"], "out": data["output"]}
         ordered |= {k: data[k] for k in ("cached", "reasoning", "ok", "ms", "note")}
+        if data["job"]:
+            ordered["job"] = data["job"]
         return json.dumps(ordered, ensure_ascii=False, separators=(", ", ": "))
 
     @classmethod
@@ -80,7 +86,7 @@ def log_call(workflow: str, step: str, provider: str, model: str, *, input_token
     reported on stderr and swallowed."""
     call = Call(datetime.now(TZ).isoformat(timespec="seconds"), workflow, step, provider, model,
                 int(input_tokens or 0), int(output_tokens or 0), int(cached or 0), int(reasoning or 0),
-                bool(ok), int(ms), note[:200])
+                bool(ok), int(ms), note[:200], JOB.get())
     target = path or log_path()
     try:
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -78,6 +78,76 @@ def _hr_help() -> str:
     return HR_HELP
 
 
+def _recap(args: str) -> str:
+    from orchestrator.recap.cli import handle
+
+    return handle(args)
+
+
+def _resume(args: str) -> str:
+    from orchestrator.recap.resume import handle
+
+    return handle(args)
+
+
+def _resume_help() -> str:
+    from orchestrator.recap.resume import HELP
+
+    return HELP
+
+
+def _notes(args: str) -> str:
+    from orchestrator.notes.chat import handle
+
+    return handle(args)
+
+
+def _notes_help() -> str:
+    from orchestrator.notes.chat import HELP
+
+    return HELP
+
+
+def _watch(args: str) -> str:
+    from orchestrator.watch.chat import handle
+
+    return handle(args)
+
+
+def _watch_help() -> str:
+    from orchestrator.watch.chat import HELP
+
+    return HELP
+
+
+def _studio(args: str) -> str:
+    from orchestrator.studio.chat import handle
+
+    return handle(args)
+
+
+def _edit(args: str) -> str:
+    from orchestrator.edit.chat import handle
+    return handle(args)
+
+
+def _edit_help() -> str:
+    from orchestrator.edit.chat import HELP
+    return HELP
+
+
+def _studio_help() -> str:
+    from orchestrator.studio.chat import HELP
+
+    return HELP
+
+
+def _recap_help() -> str:
+    from orchestrator.recap.cli import HELP
+
+    return HELP
+
+
 def _myday(name: str) -> Callable[[str], str]:
     def run(args: str) -> str:
         from orchestrator.myday import chat
@@ -102,11 +172,22 @@ def table() -> tuple[ChatCommand, ...]:
                     _slack),
         ChatCommand("meet", "Book Outlook meetings + Slack notes: 1:1s, all-hands, approve", _outreach_help("meet"),
                     _meet),
-        ChatCommand("hr", "Payslips, interviews on one Teams link, the HR inbox sorted", _hr_help(), _hr),
+        ChatCommand("hr", "Payslips, interviews on one Teams link, the HR inbox sorted, replies, /hr list", _hr_help(), _hr),
         ChatCommand("day", "Today's tasks from To Do: done, top 3, snooze, points, streak", _myday_help("day"),
                     _myday("day")),
         ChatCommand("bills", "Bills (incl. found in Gmail): due timeline, reminders, mark paid", _myday_help("bills"),
                     _myday("bills")),
+        ChatCommand("recap", "What is waiting on you: approvals, HR mail, due tasks, deadlines", _recap_help(),
+                    _recap),
+        ChatCommand("notes", "Smriti: summaries, tasks, PRDs and docs from your Teams meetings", _notes_help(),
+                    _notes),
+        ChatCommand("watch", "Tells you when a page adds something: job openings, uploads, posts", _watch_help(),
+                    _watch),
+        ChatCommand("studio", "Video, audio, b-roll and images on your server; /studio voice <text> (Kokoro)",
+                    _studio_help(), _studio),
+        ChatCommand("edit", "Your own footage cut and finished in a style (zero1, aevy, mine): /edit <Drive link>",
+                    _edit_help(), _edit),
+        ChatCommand("resume", "Bring back an approval that expired without your yes", _resume_help(), _resume),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),
     )

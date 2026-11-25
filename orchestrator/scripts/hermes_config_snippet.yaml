@@ -111,3 +111,19 @@ platform_toolsets:
 #                                                  the minimum 64,000"), no request sent, parent unaffected;
 #      parent itself on a 32K endpoint          -> refused at build.
 #    The floor is on the model's reported WINDOW, not on tokens sent. Pin delegation to a model with 64K+.
+
+# 7. Voice notes → text with local Whisper `small` (decided 2026-11-24: mostly Hinglish; `base` is weak at it).
+#    NOT TESTED: the model download (blocked in the build container) and speed on the 4 GB ARM host.
+#    `small` int8 needs about 1 GB of RAM while it runs; a 1-minute note takes roughly 20–60 s on 2 vCPU.
+#    language "" = auto-detect (Hinglish is usually detected as Hindi). Whisper then tends to write Hindi in
+#    Devanagari; the prompt below is a romanised Hinglish sample, which nudges it toward Latin script.
+#    echo_transcripts shows you what it heard before the agent acts on it.
+stt:
+  enabled: true
+  echo_transcripts: true
+  provider: local
+  language: ""
+  prompt: "Haan, toh kal ki meeting 10 baje hai. Payslip, interview, Telegram, Outlook, Medoc pe update bhejna."
+  local:
+    model: small
+    language: ""

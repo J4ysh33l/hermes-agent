@@ -1,0 +1,11 @@
+"""Studio cron entry point (every 30 minutes). Written by orchestrator/brief/install.sh into
+$HERMES_HOME/scripts/ (Hermes only runs scheduled scripts from there). Collects Claude's handoff answers
+and renders queued videos inside studio.render_window; prints nothing when idle."""
+
+import sys
+
+sys.path.insert(0, "@REPO_ROOT@")
+
+from orchestrator.studio.cli import main  # noqa: E402
+
+sys.exit(main(["queue", "run"]))

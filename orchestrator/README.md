@@ -37,8 +37,13 @@ not upstream Hermes code and never touches Hermes' core.
 | `llm.py`, `usage.py`, `prices.yaml` | The one logged model client; the usage log and `/usage` report; prices and free limits. |
 | `commands.py`, `plugin/` | The table of our Telegram commands and the one Hermes plugin that registers them plus `/menu`. |
 | `brief/` | The morning brief (first workflow). Setup, flow and Telegram commands: `brief/README.md`. |
-| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes`; no model sees pay. `hr/README.md`. |
+| `hr/` | Payslips from the monthly salary sheet, emailed from Outlook after `/hr payslip yes` (no model sees pay); interviews; the HR inbox; `/hr reply` (Gemini drafts with names and numbers hidden, or templates) and `/hr list`. `hr/README.md`. |
+| `notes/` | Smriti (`/notes`): asks after each Teams meeting you organised what to make; transcribes the recording with Gemini (Hindi in Latin script, paced, audio only), then summaries, task lists, PRDs or any document, by Gemini or by Claude through the handoff repo. |
+| `recap/` | The 20:00 deadline recap (`/recap now`): approvals waiting or expired unapproved (until redone or dropped; `/resume 2` brings one back after a safety check), HR mail with no reply, To Do tasks and bills due, calendar deadlines. No model. |
 | `outreach/` | Slack messages sent as you and Outlook meetings (`/slack`, `/meet`), approved in Telegram. `outreach/README.md`. |
+| `watch/` | Watches (`/watch`): a script reads job-board feeds, RSS or a page's links and tells you only when something is added, with Gemini's note on what matters; Claude researches new pages through the handoff repo. `watch/README.md`. |
+| `studio/` | Video, audio, b-roll and images on the server (`/studio`). Now: voice with Kokoro (free, local) or Edge TTS (online), Hinglish put into Devanagari by Gemini first. `studio/README.md`. |
+| `handoff.py`, `HANDOFF.md` | Work for Claude through your private GitHub repo: Hermes opens an issue, a Claude scheduled task answers. How to set the repo and the task up, and the prompt to paste. |
 | `run_checks.sh` | Every `test_*.py` under this folder, then the secret scan. Exit non-zero on any failure. |
 
 Each workflow will get its own folder here and ship as a Hermes profile distribution.
