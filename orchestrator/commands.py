@@ -126,6 +126,16 @@ def _studio(args: str) -> str:
     return handle(args)
 
 
+def _edit(args: str) -> str:
+    from orchestrator.edit.chat import handle
+    return handle(args)
+
+
+def _edit_help() -> str:
+    from orchestrator.edit.chat import HELP
+    return HELP
+
+
 def _studio_help() -> str:
     from orchestrator.studio.chat import HELP
 
@@ -175,6 +185,8 @@ def table() -> tuple[ChatCommand, ...]:
                     _watch),
         ChatCommand("studio", "Video, audio, b-roll and images on your server; /studio voice <text> (Kokoro)",
                     _studio_help(), _studio),
+        ChatCommand("edit", "Your own footage cut and finished in a style (zero1, aevy, mine): /edit <Drive link>",
+                    _edit_help(), _edit),
         ChatCommand("resume", "Bring back an approval that expired without your yes", _resume_help(), _resume),
         ChatCommand("goals", "Work and personal goals, milestones, Sunday review", _myday_help("goals"),
                     _myday("goals")),

@@ -24,7 +24,7 @@ change what they said: you only keep or cut sentences and words, and add graphic
 
 {sentences}
 
-Code already found these (you can override by keeping them out of "drop", or add more):
+Code already found these. To overrule a retake that is really two different points, list its number in "keep":
 {auto}
 
 ## Your job

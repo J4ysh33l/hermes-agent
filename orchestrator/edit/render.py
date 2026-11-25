@@ -31,6 +31,7 @@ from .media import MediaError, run
 from .settings import Settings
 from .style import Style
 from .words import Sentence, Word
+import itertools
 
 FADE = 0.015
 TITLE_SHORTEST, TITLE_LONGEST = 2.5, 8.0
@@ -67,7 +68,7 @@ def _shots(cut: cuts.CutList, points: list[float], look: Style, fps: int) -> lis
             zoomed = not zoomed
         inside = [p for p in mine if p > r.start + 0.3]
         edges = [r.start, *inside, r.end]
-        for k, (a, b) in enumerate(zip(edges, edges[1:])):
+        for k, (a, b) in enumerate(itertools.pairwise(edges)):
             if k:
                 zoomed = not zoomed
             start_f, end_f = round(out * fps), round((out + b - a) * fps)
@@ -286,7 +287,7 @@ def _cues(placed: list[Placed], use: str) -> list[sound.Cue]:
 
 def render(job: Path, look: Style, chosen: plans.Plan, words: list[Word], found: list[Sentence], edit: Settings,
            studio: StudioSettings, home: Path, out: Path, http: Http | None = None, keys: Keys = Keys()) -> Result:
-    cut = cuts.build(words, found, look, chosen.drop, chosen.trim)
+    cut = cuts.build(words, found, look, chosen.drop, chosen.trim, chosen.keep)
     if not cut.ranges:
         raise MediaError("nothing is left after the cuts")
     (job / "cuts.json").write_text(json.dumps(cut.as_dict(), indent=1), encoding="utf-8")

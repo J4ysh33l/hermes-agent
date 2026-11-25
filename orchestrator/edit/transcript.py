@@ -11,7 +11,7 @@ from orchestrator.studio.settings import Settings as StudioSettings
 from orchestrator.studio.voice import _paths
 
 from .settings import Settings
-from .words import Sentence, Word, has_devanagari, load, numbered, sentences  # noqa: F401  (re-exported)
+from .words import Sentence, Word, has_devanagari, load, numbered, sentences
 
 TIMEOUT = 7200
 WORKER = Path(__file__).with_name("asr_worker.py")

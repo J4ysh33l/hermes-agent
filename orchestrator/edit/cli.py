@@ -4,6 +4,7 @@
         ingest → transcribe → plan (the given plan.json, else cuts and captions only) → render
     prompt <job dir> [--notes "..."]     the editor's prompt for a prepared job (to plan by hand with Claude)
     check <job dir>                      check <job dir>/plan.json against its transcript and style
+    queue                                one pass over the edit jobs (cron: every 5 minutes)
     styles                               the styles, one line each
     style new <name> [--from mine]       a style of yours to edit ($HERMES_HOME/edit/styles/<name>.yaml)
 """
@@ -50,7 +51,7 @@ def cmd_run(a: argparse.Namespace, home: Path) -> int:
     ws = words.load(job / "transcript.json")
     found = words.sentences(ws)
     chosen = plans.load(Path(a.plan).read_text(encoding="utf-8")) if a.plan else plans.basic(found, look)
-    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim)
+    cut = cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep)
     problems = plans.check(chosen, found, cut, look, a.notes or "")
     if problems:
         print("plan problems:\n" + "\n".join(f"- {p}" for p in problems), file=sys.stderr)
@@ -82,7 +83,7 @@ def cmd_check(a: argparse.Namespace, home: Path) -> int:
     found = words.sentences(ws)
     chosen = plans.load((job / "plan.json").read_text(encoding="utf-8"))
     asked = (job / "asked.txt").read_text(encoding="utf-8") if (job / "asked.txt").is_file() else ""
-    problems = plans.check(chosen, found, cuts.build(ws, found, look, chosen.drop, chosen.trim), look, asked)
+    problems = plans.check(chosen, found, cuts.build(ws, found, look, chosen.drop, chosen.trim, chosen.keep), look, asked)
     print("\n".join(f"- {p}" for p in problems) if problems else "OK")
     return 1 if problems else 0
 
@@ -104,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("check")
     c.add_argument("job")
     sub.add_parser("styles")
+    sub.add_parser("queue", help="one pass over the edit jobs (the cron runs this every 5 minutes)")
     s = sub.add_parser("style")
     s.add_argument("action", choices=["new"])
     s.add_argument("name")
@@ -117,6 +119,12 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_prompt(a, home)
         if a.cmd == "check":
             return cmd_check(a, home)
+        if a.cmd == "queue":
+            from . import chat, queue
+            said = queue.run(chat.Context(home))
+            if said:
+                print(said)
+            return 0
         if a.cmd == "styles":
             print("\n".join(style.summary(style.load(n, home)) for n in style.names(home)))
             return 0

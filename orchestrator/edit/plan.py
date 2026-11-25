@@ -5,6 +5,7 @@ time. Checked here (``check``), so a plan that would break the video goes back w
       "title": "SIP won't make you rich",           # the headline card for the hook (3–8 words)
       "subtitle": "",                               # only when the style has title.subtitle
       "drop": [{"s": 4, "why": "repeats S6"}],      # sentences cut (retakes are found by code as well)
+      "keep": [7],                                  # sentences code took for retakes that are not (overrules it)
       "trim": [{"s": 1, "from": 3, "to": 12}],      # keep only these words of a sentence (warm-up, trailing "so...")
       "punch": ["S3.5", "S7.1"],                    # punch-ins (word where the zoom jumps in); [] = by the style's rhythm
       "graphics": [
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
     from .style import Style
 from .words import Sentence
 
-KINDS = ("stat", "headline", "list", "chart", "quote", "chapter", "emoji", "lower_third", "screenshot", "image",
+KINDS = ("stat", "headline", "list", "quote", "chapter", "emoji", "lower_third", "screenshot", "image",
          "cutaway")
 ANCHOR = re.compile(r"^S(\d+)\.(\d+)$")
 TEXT_MAX = {"stat": 28, "headline": 90, "chapter": 40, "lower_third": 40, "quote": 160, "list": 34, "caption": 60}
@@ -69,19 +70,21 @@ class Plan:
     subtitle: str = ""
     drop: dict[int, str] = field(default_factory=dict)
     trim: dict[int, tuple[int, int]] = field(default_factory=dict)
+    keep: set[int] = field(default_factory=set)
     punch: list[tuple[int, int]] = field(default_factory=list)
     graphics: list[dict[str, Any]] = field(default_factory=list)
     music: str = ""
     notes: str = ""
 
     @classmethod
-    def parse(cls, raw: Any) -> "Plan":
+    def parse(cls, raw: Any) -> Plan:
         if not isinstance(raw, dict):
             raise PlanError("the plan must be a JSON object")
         plan = cls(title=str(raw.get("title", "")).strip(), subtitle=str(raw.get("subtitle", "")).strip(),
                    music=str(raw.get("music", "")).strip(), notes=str(raw.get("notes", "")).strip())
         for item in raw.get("drop") or []:
             plan.drop[int(item["s"])] = str(item.get("why", "editor"))
+        plan.keep = {int(x) for x in raw.get("keep") or []}
         for item in raw.get("trim") or []:
             plan.trim[int(item["s"])] = (int(item["from"]), int(item["to"]))
         for at in raw.get("punch") or []:
@@ -92,7 +95,7 @@ class Plan:
     def as_dict(self) -> dict[str, Any]:
         return {"title": self.title, "subtitle": self.subtitle,
                 "drop": [{"s": k, "why": v} for k, v in sorted(self.drop.items())],
-                "trim": [{"s": k, "from": a, "to": b} for k, (a, b) in sorted(self.trim.items())],
+                "trim": [{"s": k, "from": a, "to": b} for k, (a, b) in sorted(self.trim.items())], "keep": sorted(self.keep),
                 "punch": [f"S{s}.{w}" for s, w in self.punch], "graphics": self.graphics, "music": self.music,
                 "notes": self.notes}
 
@@ -155,7 +158,7 @@ def check(plan: Plan, found: list[Sentence], cut: CutList, look: Style, evidence
     """Problems with a plan, for the editor to fix; [] = ready to render."""
     problems = []
     ids = {s.id for s in found}
-    for sid in list(plan.drop) + list(plan.trim) + [s for s, _ in plan.punch]:
+    for sid in list(plan.drop) + list(plan.trim) + list(plan.keep) + [s for s, _ in plan.punch]:
         if sid not in ids:
             problems.append(f"S{sid} does not exist (S1–S{max(ids) if ids else 0})")
     for sid, (a, b) in plan.trim.items():

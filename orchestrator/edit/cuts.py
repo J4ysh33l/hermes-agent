@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .style import Style
 from .words import Sentence, Word
+import itertools
 
 PURE = {"um", "umm", "uh", "uhh", "uhm", "hmm", "hm", "er", "erm", "ah", "aa", "mm"}  # never words
 SOFT = {"matlab", "basically", "actually", "like", "toh", "na", "yaani", "dekho"}  # fillers only when they stand alone
 STANDALONE = 0.15  # seconds of pause on a side that make a word "stand alone"
-RETAKE = 0.7  # similarity at which the earlier of two near sentences is a retake
+RETAKE = 0.85  # similarity at which the earlier of two near sentences is a retake (one word in five different is not)
 FALSE_START = 1.6  # seconds: a fragment this short that the next sentence restarts is dropped
 SHORTEST = 0.2  # a kept range shorter than this is joined to its neighbour
 
@@ -101,19 +102,18 @@ def fillers(words: list[Word], mode: str) -> set[int]:
         after = words[n + 1].start - w.end if n + 1 < len(words) else 9.0
         comma = bool(re.search(r"[,.…]$", w.text)) or (n and re.search(r"[,.…]$", words[n - 1].text))
         alone = before >= STANDALONE or after >= STANDALONE or bool(comma)
-        if bare in PURE and (alone or mode == "all"):
-            found.add(n)
-        elif bare in SOFT and alone and (before >= STANDALONE and after >= STANDALONE or comma and max(before, after) >= STANDALONE):
+        if bare in PURE and (alone or mode == "all") or bare in SOFT and alone and (before >= STANDALONE and after >= STANDALONE or comma and max(before, after) >= STANDALONE):
             found.add(n)
     return found
 
 
 def build(words: list[Word], found: list[Sentence], look: Style, drop: dict[int, str] | None = None,
-          trim: dict[int, tuple[int, int]] | None = None) -> CutList:
+          trim: dict[int, tuple[int, int]] | None = None, keep_ids: set[int] | frozenset[int] = frozenset()) -> CutList:
     """``drop``: sentence id → reason (from the plan, added to the retakes found here); ``trim``: sentence id →
-    (first word, last word) to keep, counted from 1 inside the sentence."""
+    (first word, last word) to keep, counted from 1 inside the sentence; ``keep_ids``: sentences the plan keeps
+    although code took them for retakes."""
     pace = look["pace"]
-    dropped = dict(retakes(found)) if pace["retakes"] else {}
+    dropped = {k: v for k, v in retakes(found).items() if k not in keep_ids} if pace["retakes"] else {}
     dropped.update(drop or {})
     keep: list[int] = []
     for s in found:
@@ -128,7 +128,7 @@ def build(words: list[Word], found: list[Sentence], look: Style, drop: dict[int,
         return cl
     longest, pad = float(pace["max_pause"]), float(pace["pad"])
     runs: list[list[int]] = [[keep[0]]]
-    for prev, n in zip(keep, keep[1:]):
+    for prev, n in itertools.pairwise(keep):
         gap = words[n].start - words[prev].end
         (runs[-1].append(n) if n == prev + 1 and gap <= longest else runs.append([n]))
     ranges = []

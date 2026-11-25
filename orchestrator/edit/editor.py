@@ -47,7 +47,7 @@ if __name__ == "__main__":
     notes = (folder / "notes.txt").read_text(encoding="utf-8") if (folder / "notes.txt").is_file() else ""
     try:
         chosen = plan.load((folder / "plan.json").read_text(encoding="utf-8"))
-        cut = cuts.build(words.load(folder / "words.json"), found, look, chosen.drop, chosen.trim)
+        cut = cuts.build(words.load(folder / "words.json"), found, look, chosen.drop, chosen.trim, chosen.keep)
         problems = plan.check(chosen, found, cut, look, notes)
     except (OSError, plan.PlanError) as exc:
         problems = [str(exc)]
