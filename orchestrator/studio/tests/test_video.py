@@ -236,6 +236,17 @@ class PropsTest(unittest.TestCase):
         self.assertEqual(out["scenes"][0]["after"]["src"], "")
         self.assertTrue((self.job / "assets/00-messy.jpg").is_file())
 
+    def test_a_counters_own_start_does_not_move_the_scene(self):
+        # a counter's "start" is the number it counts from; it once overwrote the scene's start time (0 s)
+        board = storyboard.parse({"scenes": [{"type": "title", "say": "First.", "text": "a"},
+                                             {"type": "counter", "say": "Then *38* of them.", "value": 38, "start": 5,
+                                              "label": "of them"}]},
+                                 self.folder)
+        out = video.props(board, self.job, fake_speech(self.job, ["First.", "Then 38 of them."]), DEFAULT)
+        counter = out["scenes"][1]
+        self.assertGreater(counter["start"], 0.0)
+        self.assertEqual(counter["count_from"], 5)
+
     def test_captions_show_the_script_as_written_in_order(self):
         board = storyboard.parse({"scenes": [{"type": "title", "say": "Doston yeh bahut important hai.",
                                               "text": "t"}]}, self.folder)

@@ -34,7 +34,7 @@ PROMPT = Path(__file__).with_name("prompts") / "research.md"
 HEADING = "Research"
 ANSWER = "research.txt"
 ENDING = ("\nUse web search. Write only the fact lines to `studio/$job/research.txt`, then in one command commit, "
-          "push to main and close this issue.\n")
+          "and run sh tools/close.sh (it pushes and closes this issue).\n")
 SITE = re.compile(r"\(([\w.-]+\.[a-z]{2,})\b[^()]*\)\.?\s*$")
 FACT = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
 MAX_FACTS = 25

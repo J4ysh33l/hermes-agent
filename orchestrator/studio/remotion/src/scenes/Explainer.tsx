@@ -32,7 +32,7 @@ const toItem = (s: ExplainerScene, frames: number): SceneItem => {
         lines: lines.map((l, k) => ({...l, strike_at: s.lines[k].strike ? (lines[k + 1]?.at ?? Math.max(l.at + 20, frames - 30)) : undefined}))};
     }
     case "counter":
-      return {...base, number: s.value, count_from: s.start, prefix: s.prefix, suffix: s.suffix, label: s.label, sub: s.sub || undefined,
+      return {...base, number: s.value, count_from: s.count_from, prefix: s.prefix, suffix: s.suffix, label: s.label, sub: s.sub || undefined,
         tone: s.tone, at: 4};
     case "stack":
       return {...base, title: s.title || undefined, tone: s.tone,

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -124,6 +125,23 @@ class Report(unittest.TestCase):
         self.assertIn("about $0.42", text)  # the session's own figure was $0.419
         self.assertIn("no price known for gemini-2.5-flash", text)
         self.assertIn("📊", steps.short(text))
+
+    def test_a_step_that_failed_says_so_in_its_row(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        with self.assertRaises(OSError):
+            with steps.timed(folder, "delivery", "Telegram"):
+                raise OSError("TELEGRAM_BOT_TOKEN is not set")
+        self.assertEqual(steps.read(folder)[0]["note"], "Telegram · failed: TELEGRAM_BOT_TOKEN is not set")
+
+    def test_a_stamp_without_a_zone_is_the_servers_clock(self):
+        # job.json's "created" is the server's local time; on a UTC server 09:30 there is 15:00 IST
+        old = os.environ.get("TZ")
+        self.addCleanup(lambda: (os.environ.__setitem__("TZ", old) if old else os.environ.pop("TZ", None), time.tzset()))
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        self.assertEqual(steps._t("2026-11-26T09:30:00").strftime("%H:%M"), "15:00")
+        self.assertEqual(steps._t("2026-11-26T15:00:00+05:30").strftime("%H:%M"), "15:00")
 
     def test_a_step_claude_has_not_reported_says_so(self):
         folder = self.tmp / "job2"

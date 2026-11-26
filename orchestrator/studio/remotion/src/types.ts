@@ -166,7 +166,7 @@ export interface CustomScene extends SceneBase {
 type Tone = "neutral" | "problem" | "solution";
 export type ExplainerScene = SceneBase & (
   | {type: "statement"; lines: {text: string; tone: Tone; strike: boolean}[]; sub: string; icon: string}
-  | {type: "counter"; value: number; start: number; prefix: string; suffix: string; label: string; sub: string; tone: Tone}
+  | {type: "counter"; value: number; count_from: number; /* the storyboard's "start" (video.py RENAMED) */ prefix: string; suffix: string; label: string; sub: string; tone: Tone}
   | {type: "stack"; title: string; tone: "problem" | "solution"; rows: {text: string; icon: string; mark: "none" | "cross" | "check"}[]}
   | {type: "steps"; title: string; steps: {label: string; icon: string; sub: string}[]}
   | {type: "points"; title: string; items: string[]; numbered: boolean; struck: boolean}
