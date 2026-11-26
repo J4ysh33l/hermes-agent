@@ -168,10 +168,45 @@ class MixTest(unittest.TestCase):
         self.assertGreater(_loudness(out, 2.4, 0.1), -45)
         self.assertLess(_loudness(out, 3.0, 0.9), -80)
 
-    def test_nothing_to_add_leaves_the_voice_as_it_is(self):
+    def test_nothing_to_add_still_shapes_the_voice_to_the_videos_length(self):
         chosen = sound.plan(self.http, self.home, look(self.home, "q", "off", "off"), PROPS, "t")
         out = sound.mix(self.home, self.voice, chosen, 6.0, self.home / "mix.wav")
-        self.assertEqual(out.read_bytes(), self.voice.read_bytes())
+        self.assertGreater(_loudness(out, 0.5, 1.0), -30)
+        self.assertLess(_loudness(out, 2.6, 1.2), -80)  # no music came in
+
+    def test_the_music_sits_well_under_the_voice_even_in_the_pauses(self):
+        # it was a fixed -30 LUFS, 9 LU under a -21 LUFS clone: the words drowned
+        chosen = sound.plan(self.http, self.home, look(self.home, "m", "off", "auto"), PROPS, "t")
+        out = sound.mix(self.home, self.voice, chosen, 6.0, self.home / "mix.wav")
+        song = "bandpass=f=330:width_type=q:w=8,bandpass=f=330:width_type=q:w=8"
+        self.assertGreater(_loudness(out, 0.5, 1.2) - _loudness(out, 2.6, 1.2, song), 12)
+
+    def test_the_director_can_leave_the_music_out(self):
+        chosen = sound.plan(self.http, self.home, look(self.home, "m", "off", "auto"), PROPS, "t", "none")
+        self.assertIsNone(chosen.music)
+        self.assertIn("music: none (the director's choice)", chosen.notes)
+
+
+class RotationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home)
+        music = self.home / "studio/music"
+        music.mkdir(parents=True)
+        for name in ("a.mp3", "b.mp3"):
+            (music / name).write_bytes(b"x")
+        (music / "music.yaml").write_text("- {file: a.mp3, licence: CC0, mood: chill}\n"
+                                          "- {file: b.mp3, licence: CC0, mood: chill}\n", encoding="utf-8")
+
+    def pick(self, title: str) -> str:
+        track, _ = sound.choose(None, self.home, "default", ("chill",), title)
+        sound.used(self.home, track, title)
+        return track.path.name
+
+    def test_the_next_video_gets_another_track_and_its_own_clips_keep_it(self):
+        first = self.pick("GPS")
+        self.assertEqual(self.pick("GPS"), first)  # a hook clip of the same video
+        self.assertNotEqual(self.pick("Compound interest"), first)  # the next video: not the same song again
 
 
 if __name__ == "__main__":

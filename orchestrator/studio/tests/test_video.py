@@ -236,6 +236,18 @@ class PropsTest(unittest.TestCase):
         self.assertEqual(out["scenes"][0]["after"]["src"], "")
         self.assertTrue((self.job / "assets/00-messy.jpg").is_file())
 
+    def test_a_word_unit_stands_off_the_number_and_a_symbol_stays_on(self):
+        # " crore" was trimmed to "crore": the video showed "120.0crore"
+        def unit(suffix: str, prefix: str = "") -> tuple[str, str]:
+            scene = {"type": "stat", "say": "One.", "value": 1, "label": "l", "suffix": suffix, "prefix": prefix}
+            fields = storyboard.parse({"scenes": [scene]}, self.folder).scenes[0].fields
+            return fields["prefix"], fields["suffix"]
+        self.assertEqual(unit(" crore"), ("", " crore"))
+        self.assertEqual(unit("km"), ("", " km"))
+        self.assertEqual(unit("x"), ("", "x"))
+        self.assertEqual(unit("%", "₹"), ("₹", "%"))
+        self.assertEqual(unit("", "Rs"), ("Rs ", ""))
+
     def test_a_counters_own_start_does_not_move_the_scene(self):
         # a counter's "start" is the number it counts from; it once overwrote the scene's start time (0 s)
         board = storyboard.parse({"scenes": [{"type": "title", "say": "First.", "text": "a"},

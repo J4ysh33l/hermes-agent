@@ -57,7 +57,12 @@ EFFECTS: dict[str, tuple[str, float, float]] = {
 # What each transition sounds like (none, cut and fade are quiet).
 ON_TRANSITION = {"push": "whoosh", "whip": "whoosh", "zoom": "whoosh", "flash": "hit", "burn": "riser"}
 LEVEL = {"whoosh": -16.0, "hit": -14.0, "riser": -18.0, "pop": -18.0, "tick": -24.0}  # dB under full scale
-BED_LUFS = -30.0  # the music under the voice (Kokoro speaks near -18 LUFS), before ducking
+BED_UNDER = 20.0  # the music sits this many LU under the voice, before ducking (was a fixed -30 LUFS, tuned
+# for Kokoro near -18: under a -21 LUFS clone that left only 9 LU and the music swamped the words)
+RECENT = 4  # a track used by one of the last 4 videos is not used again while another one fits
+# The voice, made to carry: rumble out, presence (where consonants and energy live) up, levelled by a
+# gentle compressor so quiet words keep up with loud ones.
+VOICE_CHAIN = "highpass=f=80,equalizer=f=3200:t=q:w=1.0:g=3,acompressor=threshold=-22dB:ratio=3:attack=5:release=90:makeup=2"
 SWELL_DB = 7.0  # how far the bed rises once the voice is done (an end card)
 MUSIC_SECONDS = (40, 420)  # a found track long enough to loop well, short enough to fetch quickly
 MUSIC_LICENCES = "cc0,pdm,by"
@@ -236,10 +241,28 @@ def _fits(track: Track, mood: str) -> float:
     return sum(1 for w in wanted if any(h.startswith(w) for h in have)) / len(wanted) if wanted else 0.0
 
 
+def recent(home: Path) -> list[tuple[str, str]]:
+    """(track file, video title) of the last videos' music, newest last."""
+    path = home / "studio" / "music" / "recent.txt"
+    rows = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    return [(f, t) for f, _, t in (row.partition("\t") for row in rows) if f]
+
+
+def used(home: Path, track: Track, title: str) -> None:
+    path = home / "studio" / "music" / "recent.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [r for r in recent(home) if r[1] != title] + [(track.path.name, title)]  # one row per video
+    path.write_text("".join(f"{f}\t{t}\n" for f, t in rows[-RECENT:]), encoding="utf-8")
+
+
 def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], title: str) -> tuple[Track | None, tuple[str, ...]]:
     """The track for a video: yours (this profile's) that suits the first mood best; none suits: three found
-    for it on Openverse; nothing found: any of yours. The same title gets the same track among equals."""
+    for it on Openverse; nothing found: any of yours. A track one of the last videos used is passed over
+    while another fits. The same title gets the same track among equals."""
+    last = {f for f, t in recent(home) if t != title}  # its own hook clips keep the video's track
     mine = [t for t in library(home) if isinstance(t, Track) and (not t.profiles or profile in t.profiles)]
+    fresh = [t for t in mine if t.path.name not in last]
+    mine = fresh or mine
     mood = next((m for m in moods if m.strip()), "")
     best = max((_fits(t, mood) for t in mine), default=0.0)
     tracks = [t for t in mine if _fits(t, mood) == best] if best >= 0.5 else []
@@ -248,7 +271,7 @@ def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], 
             tracks = fetch_music(http, home, query, 3)
             if tracks:
                 break
-    tracks = tracks or mine
+    tracks = [t for t in tracks if t.path.name not in last] or tracks or mine
     if not tracks:
         return None, ("no music: nothing in studio/music/music.yaml suits it and none found on Openverse",)
     track = tracks[zlib.crc32(title.encode("utf-8")) % len(tracks)]
@@ -258,16 +281,21 @@ def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], 
     return track, tuple(notes)
 
 
-def plan(http: Http, home: Path, look: Profile, props: dict[str, Any], title: str) -> Plan:
-    """The effects and music for one video. Music (``auto``/``always``): the track that suits the profile's
-    ``music_query`` (``choose``); none to be had: no music (``always`` says so)."""
+def plan(http: Http, home: Path, look: Profile, props: dict[str, Any], title: str, music: str = "") -> Plan:
+    """The effects and music for one video. ``music`` is the director's: "none" (no music: a voice-only
+    piece), a mood to search for, or "" (the profile's ``music_query``). Music (``auto``/``always``): the
+    track that suits it best (``choose``); none to be had: no music (``always`` says so)."""
     elements = look.section("elements")
     found = cues(props, elements["sfx"])
     if elements["music"] == "off":
         return Plan(tuple(found), None, ())
-    track, notes = choose(http, home, look.name, (elements["music_query"] or "calm",), title)
+    if music == "none" and elements["music"] != "always":
+        return Plan(tuple(found), None, ("music: none (the director's choice)",))
+    moods = tuple(m for m in (music if music != "none" else "", elements["music_query"] or "calm") if m)
+    track, notes = choose(http, home, look.name, moods, title)
     if track is None:
         return Plan(tuple(found), None, notes if elements["music"] == "always" else ())
+    used(home, track, title)
     return Plan(tuple(found), track, notes)
 
 
@@ -281,20 +309,19 @@ def _ffmpeg(args: list[str]) -> None:
         raise AudioError(f"ffmpeg failed: {done.stderr.strip()[-300:]}")
 
 
-def _bed_gain(track: Path) -> float:
-    """dB that bring the track to the bed level (a silent track gets none)."""
-    level = float(measure(track)["input_i"])
-    return 0.0 if level < -70 else max(-40.0, min(20.0, BED_LUFS - level))
+def _bed_gain(track: Path, voice: Path) -> float:
+    """dB that bring the track BED_UNDER under the voice (a silent track gets none)."""
+    level, spoken = float(measure(track)["input_i"]), float(measure(voice)["input_i"])
+    target = (spoken if spoken > -70 else -18.0) - BED_UNDER
+    return 0.0 if level < -70 else max(-40.0, min(20.0, target - level))
 
 
 def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path, swell: float | None = None) -> Path:
     """The voice with the plan's effects and ducked music, ``seconds`` long, into ``dst`` (WAV, not yet
     normalised). From ``swell`` seconds on (the voice is done) the music comes forward. Nothing to add: the
-    voice is copied."""
-    if not chosen.cues and not chosen.music:
-        dst.write_bytes(voice.read_bytes())
-        return dst
-    inputs, chains, beds = ["-i", str(voice)], [f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,apad=whole_dur={seconds:.3f}[v]"], []
+    voice still goes through VOICE_CHAIN."""
+    inputs, chains, beds = ["-i", str(voice)], [f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,{VOICE_CHAIN},"
+                                                f"apad=whole_dur={seconds:.3f}[v]"], []
     for n, cue in enumerate(chosen.cues, start=1):
         inputs += ["-i", str(effect(home, cue.name))]
         delay = round(cue.at * 1000)
@@ -312,9 +339,9 @@ def mix(home: Path, voice: Path, chosen: Plan, seconds: float, dst: Path, swell:
                    f"[{m}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
                    "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05,"
                    f"atrim=0:{seconds:.3f},asetpts=N/SR/TB,"
-                   f"volume={_bed_gain(chosen.music.path):.2f}dB,afade=t=in:d={FADE_IN}[bed]",
+                   f"volume={_bed_gain(chosen.music.path, voice):.2f}dB,afade=t=in:d={FADE_IN}[bed]",
                    # dips while words are spoken (fast), comes back up gently in the pauses
-                   "[bed][vk]sidechaincompress=threshold=0.03:ratio=6:attack=12:release=650:knee=4[duck]",
+                   "[bed][vk]sidechaincompress=threshold=0.02:ratio=8:attack=10:release=450:knee=4[duck]",
                    f"[duck]anull{rise},afade=t=out:st={max(0.0, seconds - FADE_OUT):.3f}:d={FADE_OUT}[ducked]"]
         voices, beds = "[vm]", [*beds, "[ducked]"]
     chains.append(f"{voices}{''.join(beds)}amix=inputs={1 + len(beds)}:duration=first:normalize=0[out]")

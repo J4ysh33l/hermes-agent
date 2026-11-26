@@ -68,6 +68,7 @@ BOARD = {
          "text": "Bun is designed as a drop-in replacement for Node.js.", "author": "Jarred Sumner"},
     ],
     "cover": {"scene": 3, "words": "25x faster"},
+    "music": "fast punchy electronic",
 }
 RACE = {"type": "custom", "say": "It installs packages up to *25 times* faster than npm.",
         "brief": "Two progress bars race; Bun's fills while npm's crawls.", "props": {"speedup": 25},

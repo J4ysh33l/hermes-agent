@@ -16,7 +16,7 @@ import "@fontsource/poppins/700.css";
 import React from "react";
 import {AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame} from "remotion";
 import * as L from "lucide-react";
-import {fitLine, Marked, plain, ramp, Rise, Strike, Tick, Underline, useCount} from "../kit";
+import {decimalsOf, fitLine, Marked, plain, ramp, Rise, Strike, Tick, Underline, useCount} from "../kit";
 import {SceneFrame} from "../motion";
 import {SCENES} from "../Short";
 import {DEFAULT_PROFILE, Profile, ProfileProvider} from "../theme";
@@ -256,7 +256,7 @@ const Counter: React.FC<Props> = ({look, item, dark}) => {
   const at = item.at ?? 0;
   const to = item.number ?? 0;
   const value = useCount(item.count_from ?? 0, to, at);
-  const digits = Number.isInteger(to) ? 0 : 1;
+  const digits = decimalsOf(to);
   const shown = `${item.prefix ?? ""}${value.toLocaleString("en-IN", {maximumFractionDigits: digits, minimumFractionDigits: digits})}${item.suffix ?? ""}`;
   const final = `${item.prefix ?? ""}${to.toLocaleString("en-IN", {maximumFractionDigits: digits, minimumFractionDigits: digits})}${item.suffix ?? ""}`;
   const top = item.layout === "top";

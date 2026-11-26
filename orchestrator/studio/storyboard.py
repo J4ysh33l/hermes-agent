@@ -115,6 +115,7 @@ class Storyboard:
     scenes: tuple[Scene, ...]
     folder: Path  # where relative ``src`` files are
     profile: str  # "" = studio.profile
+    music: str = ""  # "none" = no music; a mood ("tense ticking electronic"); "" = the profile's music_query
 
 
 Field = Callable[[str, Any], Any]
@@ -130,6 +131,17 @@ def _text(required: bool) -> Field:
         if not isinstance(value, (str, int, float)):
             raise StoryboardError(f"{where} must be text")
         return str(value).strip()
+    return parse
+
+
+def _unit(side: str) -> Field:
+    """A number's prefix or suffix. A word unit ("crore", "km", "µs") stands a space off the number; a
+    one-letter unit ("25x", "5k") and a symbol ("%", "₹") stay on it. Text fields are trimmed, so " crore"
+    once came out as "120crore"."""
+    def parse(where: str, value: Any) -> str:
+        unit = _text(False)(where, value)
+        word = len(unit) >= 2 and (unit[0].isalpha() if side == "suffix" else unit[-1].isalpha())
+        return "" if not unit else (f" {unit}" if side == "suffix" else f"{unit} ") if word else unit
     return parse
 
 
@@ -228,7 +240,7 @@ SCHEMA: dict[str, dict[str, Field]] = {
     "title": {"text": _text(True), "kicker": _text(False)},
     "bullets": {"title": _text(False), "items": _items},
     "code": {"title": _text(False), "code": _text(True)},
-    "stat": {"value": _number, "prefix": _text(False), "suffix": _text(False), "label": _text(True)},
+    "stat": {"value": _number, "prefix": _unit("prefix"), "suffix": _unit("suffix"), "label": _text(True)},
     "image": {"src": _text(True), "caption": _text(False)},
     "compare": {"left": _side, "right": _side},
     "terminal": {"title": _text(False), "lines": _list(1, 10, _text(True))},
@@ -248,7 +260,7 @@ SCHEMA: dict[str, dict[str, Field]] = {
     # set in the accent colour, in italic.
     "statement": {"lines": _list(1, 3, _object(text=_short(30), tone=_tone, strike=_flag(False))), "sub": _short(60, False),
                   "icon": _icon(False)},
-    "counter": {"value": _number, "start": _number_or(0), "prefix": _text(False), "suffix": _text(False),
+    "counter": {"value": _number, "start": _number_or(0), "prefix": _unit("prefix"), "suffix": _unit("suffix"),
                 "label": _short(50), "sub": _short(30, False), "tone": _tone},
     "stack": {"title": _short(40, False), "tone": _choice("problem", "solution"),
               "rows": _list(2, 4, _object(text=_short(32), icon=_icon(False), mark=_choice("none", "cross", "check")))},
@@ -375,7 +387,7 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         raise StoryboardError('A storyboard is {"title": ..., "scenes": [...]} with at least one scene')
     if len(raw["scenes"]) > MAX_SCENES:
         raise StoryboardError(f"At most {MAX_SCENES} scenes")
-    unknown = set(raw) - {"title", "scenes", "profile"}
+    unknown = set(raw) - {"title", "scenes", "profile", "music"}
     if unknown:
         raise StoryboardError(f"unknown key {min(unknown)!r} in the storyboard")
     scenes = tuple(_scene(n, s) for n, s in enumerate(raw["scenes"]))
@@ -390,7 +402,7 @@ def parse(raw: Any, folder: Path) -> Storyboard:
             elif not src.startswith("https://") and not (folder / src).is_file():
                 raise StoryboardError(f"scene {n + 1}: {folder / src} not found")
     return Storyboard(_text(False)("title", raw.get("title", MISSING)), scenes, folder,
-                      _text(False)("profile", raw.get("profile", MISSING)))
+                      _text(False)("profile", raw.get("profile", MISSING)), _text(False)("music", raw.get("music", MISSING)))
 
 
 def load(path: Path) -> Storyboard:

@@ -24,13 +24,20 @@ $look
   it's Y" as a balance, an outcome as a badge. Star the one or two words that carry a heading or line.
 - Colours and fonts are the page's; never name a colour. "tone" (problem / solution) says what a line means
   and the page colours it.
-- One idea per scene. Never two scenes of the same type in a row unless the repetition is the point.
+- One idea per scene, and every scene a new kind of picture: never two that look alike in a row (the
+  check refuses it). Title, statement, badge and quote are all text cards; bullets, points, steps and
+  stack are all lists; counter and stat are both big numbers. Between two text cards put a drawing, a
+  chart, a map or a custom scene. The first 10 s set the pace: at most one text card in them.
 - A transition only when the change means something: burn = a jump in time, flash = a reveal,
   zoom = going deeper, whip = a contrast, fade = calm, cut = a hard stop. Otherwise leave it out
   and the page's own is used.
 - "emoji" on at most 2 scenes, on a word that earns it.
 - Sound follows your choices: a whoosh on whips and pushes, a hit on a flash, a riser into a burn,
   a pop on an emoji.
+- Music is your call too ("music" below): a bed only when it adds something, chosen for THIS story
+  (a mood of 2–6 words: "tense ticking electronic", "warm hopeful piano", "playful plucky pizzicato"),
+  or "none" when the voice should stand alone (a serious, intimate or fast-talking piece). It always
+  sits well under the voice.
 - Captions take the bottom 660 px; platform buttons cover the top 230 px and the right 90 px.
 
 ## The scene library
@@ -73,7 +80,8 @@ $notes
 The file is storyboard.json:
 {"hooks": [<scene for hook 1>, <hook 2>, <hook 3>],
  "scenes": [<scene>, ...],
- "cover": {"scene": <n>, "words": "<2–4 words>"}}
+ "cover": {"scene": <n>, "words": "<2–4 words>"},
+ "music": "<a mood of 2–6 words> or none"}
 - Each hook scene says that hook's text; "scenes" carries the lines after the hook (shared by all three).
 - The cover is the most striking scene (1 = the hook, 2 = the first of "scenes") plus 2–4 huge words
   that add to the title "$title" and never repeat it.
