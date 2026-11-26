@@ -51,6 +51,9 @@ REPLY_TEMPLATES = {
     "salary": "Thank you for writing to us. We have received your query and are looking into it. "
               "We'll get back to you{by_when}.",
 }
+# Duties for a new position: one call; the next model only if one fails (Gemma takes no JSON mode).
+DUTIES_MODELS = (ModelChoice("gemma-4-31b-it", False), ModelChoice("gemma-4-26b-a4b-it", False),
+                 ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"))
 REPLY_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"),
                 ModelChoice("gemma-4-31b-it", False))
 
@@ -74,6 +77,15 @@ class Settings:
     reply_models: tuple[ModelChoice, ...] = REPLY_MODELS  # Gemini drafts; tried in order
     redact_names: tuple[str, ...] = ()  # more names to hide from the model (your team, frequent senders)
     reply_bulk_max: int = 30  # applications acknowledged in one /hr reply applications ack
+    offer_templates: tuple[tuple[str, str], ...] = (("internship", "offer_internship.docx"), ("fte", "offer_fte.docx"),
+                                                    ("consultant", "offer_consultant.docx"))  # in hr/templates/
+    company_about: str = "a healthcare technology company in India"  # all the duties model hears of you
+    duties_models: tuple[ModelChoice, ...] = DUTIES_MODELS
+    duties_count: int = 5
+    offer_subject: str = "Offer letter: {position} at {company}"
+    offer_body: str = ("Hi {first},<br><br>We are delighted to offer you the <b>{position}</b> {role} at "
+                       "{company}, starting {start}. Your offer letter is attached. Please read it, sign it and "
+                       "send us a signed copy by replying to this email.<br><br>Regards,<br>{sender}")
 
     def template(self, name: str) -> str | None:
         return dict(self.reply_templates).get(name)
@@ -102,6 +114,14 @@ def parse(raw: dict[str, Any]) -> Settings:
                            for m in hr["reply_models"]) if hr.get("reply_models") else base.reply_models,
         redact_names=tuple(str(n) for n in hr.get("redact_names") or ()),
         reply_bulk_max=int(hr.get("reply_bulk_max", base.reply_bulk_max)),
+        offer_templates=tuple({**dict(base.offer_templates),
+                               **{str(k): str(v) for k, v in (hr.get("offer_templates") or {}).items()}}.items()),
+        company_about=str(hr.get("company_about", base.company_about)),
+        duties_models=tuple(ModelChoice(str(m["id"]), bool(m.get("json_mode", True)))
+                            for m in hr["duties_models"]) if hr.get("duties_models") else base.duties_models,
+        duties_count=int(hr.get("duties_count", base.duties_count)),
+        offer_subject=str(hr.get("offer_subject", base.offer_subject)),
+        offer_body=str(hr.get("offer_body", base.offer_body)),
     )
 
 
