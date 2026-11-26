@@ -51,6 +51,9 @@ until git push -q origin HEAD:main; do
   [ "$i" -lt 5 ] || {{ echo "PUSH FAILED: issue $n left open"; exit 1; }}
   git pull -q --rebase --autostash origin main || {{ git rebase --abort 2>/dev/null; echo "PUSH FAILED: rebase conflict"; exit 1; }}
 done
+# A cloud run works on its own branch; once main has its commits, sit on main as pushed, so the session's
+# end-of-run check finds nothing unpushed (it would otherwise spend two more model calls pushing a branch).
+git fetch -q origin main && git checkout -q -B main --track origin/main 2>/dev/null
 gh api -X PATCH "repos/{repo}/issues/$n" -f state=closed >/dev/null && echo "CLOSED $n"
 """
 IGNORE = "__pycache__/\n*.pyc\n"  # the checks' leftovers: never committed, never a dirty tree at hand-in
