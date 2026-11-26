@@ -6,11 +6,19 @@ Search is by words in a work's title and tags, so results drift (a "bullet train
 the film's premiere): ``relevance`` scores each result by how many of the query's words it carries, and the
 callers keep only results that match most of them. Anonymous use allows 20 searches a minute and 200 a day;
 the callers cache by query, so a video costs a few searches once.
+
+When Openverse throttles (HTTP 429, "available in N seconds") no further search is sent until then, and
+``blocked()`` says so, so a caller can tell "rate-limited" from "nothing found". A registered client
+(``OPENVERSE_CLIENT_ID`` + ``OPENVERSE_CLIENT_SECRET`` in $HERMES_HOME/.env; free, see
+https://api.openverse.org/v1/#tag/auth) gets a far higher limit; its token is fetched once per run.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import time
+from pathlib import Path
 from typing import Any
 
 from orchestrator.brief.net import Http, HttpError
@@ -21,14 +29,62 @@ LICENCE_NAMES = {"cc0": "CC0 1.0 (public domain dedication)", "pdm": "Public Dom
 STOP = {"a", "an", "the", "of", "in", "on", "at", "and", "with", "for", "to", "by", "music", "background"}
 
 
+_state: dict[str, Any] = {"until": 0.0, "token": None}  # throttled until (epoch s); the client token
+
+
+def reset() -> None:
+    """Forget a throttle and the token (a new run; tests)."""
+    _state.update(until=0.0, token=None)
+
+
+def blocked(now: float | None = None) -> str:
+    """Why searches are not being sent right now ("" = they are)."""
+    left = _state["until"] - (time.time() if now is None else now)
+    return f"Openverse is rate-limiting this server for ~{max(1, round(left / 60))} more min" if left > 0 else ""
+
+
+def _secret(name: str) -> str:
+    if os.environ.get(name):
+        return os.environ[name]
+    env = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / ".env"
+    if env.is_file():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == name:
+                return value.strip().strip('"').strip("'")
+    return ""
+
+
+def _headers(http: Http) -> dict[str, str]:
+    """A registered client's bearer token, when one is configured (fetched once per run)."""
+    if _state["token"] is None:
+        _state["token"] = ""
+        cid, secret = _secret("OPENVERSE_CLIENT_ID"), _secret("OPENVERSE_CLIENT_SECRET")
+        if cid and secret:
+            try:
+                _state["token"] = str(http.request("POST", f"{API}/auth_tokens/token/", form={
+                    "client_id": cid, "client_secret": secret, "grant_type": "client_credentials"}).json()
+                    .get("access_token") or "")
+            except (HttpError, ValueError):
+                pass  # anonymous, then
+    return {"Authorization": f"Bearer {_state['token']}"} if _state["token"] else {}
+
+
 def search(http: Http, kind: str, query: str, licences: str = LICENCES, **filters: str) -> list[dict[str, Any]]:
     """``kind`` "images" or "audio"; ``licences`` (CC0/public-domain unless asked), non-mature results, best
-    first ([] when Openverse cannot be reached or refuses: the caller falls back)."""
+    first ([] when Openverse cannot be reached, refuses or is throttling us: see ``blocked``)."""
+    if blocked():
+        return []
     params = {"q": query, "license": licences, "mature": "false", "page_size": "20", **filters}
     allowed = set(licences.split(","))
     try:
-        found = http.request("GET", f"{API}/{kind}/", params=params).json()
-    except (HttpError, ValueError):
+        found = http.request("GET", f"{API}/{kind}/", params=params, headers=_headers(http)).json()
+    except HttpError as exc:
+        if exc.status == 429:  # "Expected available in 3336 seconds."
+            wait = re.search(r"available in (\d+) seconds", str(exc))
+            _state["until"] = time.time() + (int(wait.group(1)) if wait else 3600)
+        return []
+    except ValueError:
         return []
     return [r for r in found.get("results") or [] if isinstance(r, dict) and r.get("url")
             and str(r.get("license", "")).lower() in allowed and not r.get("unstable__sensitivity")]

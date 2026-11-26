@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "orchestrator/brief/tests"))
 
 from fakes import FakeHttp, http_error
 
-from orchestrator.studio import brief, broll, profile, storyboard
+from orchestrator.studio import brief, broll, openverse, profile, storyboard
 from orchestrator.studio.settings import Keys
 
 PEXELS_VIDEOS = {"videos": [
@@ -54,6 +54,7 @@ class BrollTest(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.home)
+        self.addCleanup(openverse.reset)
         self.look = profile.load("default", self.home)
         self.board = storyboard.parse(BOARD, self.home)
 
@@ -101,8 +102,14 @@ class BrollTest(unittest.TestCase):
         board, notes = broll.resolve(nothing, Keys(), self.home, self.board, self.look)
         self.assertEqual((board.scenes[0].type, board.scenes[0].fields["text"]), ("title", "Mumbai"))
         self.assertIn("nothing fitting found", notes[0])
-        offline = FakeHttp().on("GET", OPENVERSE, http_error(429))
-        self.assertEqual(broll.resolve(offline, Keys(), self.home, self.board, self.look)[0].scenes[0].type, "title")
+        offline = FakeHttp().on("GET", OPENVERSE, http_error(429, '{"detail":"Expected available in 3336 seconds."}'))
+        board, notes = broll.resolve(offline, Keys(), self.home, self.board, self.look)
+        self.assertEqual(board.scenes[0].type, "title")
+        self.assertIn("Openverse is rate-limiting this server for ~56 more min", notes[0])  # not "nothing found"
+        calls = offline.count(OPENVERSE)
+        broll.resolve(offline, Keys(), self.home / "x", self.board, self.look)
+        self.assertEqual(offline.count(OPENVERSE), calls)  # throttled: nothing more is sent until it lifts
+        openverse.reset()
         (self.home / "studio/profiles").mkdir(parents=True)
         (self.home / "studio/profiles/quiet.yaml").write_text("elements:\n  broll: off\n", encoding="utf-8")
         _, notes = broll.resolve(FakeHttp(), Keys(), self.home, self.board, profile.load("quiet", self.home))
