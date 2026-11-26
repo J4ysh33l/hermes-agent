@@ -335,7 +335,7 @@ def _got_direction(w: Writing) -> None:
     writer.keep(w.job.folder, script, board)
     w.job.data["wishes"] = wishes
     if rules.component_names(board):
-        _ask(w, "animation", brief.animation(w.look, board, script["title"], w.job.id, True))
+        _ask(w, "animation", brief.animation(w.look.with_theme(board.get("theme")), board, script["title"], w.job.id, True))
         return
     _keep(w.ctx, w.job, _finish(w.job))
 
@@ -356,17 +356,18 @@ def _finish(job: Job) -> writer.Draft:
 def _verify(w: Writing) -> None:
     """Every component through TypeScript and a test render; failures go back once, then fall back."""
     board, job = _json(w.job, "direction.json"), w.job
+    look = w.look.with_theme(board.get("theme"))  # the director's colours, as the render will use them
     names = list(rules.component_names(board).values())
     draft = _finish(job)
     boards = [storyboard.parse(draft.storyboard(n, job.data["profile"]), job.folder) for n in range(len(draft.hooks))]
     with steps.timed(job.folder, "check custom scenes", f"{len(names)} component(s): TypeScript + test render"):
-        failed = w.tools.verify(w.ctx.settings, w.look, boards, job.folder)
+        failed = w.tools.verify(w.ctx.settings, look, boards, job.folder)
     failed.update({n: "missing, or refused by the static check" for n in names if not job.folder.joinpath(n).is_file()})
     if failed and job.data["fixes"] < writer.COMPONENT_FIXES:
         job.data["fixes"] += 1
         title = job.data.get("title") or draft.title
         if job.data["via"] == "handoff":
-            prompt = brief.animation(w.look, board, title, job.id, True, set(failed))
+            prompt = brief.animation(look, board, title, job.id, True, set(failed))
             previous = "\n\n".join(f"// file: {n}\n{job.folder.joinpath(n).read_text(encoding='utf-8')}"
                                     for n in failed if job.folder.joinpath(n).is_file())
             job.data.update(stage="animation", fixing=sorted(failed), calls=job.data["calls"] + 1)
@@ -376,7 +377,7 @@ def _verify(w: Writing) -> None:
             job.log(f"animation: {len(failed)} component(s) failed, fix request #{job.data['issue']}")
             return
         model = writer.Model(w.ctx.http, w.ctx.keys, w.ctx.settings, (ModelChoice(job.data["writer"]),))
-        writer.animate(model, w.look, board, title, job.folder, {n: p[:1500] for n, p in failed.items()})
+        writer.animate(model, look, board, title, job.folder, {n: p[:1500] for n, p in failed.items()})
         job.data["calls"] += model.calls
         job.log(f"animation: {len(failed)} component(s) failed, asked {job.data['writer']} to fix them")
         _verify(w)

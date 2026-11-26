@@ -187,7 +187,7 @@ def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboa
          profile_name: str = "") -> Video:
     """``profile_name`` (or the storyboard's, or studio.profile) picks the page profile. Custom scenes are
     built and checked first (custom.py); one that fails is drawn as its fallback and named in ``notes``."""
-    look = profiles.load(profile_name or board.profile or settings.profile, home)
+    look = profiles.load(profile_name or board.profile or settings.profile, home).with_theme(board.theme)
     if not (PROJECT / "node_modules/.bin/remotion").is_file():
         raise VideoError("Remotion is not installed: run orchestrator/studio/install.sh (needs Node 18+)")
     job = home / "studio" / "video" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"  # two renders may start in one second

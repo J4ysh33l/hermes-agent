@@ -109,7 +109,8 @@ def countries() -> tuple[str, ...]:
 
 def params(look: Profile, notes: str, seconds: float) -> rules.Params:
     return rules.Params(target_words(look, seconds_of(look, seconds)), tuple(look.section("writing")["avoid"]),
-                        tuple(allowed_scenes(look)), footage(look), notes.strip(), countries())
+                        tuple(allowed_scenes(look)), footage(look), notes.strip(), countries(),
+                        {k: v for k, v in look.section("theme").items() if k in rules.THEME_COLOURS})
 
 
 def _section(pattern: str) -> str:

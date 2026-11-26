@@ -359,6 +359,22 @@ class ProfileTest(unittest.TestCase):
         self.assertEqual(video.voiced(settings.Settings(), page).speed, 1.1)  # the page's voice is used
         self.assertEqual(page.render_props()["captions"]["font"], "anton")
 
+    def test_the_directors_theme_recolours_one_video_and_keeps_the_rest(self):
+        board = storyboard.parse({"title": "T", "theme": {"bg": "#1a0b2e", "panel": "#2b1548", "text": "#fdf4ff",
+                                                          "muted": "#c4a7d9", "accent": "#ff5fa2", "cool": "#3ee6e0",
+                                                          "font": "anton"},
+                                  "scenes": [{"type": "title", "say": "Hi.", "text": "Hi"}]}, self.home)
+        look = DEFAULT.with_theme(board.theme)
+        theme = look.render_props()["theme"]
+        self.assertEqual((theme["bg"], theme["accent"], theme["font"]), ("#1a0b2e", "#ff5fa2", "anton"))
+        self.assertEqual(theme["glow"], "#35153c")  # mixed from the new bg and accent, not the house navy
+        self.assertEqual(theme["mono"], DEFAULT.section("theme")["mono"])
+        self.assertEqual(look.render_props()["motion"], DEFAULT.render_props()["motion"])
+        self.assertIs(DEFAULT.with_theme({}), DEFAULT)
+        with self.assertRaises(storyboard.StoryboardError):
+            storyboard.parse({"title": "T", "theme": "pink", "scenes": [{"type": "title", "say": "Hi.", "text": "Hi"}]},
+                             self.home)
+
     def test_your_profile_wins_over_a_built_in_one_of_the_same_name(self):
         self.write("bold", "motion:\n  exit: cut\n")
         self.assertEqual(profile.load("bold", self.home).section("motion")["exit"], "cut")

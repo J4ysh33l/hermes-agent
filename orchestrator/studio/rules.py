@@ -18,7 +18,8 @@ from __future__ import annotations
 import copy
 import json
 import re
-from dataclasses import asdict, dataclass
+from itertools import pairwise
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,7 @@ class Params:
     stock: bool  # image scenes may use stock photos
     notes: str  # the only source of on-screen facts
     countries: tuple[str, ...] = ()  # the map's country names; () = not checked here
+    house: dict[str, str] = field(default_factory=dict)  # the profile's colours: the director picks its own
 
     @property
     def low(self) -> int:
@@ -98,7 +100,7 @@ class Params:
     def loads(cls, text: str) -> Params:
         raw = json.loads(text)
         return cls(int(raw["words"]), tuple(raw["avoid"]), tuple(raw["scenes"]), bool(raw["stock"]),
-                   str(raw["notes"]), tuple(raw.get("countries") or ()))
+                   str(raw["notes"]), tuple(raw.get("countries") or ()), dict(raw.get("house") or {}))
 
 
 # ---------------------------------------------------------------- narration
@@ -282,12 +284,66 @@ def look_of(kind: str) -> str:
 def variety(scenes: list[dict[str, Any]], first: int = 1) -> list[str]:
     """Consecutive scenes must look different; a custom scene is its own picture each time."""
     problems = []
-    for n, (a, b) in enumerate(zip(scenes, scenes[1:]), first + 1):
+    for n, (a, b) in enumerate(pairwise(scenes), first + 1):
         kind_a, kind_b = str(a.get("type", "")), str(b.get("type", ""))
         if "custom" not in (kind_a, kind_b) and look_of(kind_a) == look_of(kind_b):
             problems.append(f"scene {n} ({kind_b}) looks like scene {n - 1} ({kind_a}), both a {look_of(kind_b)}: "
                             "a new kind of picture each scene (a drawing, a chart, a custom scene)")
     return problems
+
+
+THEME_NEEDED = ("bg", "panel", "text", "muted", "accent", "cool")
+THEME_COLOURS = THEME_NEEDED + ("glow", "bad", "good")
+THEME_FONTS = ("inter", "intertight", "montserrat", "anton")
+THEME_BACKGROUNDS = ("glow-grid", "glow", "flat")
+# the lowest contrast each colour needs against the background (WCAG ratios: 4.5 body text, 3 large text)
+THEME_CONTRAST = {"text": 7.0, "muted": 4.5, "accent": 3.0, "cool": 3.0, "bad": 3.0, "good": 3.0}
+HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _luminance(colour: str) -> float:
+    def channel(v: int) -> float:
+        c = v / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def theme_problems(value: Any, house: dict[str, str] | None = None) -> list[str]:
+    """The director's colours for this video: readable on their own background, and their own (not the
+    house look's). ``house``: the profile's theme; bad/good not given fall back to it, so they are checked too."""
+    shape = ('"theme" must be {"bg", "panel", "text", "muted", "accent", "cool"} as #rrggbb colours '
+             '(optional: "glow", "bad", "good", "font", "background")')
+    if not isinstance(value, dict):
+        return [shape]
+    unknown = sorted(set(value) - set(THEME_COLOURS) - {"font", "background"})
+    bad = [f'theme: unknown key {k!r}' for k in unknown]
+    bad += [f"theme.{k} is missing" for k in THEME_NEEDED if k not in value]
+    bad += [f"theme.{k} must be a colour like #1a2b3c, not {value[k]!r}" for k in THEME_COLOURS
+            if k in value and not (isinstance(value[k], str) and HEX.match(value[k]))]
+    if "font" in value and value["font"] not in THEME_FONTS:
+        bad.append(f"theme.font must be one of {', '.join(THEME_FONTS)}")
+    if "background" in value and value["background"] not in THEME_BACKGROUNDS:
+        bad.append(f"theme.background must be one of {', '.join(THEME_BACKGROUNDS)}")
+    if bad:
+        return bad
+    colours = {**{k: v for k, v in (house or {}).items() if k in ("bad", "good")}, **value}
+    for key, least in THEME_CONTRAST.items():
+        if key in colours and HEX.match(str(colours[key])) and contrast(colours[key], value["bg"]) < least:
+            bad.append(f"theme.{key} {colours[key]} on bg {value['bg']} has contrast "
+                       f"{contrast(colours[key], value['bg']):.1f} (needs {least}): too hard to read")
+    if contrast(value["text"], value["panel"]) < 4.5:
+        bad.append(f"theme.text on theme.panel has contrast {contrast(value['text'], value['panel']):.1f} "
+                   "(needs 4.5): text on cards would not read")
+    if house and value["bg"].lower() == str(house.get("bg", "")).lower() and \
+            value["accent"].lower() == str(house.get("accent", "")).lower():
+        bad.append("theme: these are the house colours; choose colours for THIS story")
+    return bad
 
 
 def music_problems(value: Any) -> list[str]:
@@ -366,8 +422,8 @@ def check_direction(raw: Any, script: dict[str, Any], p: Params) -> list[str]:
         return ['"hooks" must be 3 scenes, one for each hook of the script, in order']
     if not raw["scenes"] or not all(isinstance(s, dict) for s in raw["scenes"]):
         return ['"scenes" must be scene objects, at least one']
-    broken = [f"unknown key {k!r} (only hooks, scenes, cover, music)"
-              for k in sorted(set(raw) - {"hooks", "scenes", "cover", "music"})]
+    broken = [f"unknown key {k!r} (only hooks, scenes, cover, music, theme)"
+              for k in sorted(set(raw) - {"hooks", "scenes", "cover", "music", "theme"})]
     for n, hook in enumerate(raw["hooks"], 1):
         found = _structure([hook, *raw["scenes"]], p)
         broken += [f"hook {n}: {x}" if x.startswith("scene 1:") or x.startswith("scene 1 ") else x for x in found]
@@ -375,6 +431,7 @@ def check_direction(raw: Any, script: dict[str, Any], p: Params) -> list[str]:
     if broken:  # unparsable scenes: the content checks below would misfire
         return list(dict.fromkeys(broken + problems))
     problems += music_problems(raw.get("music"))
+    problems += theme_problems(raw.get("theme"), p.house)
     problems += variety(raw["scenes"], 2)
     for n, hook in enumerate(raw["hooks"], 1):
         problems += [f"hook {n}: {x}" for x in variety([hook, raw["scenes"][0]])]
@@ -451,4 +508,4 @@ def merge(script: dict[str, Any], board: dict[str, Any]) -> dict[str, Any]:
             scene["component"] = names[f"scene {n}"]
         scenes.append(scene)
     return {"title": _text(script["title"]), "hooks": hooks, "scenes": scenes, "cover": board["cover"],
-            "music": board.get("music", "")}
+            "music": board.get("music", ""), "theme": board.get("theme") or {}}

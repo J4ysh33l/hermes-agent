@@ -117,6 +117,23 @@ class Profile:
     def section(self, key: str) -> Mapping[str, Any]:
         return self.sections[key]
 
+    def with_theme(self, theme: Mapping[str, Any] | None) -> Profile:
+        """This profile in the director's colours for one video (rules.theme_problems checked them). A glow
+        not given is mixed from the new background and accent, so a light page never gets a dark glow."""
+        if not theme:
+            return self
+        given = {k: v for k, v in theme.items() if k in SCHEMA["theme"]}
+        if "bg" in given and "glow" not in given:
+            given["glow"] = _mix(str(given["bg"]), str(given.get("accent", self.sections["theme"]["accent"])), 0.12)
+        fields = SCHEMA["theme"]
+        merged = {**self.sections["theme"], **{k: fields[k](f"theme.{k}", v) for k, v in given.items()}}
+        return Profile(self.name, self.description, MappingProxyType({**self.sections, "theme": MappingProxyType(merged)}))
+
+
+def _mix(a: str, b: str, share: float) -> str:
+    parts = [round(int(a[i:i + 2], 16) * (1 - share) + int(b[i:i + 2], 16) * share) for i in (1, 3, 5)]
+    return "#" + "".join(f"{p:02x}" for p in parts)
+
 
 def _find(name: str, home: Path) -> Path:
     if not NAME.match(name):
