@@ -84,3 +84,52 @@ def read(http, key: str, models, text: str, role: str, today: date, pay_word: st
         except (HttpError, ValueError, json.JSONDecodeError, AttributeError) as exc:
             failures.append(f"{model.id}: {str(exc)[:100]}")
     raise IntakeError("; ".join(failures))
+
+
+CERT_PROMPT = """Read this request for experience (completion) certificates and list every person it is for.
+Today is {today}.
+For each person copy, exactly as written:
+- name
+- position (the role or designation)
+- start: the start date as dd/mm/yyyy, or "" when only months are given
+- end: the end date as dd/mm/yyyy, or "" when only months are given
+- period: the months as words exactly as written, e.g. "June - July" or "June 2026 - July 2026", or ""
+- email: or ""
+A value written once for everyone applies to every person. An email on its own line belongs to the person
+written just above it.
+Never guess or invent a value (no years, no dates, no pronouns): leave it "" when it is not written.
+Answer JSON only: {{"people": [{{"name": "", "position": "", "start": "", "end": "", "period": "", "email": ""}}]}}
+
+Request:
+<<<
+{text}
+>>>"""
+CERT_FIELDS = ("name", "position", "start", "end", "period", "email")
+CERT_SCHEMA = {"type": "object", "properties": {"people": {"type": "array", "items": {
+    "type": "object", "properties": {f: {"type": "string"} for f in CERT_FIELDS}}}}, "required": ["people"]}
+
+
+def read_certificates(http, key: str, models, text: str, today: date) -> tuple[str, str]:
+    """(the people as 'Key: value' lines, one block per person, the model that read them). A pronoun is
+    never taken from the model: only a Pronoun: line you write sets one."""
+    if not key:
+        raise IntakeError("GEMINI_API_KEY is not set")
+    prompt = CERT_PROMPT.format(today=f"{today.day} {today:%B %Y}", text=text.strip()[:6000])
+    failures = []
+    for model in models:
+        try:
+            raw = llm.gemini(http, key, model.id, prompt, workflow="hr", step="certificate-intake",
+                             json_mode=model.json_mode, schema=CERT_SCHEMA if model.json_mode else None,
+                             max_output_tokens=2000, temperature=0)
+            blocks = []
+            for person in _people(raw):
+                values = {f: " ".join(str(person.get(f) or "").split()) for f in CERT_FIELDS}
+                if not values["period"] and not re.search(r"\d", values["start"] + values["end"]) and values["start"]:
+                    values["period"] = " - ".join(v for v in (values["start"], values["end"]) if v)  # month names
+                if values["period"]:  # the months as written decide the dates, never a date the model made up
+                    values["start"] = values["end"] = ""
+                blocks.append("\n".join(f"{f.title()}: {v}" for f, v in values.items() if v))
+            return "\n\n".join(blocks), model.id
+        except (HttpError, ValueError, json.JSONDecodeError, AttributeError) as exc:
+            failures.append(f"{model.id}: {str(exc)[:100]}")
+    raise IntakeError("; ".join(failures))

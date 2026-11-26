@@ -30,7 +30,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from .offer import EMAIL, _date, _lines, _position, long_date
+import calendar
+
+from .offer import EMAIL, _date, _lines, _position, add_months, long_date, period
 
 FILE = "certificates.json"
 TEMPLATE = "certificate_experience.svg"
@@ -56,6 +58,7 @@ KEYS = {"name": "name", "full name": "name", "candidate": "name", "position": "p
         "joining": "start", "date of joining": "start", "doj": "start", "end": "end", "end date": "end",
         "to": "end", "till": "end", "until": "end", "last day": "end", "relieving": "end",
         "email": "email", "mail": "email", "email id": "email", "pronoun": "pronoun", "pronouns": "pronoun",
+        "month": "period", "months": "period", "period": "period", "duration": "period", "tenure": "period",
         "gender": "pronoun"}
 PERSONAL = ("name", "email", "pronoun")  # never shared from one person to the others
 GENDER = {"male": "he", "m": "he", "female": "she", "f": "she"}
@@ -95,8 +98,13 @@ def article(position: str) -> str:
 
 
 def parse(text: str, today: date) -> tuple[list[Person], list[str]]:
-    """Each Name line starts a person; a line given once is for everyone. (people, problems)."""
-    pairs = [(KEYS.get(label, ""), value) for label, value in _lines(text)]
+    """Each Name line starts a person; a line given once is for everyone. (people, problems). A line that is
+    not 'Key: value' (or a key not known) is a problem too, so nothing you wrote is quietly left out."""
+    read = _lines(text)
+    pairs = [(KEYS.get(label, ""), value) for label, value in read]
+    known = {f"{label}\0{value}" for label, value in read if label in KEYS}
+    stray = [ln.strip() for ln in text.splitlines() if ln.strip() and not any(
+        ln.strip().lower().startswith(k.split("\0")[0]) and k.split("\0")[1] in ln for k in known)]
     starts = [i for i, (k, _v) in enumerate(pairs) if k == "name"]
     if not starts:
         return [], ["Name is missing (Name: …, Position: …, Start: dd/mm/yyyy, End: dd/mm/yyyy)"]
@@ -104,12 +112,21 @@ def parse(text: str, today: date) -> tuple[list[Person], list[str]]:
     for k, _v in pairs:
         counts[k] = counts.get(k, 0) + 1
     once = {k: v for k, v in pairs if counts.get(k) == 1}
-    people, problems = [], []
+    people, problems = [], [f"Not understood: '{line[:60]}'" for line in stray]
     for n, start in enumerate(starts):
         end = starts[n + 1] if n + 1 < len(starts) else len(pairs)
         own = dict(pairs[:start] if n == 0 else []) | dict(pairs[start:end])
         raw = {**{k: v for k, v in once.items() if k not in PERSONAL}, **own}
         who = f"{raw['name']}: " if len(starts) > 1 else ""
+        span = period(raw["period"], today, past=True) if raw.get("period") else None
+        if raw.get("period") and not span:
+            problems.append(f"{who}'{raw['period']}' is not months (e.g. June - July 2026)")
+            continue
+        if span and not raw.get("start"):
+            raw["start"] = span[0].strftime("%d/%m/%Y")
+        if span and not raw.get("end"):
+            last = add_months(span[0], span[1] - 1)
+            raw["end"] = last.replace(day=calendar.monthrange(last.year, last.month)[1]).strftime("%d/%m/%Y")
         missing = [label for label, k in (("Position", "position"), ("Start date", "start"), ("End date", "end"))
                    if not raw.get(k)]
         if missing:

@@ -176,9 +176,10 @@ def _amount(text: str) -> int | None:
     return None
 
 
-def period(text: str, today: date) -> tuple[date, int] | None:
+def period(text: str, today: date, past: bool = False) -> tuple[date, int] | None:
     """'June - July' → (1 June of the next June on or after this month, 2); 'Jun 2027 to Aug 2027' too;
-    one month name alone → 1 month. None when it is not month names."""
+    one month name alone → 1 month. None when it is not month names. ``past`` (a certificate): with no
+    year, the latest such months that are already over."""
     words = text.strip()
     if m := PERIOD.match(words):
         first, y1, last, y2 = m.group(1).lower(), m.group(2), m.group(3).lower(), m.group(4)
@@ -193,6 +194,10 @@ def period(text: str, today: date) -> tuple[date, int] | None:
         year = int(y1)
     elif y2:
         year = int(y2) - (1 if b < a else 0)
+    elif past:
+        year = today.year
+        while date(year + (1 if b < a else 0), b, calendar.monthrange(year + (1 if b < a else 0), b)[1]) > today:
+            year -= 1
     else:
         year = today.year + (1 if a < today.month else 0)
     months = (int(y2) * 12 + b) - (year * 12 + a) + 1 if y2 else (b - a) % 12 + 1

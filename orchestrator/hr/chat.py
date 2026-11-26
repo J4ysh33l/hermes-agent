@@ -796,6 +796,8 @@ def _cert_saved(ctx: Context) -> dict | None:
 def _cert_text(saved: dict, minutes: int) -> str:
     items = saved["items"]
     lines = [f"**{len(items)} experience certificates**, not sent:"] if len(items) > 1 else []
+    if saved.get("read_by"):
+        lines.append(f"(Your message was read by {saved['read_by']}: check the names, dates and emails.)")
     for n, it in enumerate(items, 1):
         head = f"{n}. " if len(items) > 1 else ""
         lines += [f"{head}**Experience certificate: {it['name']}**, {it['position']} · Ref.No {it['ref']}",
@@ -812,9 +814,18 @@ def _cert_make(ctx: Context, text: str) -> str:
     s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
     text = re.sub(r"(?i)^\s*certificates?\b", "", text)  # "/hr completion certificate …"
     people, problems = certificate.parse(text, today)
+    read_by = ""
+    if problems:  # not in the usual shape: Gemma, then Gemini read it; checked again the same way
+        try:
+            lines, read_by = intake.read_certificates(ctx.http, _gemini_key(ctx), s.duties_models, text, today)
+            mine = "\n".join(ln for ln in text.splitlines() if re.match(r"(?i)\s*(pronouns?|gender)\s*[:=-]", ln))
+            people, problems = certificate.parse(lines + ("\n" + mine if mine else ""), today)
+        except intake.IntakeError:
+            pass
     if problems:
+        note = [f"(Read by {read_by}.)"] if read_by else []
         return "\n".join(["No certificate was made. Fix this and send it again:", *(f"• {p}" for p in problems),
-                          "", "/hr certificate help for the format"])
+                          *note, "", "/hr certificate help for the format"])
     if len(people) > s.max_offers:
         return f"No certificate was made: {len(people)} people in one message, at most {s.max_offers}."
     template = ctx.paths.templates / certificate.TEMPLATE
@@ -844,7 +855,7 @@ def _cert_make(ctx: Context, text: str) -> str:
             pass
     register.save()  # numbers are used only once every certificate was made
     store.push_file(ctx, certificate.FILE)
-    saved = {"created": ctx.now, "items": items}
+    saved = {"created": ctx.now, "items": items, "read_by": read_by}
     path = _cert_path(ctx)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
