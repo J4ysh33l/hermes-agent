@@ -187,6 +187,14 @@ hr:
   # replies:                  # change or add a template (the middle of the mail; greeting and sign-off are added)
   #   ack: "Thank you for applying{for_role} at {company}. ..."
   # reply_models:             # default: gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemma-4-31b-it (json_mode: false)
+  # /hr offer: internship offer letters from templates/offer_intern.docx (see orchestrator/hr/offer.py).
+  # Only the duties come from a model, once per position; they are kept in $HERMES_HOME/hr/duties.json.
+  company_about: "a healthcare technology company in India"   # all the duties model is told about you
+  duties_count: 5
+  # duties_models:            # default: gemma-4-31b-it, gemma-4-26b-a4b-it (both json_mode: false),
+  #                           #   then gemini-3.1-flash-lite, gemini-3.5-flash-lite
+  # offer_subject: "Offer letter: {position} at {company}"
+  # offer_body: HTML; {first} {name} {position} {start} {company} {sender}
 
 # ---------------------------------------------------------------- Smriti (/notes): meeting notes
 # Teams meetings you organise (recorded + transcribed). See orchestrator/notes/README.md.

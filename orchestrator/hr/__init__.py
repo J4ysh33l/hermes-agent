@@ -11,6 +11,8 @@ Modules:
 - ``inbox``     mail to the HR mailbox: sorted by fixed rules, waiting-for-reply tracking, the sweep.
 - ``redact``    hides names, emails, numbers before Gemini sees a mail; checks its draft before putting them back.
 - ``reply``     /hr reply: fetch the mail, a Gemini draft or a template, send in the thread From the HR mailbox.
-- ``chat``      /hr list · payslip · interview · inbox · reply; /hr payslip (make · check · show · test · yes · no · skip), and the run Hermes' agent starts with your sheet.
+- ``offer``     /hr offer: internship offer letters from your Word template's [bracket] fields.
+- ``duties``    duties per position: one Gemma call for a new position (Flash-Lite as fallback), kept in duties.json.
+- ``chat``      /hr list · offer · duties · payslip · interview · inbox · reply; /hr payslip (make · check · show · test · yes · no · skip), and the run Hermes' agent starts with your sheet.
 - ``cli``       ``python -m orchestrator.hr <words>``: the same commands on the host.
 """

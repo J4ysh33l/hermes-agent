@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -25,9 +26,13 @@ from orchestrator.outreach.build import fill
 from orchestrator.outreach.errors import OutreachError
 from orchestrator.outreach.plan import picks
 
+from orchestrator.notes.errors import NotesError
+from orchestrator.notes.telegram import Telegram
 from orchestrator.recap.parts import pending_files
 
-from . import inbox, interview, payslips, reply, request, settings
+from . import duties, inbox, interview, offer, payslips, reply, request, settings
+from .docfill import TemplateError
+from .pdf import PdfError, convert
 from .payroll import Period
 from .payslips import Paths, rupees
 
@@ -64,6 +69,8 @@ HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only af
 /hr interview — one Teams link, each candidate invited to their own slot (/hr interview help)
 /hr inbox — mail to the HR mailbox sorted: urgent, people, campus, applications (/hr inbox help)
 /hr reply — answer HR mail in its thread: Gemini drafts, or a template with no model (/hr reply help)
+/hr offer — an internship offer letter from your Word template (/hr offer help)
+/hr duties — the duties kept per position for offer letters (/hr duties help)
 /menu — all your commands"""
 
 REPLY_HELP = """**/hr reply** — answer HR mail in its own thread, From the HR mailbox, only after your yes
@@ -85,6 +92,30 @@ INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules 
 /hr inbox done 2 — mark a waiting mail handled (one answered in its thread clears on its own)
 Swept at 10:00 and 17:00 (cron); it messages you only when there is new HR mail, and the first sweep
 of the day also reminds you of urgent mail still unanswered. /menu — all your commands"""
+
+OFFER_HELP = """**/hr offer** — an internship offer letter from your template; emailed only after your yes
+/hr offer, then one line each:
+Name: Asha Verma
+Position: Marketing Intern
+Start: 01/12/2026
+Months: 3
+Stipend: 15000
+Email: asha@gmail.com   (optional; needed to send it)
+Or one line: /hr offer Asha Verma, Marketing Intern, 01/12/2026, 3, 15000, asha@gmail.com
+→ the letter (Word + PDF) comes to you here to check; nothing is sent.
+The duties come from /hr duties: a position seen before uses its saved duties (no model); a new one
+gets one Gemma call (only the position title is sent), saved for next time.
+/hr offer show · yes · no — see it again, email it to the candidate From the HR mailbox, drop it
+Template: $HERMES_HOME/hr/templates/offer_intern.docx with [Name] [Position] [Start date] [End date]
+[duration spelled] [duration number] [Monthly] [Annual] and a [duties and responsibilities] bullet.
+/menu — all your commands"""
+
+DUTIES_HELP = """**/hr duties** — duties and responsibilities kept per position, used by /hr offer
+/hr duties list — every saved position
+/hr duties Marketing Intern — its duties
+/hr duties Marketing Intern = Assist with…; Prepare…; Research… — set them yourself (no model)
+/hr duties forget Marketing Intern — the next offer for it asks the model again
+/menu — all your commands"""
 
 TZ = ZoneInfo("Asia/Kolkata")
 TEST_SAMPLES = 2
@@ -511,6 +542,160 @@ def _reply_no(ctx: Context, _arg: str) -> str:
     return "Dropped the expired reply from the recap." if expiry.clear(path) else "Nothing was waiting."
 
 
+# ---- /hr offer · /hr duties -----------------------------------------------------------------------
+
+
+def _offer_path(ctx: Context) -> Path:
+    return ctx.paths.home / "offer.json"
+
+
+def _offer_saved(ctx: Context) -> dict | None:
+    path = _offer_path(ctx)
+    if not path.is_file():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
+        expiry.expire(path)
+        return None
+    return saved
+
+
+def _offer_text(saved: dict, minutes: int) -> str:
+    o = saved["offer"]
+    src = saved["duties_from"]
+    how = ("saved for this position, no model call" if src == "saved" else
+           f"written by {src} and saved for this position" if src != "you" else "set by you")
+    lines = [f"**Offer letter: {o['name']}**, {o['position']}",
+             f"{saved['dates']} · stipend {saved['monthly']} a month ({saved['annual']} a year)",
+             f"To: {o['email'] or '(no email: add Email: to send it)'}",
+             f"Duties ({how}):", *(f"• {d}" for d in saved["duties"]),
+             f"Files: {', '.join(Path(f).name for f in saved['files'])}"]
+    if saved.get("note"):
+        lines.append(saved["note"])
+    lines.append(f"/hr offer yes — email it · /hr offer no — drop it (waits {minutes} min)"
+                 if o["email"] else "/hr offer no — drop it · send it again with an Email: line to mail it")
+    return "\n".join(lines)
+
+
+def _offer_make(ctx: Context, text: str) -> str:
+    made, problems = offer.parse(text)
+    if problems:
+        return "\n".join(["No letter was made. Fix this and send it again:", *(f"• {p}" for p in problems),
+                          "", "/hr offer help for the format"])
+    template = ctx.paths.templates / ctx.settings.offer_template
+    if not template.is_file():
+        return (f"No offer template at {template}. Put your Word letter there (the [Name], [Position]… "
+                "fields as they are); /hr offer help lists them.")
+    s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
+    table = duties.Table(ctx.paths.home)
+    try:
+        found = duties.find_or_write(table, ctx.http, _gemini_key(ctx), s.duties_models, made.position,
+                                     s.interview.company, s.company_about, today, s.duties_count)
+        folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{offer.key_part(made)}"
+        doc = folder / (offer.file_stem(made) + ".docx")
+        offer.make(template, made, found.items, doc)
+    except (duties.DutiesError, TemplateError) as exc:
+        return f"No letter was made. {exc}"
+    files, note = [doc], ""
+    try:
+        files = convert([doc], folder) + [doc]
+    except PdfError as exc:
+        note = f"⚠️ Word file only: {exc}"
+    v = made.values()
+    saved = {"created": ctx.now, "offer": {"name": made.name, "position": made.position, "email": made.email,
+                                            "start": v["start_date"]},
+             "dates": f"{v['start_date']} – {v['end_date']} ({made.months} months)", "monthly": v["monthly"],
+             "annual": v["annual"], "duties": list(found.items),
+             "duties_from": "saved" if found.saved and found.by != "you" else found.by,
+             "files": [str(f) for f in files], "items": [{"file": str(files[0])}], "note": note}
+    path = _offer_path(ctx)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(saved, fh)
+    try:  # the letter itself, to check before it goes out
+        Telegram(ctx.http, ctx.secrets).file(files[0], f"Offer letter: {made.name} (not sent)")
+    except (NotesError, HttpError, OSError):
+        pass  # the paths are in the reply
+    return _offer_text(saved, s.preview_minutes)
+
+
+def _offer_show(ctx: Context, _arg: str) -> str:
+    saved = _offer_saved(ctx)
+    return _offer_text(saved, ctx.settings.preview_minutes) if saved else "No offer letter is waiting."
+
+
+def _offer_yes(ctx: Context, _arg: str) -> str:
+    saved = _offer_saved(ctx)
+    if saved is None:
+        return f"No offer letter is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    o, s = saved["offer"], ctx.settings
+    if not o["email"]:
+        return "This letter has no email address. Send /hr offer again with an Email: line."
+    letter = Path(saved["files"][0])
+    if not letter.is_file():
+        return f"{letter.name} is gone; make the letter again with /hr offer."
+    sender = s.sender_name or "HR Team"
+    values = {"first": o["name"].split()[0], "name": o["name"], "position": o["position"], "start": o["start"],
+              "company": s.interview.company, "sender": sender}
+    _offer_path(ctx).unlink()  # before sending: a second yes can never mail twice
+    try:
+        graph.send_mail(ctx.http, _token(ctx), to=(o["name"], o["email"]),
+                        subject=fill(s.offer_subject, **values), body_html=fill(s.offer_body, **values),
+                        attachments=((letter.name, letter.read_bytes()),), sender=s.mailbox)
+    except (OutreachError, HttpError, OSError) as exc:
+        ctx.log(o["email"], str(letter), False, str(exc))
+        return f"❌ Not sent: {exc}. The letter is still at {letter}; /hr offer again to retry."
+    ctx.log(o["email"], str(letter), True)
+    return f"✅ Offer letter sent to {o['name']} <{o['email']}>" + (f" from {s.mailbox}." if s.mailbox else ".")
+
+
+def _offer_no(ctx: Context, _arg: str) -> str:
+    path = _offer_path(ctx)
+    if path.is_file():
+        path.unlink()
+        return "Dropped. Nothing was sent (the files stay in $HERMES_HOME/hr/offers/)."
+    return "Dropped the expired offer letter from the recap." if expiry.clear(path) else "Nothing was waiting."
+
+
+def _duties_list(ctx: Context) -> str:
+    rows = duties.Table(ctx.paths.home).rows
+    if not rows:
+        return "No duties saved yet. /hr offer saves them for each new position; /hr duties help"
+    return "\n".join([f"**Duties saved ({len(rows)} positions)**",
+                      *(f"• {r['position']}: {len(r['duties'])} duties, {r.get('by') or '?'}, {r.get('saved', '')}"
+                        for r in sorted(rows.values(), key=lambda r: r["position"].lower())),
+                      "/hr duties <position> to see one"])
+
+
+def _duties(ctx: Context, text: str) -> str:
+    text = text.strip()
+    if not text:
+        return _duties_list(ctx)
+    table = duties.Table(ctx.paths.home)
+    position, sep, given = text.partition("=")
+    position = " ".join(position.split())
+    if sep:
+        items = duties.clean([d for d in re.split(r"[;\n]", given) if d.strip()])
+        if not items:
+            return "Give the duties after =, separated by ; (or one per line)."
+        table.put(position, items, "you", datetime.fromtimestamp(ctx.now, TZ).date())
+        return f"Saved {len(items)} duties for {position}; the next /hr offer for it uses them."
+    found = table.get(position)
+    if not found:
+        return f"No duties saved for {position!r}. The next /hr offer for it writes them, or set them: " \
+               f"/hr duties {position} = first; second; …"
+    return "\n".join([f"**{found.position}** ({found.by or '?'})", *(f"• {d}" for d in found.items),
+                      f"/hr duties forget {found.position} — ask the model again next time"])
+
+
+def _duties_forget(ctx: Context, arg: str) -> str:
+    if not arg.strip():
+        return "Which position? /hr duties forget Marketing Intern"
+    gone = duties.Table(ctx.paths.home).forget(arg)
+    return f"Forgot the duties for {arg.strip()}." if gone else f"No duties were saved for {arg.strip()!r}."
+
+
 # ---- /hr list -----------------------------------------------------------------------------------
 
 
@@ -557,7 +742,10 @@ REPLY = {"show": _reply_show, "yes": _reply_yes, "no": _reply_no, "cancel": _rep
 TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
           "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP),
           "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP),
-          "reply": (REPLY, _reply_make, REPLY_HELP)}  # next: "letter" (offer, termination)
+          "reply": (REPLY, _reply_make, REPLY_HELP),
+          "offer": ({"show": _offer_show, "yes": _offer_yes, "no": _offer_no, "cancel": _offer_no},
+                    _offer_make, OFFER_HELP),
+          "duties": ({"forget": _duties_forget, "list": lambda ctx, _a: _duties_list(ctx)}, _duties, DUTIES_HELP)}
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 
 

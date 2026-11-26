@@ -111,6 +111,8 @@ def pending_files(home: Path) -> list[Pending]:
                 hr_minutes, _slots_ahead, ("hr", "interview show")),
         Pending(home / "hr" / "reply.json", "HR reply", "/hr reply show", "/hr reply no", hr_minutes,
                 _still_unanswered(home), ("hr", "reply show")),
+        Pending(home / "hr" / "offer.json", "Offer letter", "/hr offer show", "/hr offer no", hr_minutes,
+                _files_exist, ("hr", "offer show")),
         Pending(brief / "outreach" / "pending-slack.json", "Slack messages", "/slack show", "/slack no", out_minutes,
                 _times_ahead, ("slack", "show")),
         Pending(brief / "outreach" / "pending-meet.json", "Meetings", "/meet show", "/meet no", out_minutes,
