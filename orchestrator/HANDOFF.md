@@ -101,11 +101,11 @@ This run started because Hermes has work for you in this repo.
    Otherwise it prints ISSUE and a number, then the issue body. The body is your whole task.
 2. Do the one job the body describes. Everything you need is in the body. Read only the files the
    body names. Do not list, open or search anything else, and do not look at earlier jobs.
-3. Finish with ONE shell command: write every answer file the body names (quoted heredocs), run the
-   check command the body gives (if it gives one), then, chained with &&, git add, commit, and run:
-   sh tools/close.sh NUMBER (the issue number; it pushes to main, pulling first if main moved, then
-   closes the issue). If the check prints problems, fix exactly those and run the same command again.
-   If close.sh prints PUSH FAILED, fix that and run sh tools/close.sh NUMBER again.
+3. Finish with the ONE shell command the body gives: it writes every answer file (quoted heredocs),
+   runs the checks, commits and runs sh tools/close.sh (it pushes to main, pulling first if main moved,
+   then closes the issue). If a check prints problems, fix exactly those and run the same command
+   again. If close.sh prints PUSH FAILED, fix that and run sh tools/close.sh again. Every extra
+   command re-sends the whole run so far: run nothing the body does not ask for.
 4. Delete any __pycache__ folder the check made. Then stop: no summary, no comment on the issue.
 
 Never post the job's contents anywhere else. Never write outside the folder the body names.
