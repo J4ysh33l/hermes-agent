@@ -547,11 +547,6 @@ def _reply_no(ctx: Context, _arg: str) -> str:
 # ---- /hr offer · /hr duties -----------------------------------------------------------------------
 
 
-def _duties_key(ctx: Context) -> str:
-    """The duties call's own key; the general Gemini key only when it is not set."""
-    return ctx.secrets.get(duties.KEY_NAME) or _gemini_key(ctx)
-
-
 def _offer_path(ctx: Context) -> Path:
     return ctx.paths.home / "offer.json"
 
@@ -601,7 +596,7 @@ def _offer_make(ctx: Context, text: str) -> str:
     s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
     table = duties.Table(ctx.paths.home)
     try:
-        found = duties.find_or_write(table, ctx.http, _duties_key(ctx), s.duties_models, made.position,
+        found = duties.find_or_write(table, ctx.http, _gemini_key(ctx), s.duties_models, made.position,
                                      s.interview.company, s.company_about, today, s.duties_count, kind.role)
         folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{kind.name}-{offer.key_part(made)}"
         doc = folder / (offer.file_stem(made) + ".docx")

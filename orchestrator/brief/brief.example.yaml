@@ -189,7 +189,6 @@ hr:
   # reply_models:             # default: gemini-3.1-flash-lite, gemini-3.5-flash-lite, gemma-4-31b-it (json_mode: false)
   # /hr offer internship|fte|consultant: offer letters from your templates (see orchestrator/hr/offer.py).
   # offer_templates: {internship: offer_internship.docx, fte: offer_fte.docx, consultant: offer_consultant.docx}
-  # The duties call uses its own key, HR_GEMINI_API_KEY in $HERMES_HOME/.env (GEMINI_API_KEY if unset).
   # Only the duties come from a model, once per position; they are kept in $HERMES_HOME/hr/duties.json.
   company_about: "a healthcare technology company in India"   # all the duties model is told about you
   duties_count: 5

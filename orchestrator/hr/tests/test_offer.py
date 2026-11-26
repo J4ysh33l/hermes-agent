@@ -288,17 +288,15 @@ class Chat(unittest.TestCase):
         self.assertIn("Data Analyst Intern: 4 duties, you", self.hr("duties list"))
         self.assertIn("Forgot", self.hr("duties forget data analyst intern"))
 
-    def test_the_kind_is_asked_for_and_the_duties_call_uses_its_own_key(self):
+    def test_the_kind_is_asked_for_and_each_kind_has_its_own_template_and_words(self):
         self.assertIn("Which kind of offer?", self.hr("offer " + ASHA))
-        with open(self.home / ".env", "a", encoding="utf-8") as fh:
-            fh.write("HR_GEMINI_API_KEY=hr-key\n")
         (self.home / "hr/templates/offer_consultant.docx").write_bytes(
             (self.home / "hr/templates/offer_internship.docx").read_bytes())
         shown = self.hr("offer consultant\n" + ASHA.replace("Marketing Intern", "Growth Consultant"))
         self.assertIn("Consultant offer letter: Asha Verma", shown)
         self.assertIn("fee ₹15,000 a month", shown)
         call = self.http.calls[0]
-        self.assertEqual(call.headers["x-goog-api-key"], "hr-key")
+        self.assertEqual(call.headers["x-goog-api-key"], "g")  # the one GEMINI_API_KEY
         self.assertIn("Growth Consultant (consulting engagement)", json.dumps(call.json_body))
 
     def test_a_bad_request_or_a_missing_template_makes_nothing(self):
