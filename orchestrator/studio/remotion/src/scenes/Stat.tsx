@@ -2,6 +2,7 @@ import React from "react";
 import {Easing, interpolate, useCurrentFrame} from "remotion";
 import {Arrive} from "../motion";
 import {fitSize} from "../fit";
+import {decimalsOf} from "../kit";
 import {SAFE, useTheme} from "../theme";
 import type {StatScene} from "../types";
 
@@ -12,7 +13,7 @@ const format = (n: number, decimals: number) =>
 export const Stat: React.FC<{scene: StatScene; frames: number}> = ({scene, frames}) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
-  const decimals = Number.isInteger(scene.value) ? 0 : 1;
+  const decimals = decimalsOf(scene.value);
   const landed = Math.min(36, frames * 0.6);
   // sized for the final value, so the count-up never changes size or wraps ("500M kg" stays on one line)
   const size = fitSize(`${scene.prefix}${format(scene.value, decimals)}${scene.suffix}`, 230, 1080 - 2 * SAFE.side,

@@ -134,6 +134,17 @@ def _text(required: bool) -> Field:
     return parse
 
 
+def _unit(side: str) -> Field:
+    """A number's prefix or suffix. A word unit ("crore", "km", "µs") stands a space off the number; a
+    one-letter unit ("25x", "5k") and a symbol ("%", "₹") stay on it. Text fields are trimmed, so " crore"
+    once came out as "120crore"."""
+    def parse(where: str, value: Any) -> str:
+        unit = _text(False)(where, value)
+        word = len(unit) >= 2 and (unit[0].isalpha() if side == "suffix" else unit[-1].isalpha())
+        return "" if not unit else (f" {unit}" if side == "suffix" else f"{unit} ") if word else unit
+    return parse
+
+
 def _number(where: str, value: Any) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StoryboardError(f"{where} must be a number")
@@ -229,7 +240,7 @@ SCHEMA: dict[str, dict[str, Field]] = {
     "title": {"text": _text(True), "kicker": _text(False)},
     "bullets": {"title": _text(False), "items": _items},
     "code": {"title": _text(False), "code": _text(True)},
-    "stat": {"value": _number, "prefix": _text(False), "suffix": _text(False), "label": _text(True)},
+    "stat": {"value": _number, "prefix": _unit("prefix"), "suffix": _unit("suffix"), "label": _text(True)},
     "image": {"src": _text(True), "caption": _text(False)},
     "compare": {"left": _side, "right": _side},
     "terminal": {"title": _text(False), "lines": _list(1, 10, _text(True))},
@@ -249,7 +260,7 @@ SCHEMA: dict[str, dict[str, Field]] = {
     # set in the accent colour, in italic.
     "statement": {"lines": _list(1, 3, _object(text=_short(30), tone=_tone, strike=_flag(False))), "sub": _short(60, False),
                   "icon": _icon(False)},
-    "counter": {"value": _number, "start": _number_or(0), "prefix": _text(False), "suffix": _text(False),
+    "counter": {"value": _number, "start": _number_or(0), "prefix": _unit("prefix"), "suffix": _unit("suffix"),
                 "label": _short(50), "sub": _short(30, False), "tone": _tone},
     "stack": {"title": _short(40, False), "tone": _choice("problem", "solution"),
               "rows": _list(2, 4, _object(text=_short(32), icon=_icon(False), mark=_choice("none", "cross", "check")))},

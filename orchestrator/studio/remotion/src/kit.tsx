@@ -33,6 +33,8 @@ export const Marked: React.FC<{text: string; accent: string; italic?: boolean}> 
 );
 
 export const plain = (text: string) => text.replace(/\*/g, "");
+// A number's own decimals, at most 2: 119.95 crore stays 119.95 (once rounded to "120.0"), 50 stays 50.
+export const decimalsOf = (n: number) => Math.min(2, (String(n).split(".")[1] ?? "").length);
 
 // A marker stroke across the whole text (its parent is position: relative and as wide as the text), drawn
 // left to right from `at`, rising slightly, round ends; it overshoots the text a little each side.
