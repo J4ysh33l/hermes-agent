@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -30,7 +31,7 @@ from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 from orchestrator.recap.parts import pending_files
 
-from . import duties, inbox, intake, interview, offer, payslips, reply, request, settings, store
+from . import certificate, duties, inbox, intake, interview, offer, payslips, reply, request, settings, store
 from .docfill import TemplateError
 from .pdf import PdfError, convert
 from .payroll import Period
@@ -71,6 +72,7 @@ HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only af
 /hr reply — answer HR mail in its thread: Gemini drafts, or a template with no model (/hr reply help)
 /hr offer — offer letters (internship, full-time, consultant) from your Word templates (/hr offer help)
 /hr duties — the duties kept per position for offer letters (/hr duties help)
+/hr certificate — experience certificates with their own Ref.No (/hr certificate help)
 /hr sync — templates and duties kept in your private repo (/hr sync help)
 /menu — all your commands"""
 
@@ -117,6 +119,22 @@ Templates in $HERMES_HOME/hr/templates/: offer_internship.docx, offer_fte.docx, 
 with [Name] [Position] [Date] [Start date] [End date] [duration spelled] [duration number] [Monthly]
 [Annual] and a [duties and responsibilities] bullet. /hr sync pull fetches them from your private repo.
 /menu — all your commands"""
+
+CERT_HELP = """**/hr certificate** — experience (completion) certificates from your design, numbered by script
+/hr certificate, then for each person:
+Name: Kushagra
+Position: SDE Intern
+Start: 01/08/2025
+End: 31/08/2026
+Email: kushagra@gmail.com   (optional; needed to send it)
+Pronoun: he                 (optional: he · she · they; without it the text says "they")
+Several people: one Name: line starts each; a line written once is for everyone.
+Ref.No is added by itself: HR/<year>/<month>/<next number>, e.g. HR/2026/11/0160.
+A tech position (developer, engineer, SDE, data, QA…) gets the software wording; any other a general one.
+/hr certificate show · test · yes · no — see them, the PDFs to you only, each to the person From the HR
+mailbox, drop them (their numbers are given back)
+/hr certificate next — the next number · /hr certificate next 160 — set it
+Template: $HERMES_HOME/hr/templates/certificate_experience.svg (/hr sync pull fetches it). No model is used."""
 
 SYNC_HELP = """**/hr sync** — your templates and saved duties, kept in your private GitHub repo
 /hr sync pull — fetch hr/templates/*.docx and hr/duties.json into $HERMES_HOME/hr/ (new machine)
@@ -757,6 +775,160 @@ def _offer_no(ctx: Context, _arg: str) -> str:
     return "Dropped the expired offer letter from the recap." if expiry.clear(path) else "Nothing was waiting."
 
 
+# ---- /hr certificate -----------------------------------------------------------------------------------
+
+
+def _cert_path(ctx: Context) -> Path:
+    return ctx.paths.home / "certificate.json"
+
+
+def _cert_saved(ctx: Context) -> dict | None:
+    path = _cert_path(ctx)
+    if not path.is_file():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
+        expiry.expire(path)
+        return None
+    return saved
+
+
+def _cert_text(saved: dict, minutes: int) -> str:
+    items = saved["items"]
+    lines = [f"**{len(items)} experience certificates**, not sent:"] if len(items) > 1 else []
+    for n, it in enumerate(items, 1):
+        head = f"{n}. " if len(items) > 1 else ""
+        lines += [f"{head}**Experience certificate: {it['name']}**, {it['position']} · Ref.No {it['ref']}",
+                  f"{it['dates']} · {it['wording']} wording · To: {it['email'] or '(no email)'}",
+                  it["paragraph"], f"File: {Path(it['file']).name}"]
+    mailable = any(it["email"] for it in items)
+    lines.append(f"/hr certificate test — to you only · /hr certificate yes — email each person · "
+                 f"/hr certificate no — drop, numbers given back (waits {minutes} min)" if mailable else
+                 "/hr certificate test — to you only · /hr certificate no — drop · add Email: lines to mail them")
+    return "\n".join(lines)
+
+
+def _cert_make(ctx: Context, text: str) -> str:
+    s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
+    text = re.sub(r"(?i)^\s*certificates?\b", "", text)  # "/hr completion certificate …"
+    people, problems = certificate.parse(text, today)
+    if problems:
+        return "\n".join(["No certificate was made. Fix this and send it again:", *(f"• {p}" for p in problems),
+                          "", "/hr certificate help for the format"])
+    if len(people) > s.max_offers:
+        return f"No certificate was made: {len(people)} people in one message, at most {s.max_offers}."
+    template = ctx.paths.templates / certificate.TEMPLATE
+    if not template.is_file():
+        return (f"No certificate template at {template}. /hr sync pull fetches it from your private repo.")
+    svg = template.read_text(encoding="utf-8")
+    register = certificate.Register(ctx.paths.home)
+    texts = dict(s.certificate_texts)
+    words = s.tech_words or certificate.TECH_WORDS
+    items = []
+    for p in people:
+        ref = register.take(p, today)
+        text_ = certificate.paragraph(p, s.interview.company, texts, words)
+        out = ctx.paths.home / "certificates" / f"{today:%Y%m%d}-{certificate.key_part(p)}" / \
+            (certificate.file_stem(p) + ".pdf")
+        try:
+            certificate.render(certificate.fill(svg, ref, p.name, text_), out)
+        except (certificate.CertificateError, OSError, subprocess.SubprocessError) as exc:
+            return f"No certificate was made ({p.name}): {exc}. No number was used."
+        items.append({"name": p.name, "position": p.position, "email": p.email, "ref": ref,
+                      "dates": f"{certificate.long_date(p.start)} – {certificate.long_date(p.end)}",
+                      "wording": "tech" if certificate.is_tech(p.position, words) else "general",
+                      "paragraph": text_, "file": str(out)})
+        try:
+            Telegram(ctx.http, ctx.secrets).file(out, f"Experience certificate: {p.name} {ref} (not sent)")
+        except (NotesError, HttpError, OSError):
+            pass
+    register.save()  # numbers are used only once every certificate was made
+    store.push_file(ctx, certificate.FILE)
+    saved = {"created": ctx.now, "items": items}
+    path = _cert_path(ctx)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(saved, fh)
+    return _cert_text(saved, s.preview_minutes)
+
+
+def _cert_mail(ctx: Context, token: str, it: dict, to: tuple[str, str]) -> str:
+    s = ctx.settings
+    pdf = Path(it["file"])
+    if not pdf.is_file():
+        return f"{it['name']}: {pdf.name} is gone; make it again with /hr certificate"
+    values = {"first": it["name"].split()[0], "name": it["name"], "position": it["position"], "ref": it["ref"],
+              "company": s.interview.company, "sender": s.sender_name or "HR Team"}
+    try:
+        graph.send_mail(ctx.http, token, to=to, subject=fill(s.certificate_subject, **values),
+                        body_html=fill(s.certificate_body, **values), attachments=((pdf.name, pdf.read_bytes()),),
+                        sender=s.mailbox, cc=s.cc)
+    except (OutreachError, HttpError, OSError) as exc:
+        ctx.log(to[1], str(pdf), False, str(exc))
+        return f"{it['name']}: {exc}"
+    ctx.log(to[1], str(pdf), True)
+    return ""
+
+
+def _cert_show(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    return _cert_text(saved, ctx.settings.preview_minutes) if saved else "No certificate is waiting."
+
+
+def _cert_test(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    if saved is None:
+        return f"No certificate is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    token = _token(ctx)
+    me = graph.me(ctx.http, token)
+    failed = [f for it in saved["items"] if (f := _cert_mail(ctx, token, it, (it["name"], me)))]
+    return "\n".join([f"Sent {len(saved['items']) - len(failed)} certificate(s) to {me} only. Nobody else got "
+                      "anything; /hr certificate yes mails the people.", *(f"❌ {f}" for f in failed)])
+
+
+def _cert_yes(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    if saved is None:
+        return f"No certificate is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    items = [it for it in saved["items"] if it["email"]]
+    if not items:
+        return "No certificate has an email address. Send /hr certificate again with Email: lines."
+    _cert_path(ctx).unlink()  # before sending: a second yes can never mail twice
+    token = _token(ctx)
+    failed = [f for it in items if (f := _cert_mail(ctx, token, it, (it["name"], it["email"])))]
+    sender = f" from {ctx.settings.mailbox}" if ctx.settings.mailbox else ""
+    skipped = [it["name"] for it in saved["items"] if not it["email"]]
+    out = [f"✅ Sent {len(items) - len(failed)} of {len(items)} certificates{sender}."]
+    return "\n".join(out + [f"❌ {f}" for f in failed] + ([f"Not sent (no email): {', '.join(skipped)}"] if skipped else []))
+
+
+def _cert_no(ctx: Context, _arg: str) -> str:
+    path = _cert_path(ctx)
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if saved is None:
+        return "Nothing was waiting."
+    path.unlink()
+    register = certificate.Register(ctx.paths.home)
+    back = register.give_back([it["ref"] for it in saved["items"]])
+    register.save()
+    store.push_file(ctx, certificate.FILE)
+    note = f" Numbers given back: {', '.join(back)}." if back else " Their numbers stay used (newer ones were given since)."
+    return "Dropped. Nothing was sent (the PDFs stay in $HERMES_HOME/hr/certificates/)." + note
+
+
+def _cert_next(ctx: Context, arg: str) -> str:
+    register = certificate.Register(ctx.paths.home)
+    if not arg.strip():
+        return f"The next certificate gets number {register.last + 1:04d}. /hr certificate next 160 to change it."
+    if not re.fullmatch(r"\d{1,6}", arg.strip()):
+        return "Give the next number, e.g. /hr certificate next 160"
+    register.set_next(int(arg))
+    register.save()
+    store.push_file(ctx, certificate.FILE)
+    return f"The next certificate gets number {int(arg):04d}."
+
+
 def _duties_list(ctx: Context) -> str:
     rows = duties.Table(ctx.paths.home).rows
     if not rows:
@@ -838,6 +1010,8 @@ def _list(ctx: Context, _arg: str) -> str:
 
 REPLY = {"show": _reply_show, "yes": _reply_yes, "no": _reply_no, "cancel": _reply_no, "again": _reply_again,
          "edit": _reply_edit, "applications": _reply_applications}
+CERT_TOPIC = ({"show": _cert_show, "test": _cert_test, "yes": _cert_yes, "no": _cert_no, "cancel": _cert_no,
+                         "next": _cert_next}, _cert_make, CERT_HELP)
 TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
           "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP),
           "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP),
@@ -845,6 +1019,7 @@ TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
           "offer": ({"show": _offer_show, "test": _offer_test, "yes": _offer_yes, "no": _offer_no,
                      "cancel": _offer_no},
                     _offer_make, OFFER_HELP),
+          "certificate": CERT_TOPIC, "completion": CERT_TOPIC, "experience": CERT_TOPIC,
           "sync": ({"pull": lambda ctx, _a: store.pull(ctx), "push": lambda ctx, _a: store.push(ctx)},
                    lambda _ctx, _rest: SYNC_HELP, SYNC_HELP),
           "duties": ({"forget": _duties_forget, "list": lambda ctx, _a: _duties_list(ctx)}, _duties, DUTIES_HELP)}

@@ -260,7 +260,7 @@ def people(text: str) -> list[str]:
         if n == 0:  # lines before the first name belong to everyone
             own = pairs[:start] + own
             have |= {KEYS.get(label, label) for label, _v in pairs[:start]}
-        shared = [once[k] for k, c in counts.items() if c == 1 and k not in have and k != "name"]
+        shared = [once[k] for k, c in counts.items() if c == 1 and k not in have and k not in ("name", "email")]
         blocks.append("\n".join(f"{label}: {value}" for label, value in own + shared))
     return blocks
 

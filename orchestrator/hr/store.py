@@ -1,8 +1,8 @@
 """Your HR files kept in your private GitHub repo, so a new Hermes (or a Claude session) starts with them.
 
 In the repo (``hr.store_repo``, default ``notes.handoff_repo``; it must be PRIVATE: the templates carry
-your signature): ``hr/templates/*.docx`` (offer letters, payslip) and ``hr/duties.json`` (the duties
-kept per position). Token: the same ``GITHUB_HANDOFF_TOKEN`` (Contents read/write).
+your signature): ``hr/templates/*.docx`` / ``*.svg`` (offer letters, payslip, certificate), ``hr/duties.json`` (the
+duties kept per position) and ``hr/certificates.json`` (certificate numbers given). Token: the same ``GITHUB_HANDOFF_TOKEN`` (Contents read/write).
 
 ``/hr sync pull`` copies them into ``$HERMES_HOME/hr/`` (a file you have changed locally is replaced;
 run it on a new machine, or after editing a template in the repo). ``/hr sync push`` sends yours up.
@@ -21,7 +21,8 @@ from orchestrator.handoff import Handoff, HandoffError
 FOLDER = "hr"
 TEMPLATES = "templates"
 DUTIES = "duties.json"
-KINDS = (".docx",)
+KINDS = (".docx", ".svg")
+KEPT = (DUTIES, "certificates.json")  # pushed after each change
 
 
 def _repo(ctx) -> Handoff:
@@ -66,10 +67,11 @@ def pull(ctx) -> str:
             if entry.get("type") == "file" and entry["name"].lower().endswith(KINDS):
                 _write(ctx.paths.templates / entry["name"], _blob(repo, entry))
                 got.append(entry["name"])
-        found = _get(repo, f"{FOLDER}/{DUTIES}")
-        if found:
-            _write(ctx.paths.home / DUTIES, base64.b64decode(found["content"]))
-            got.append(DUTIES)
+        for name in KEPT:
+            found = _get(repo, f"{FOLDER}/{name}")
+            if found:
+                _write(ctx.paths.home / name, base64.b64decode(found["content"]))
+                got.append(name)
     except (HttpError, HandoffError, OSError) as exc:
         return f"Pull stopped: {getattr(exc, 'status', '') or exc}. Got so far: {', '.join(got) or 'nothing'}."
     if not got:
@@ -83,27 +85,32 @@ def push(ctx) -> str:
         return ("The HR store is not set up: hr.store_repo (or notes.handoff_repo) in brief.yaml and "
                 "GITHUB_HANDOFF_TOKEN in .env.")
     files = sorted(p for p in ctx.paths.templates.glob("*") if p.suffix.lower() in KINDS) if ctx.paths.templates.is_dir() else []
-    duties = ctx.paths.home / DUTIES
     sent = []
     try:
         for path in files:
             repo.put(f"{FOLDER}/{TEMPLATES}/{path.name}", path.read_bytes())
             sent.append(path.name)
-        if duties.is_file():
-            repo.put(f"{FOLDER}/{DUTIES}", duties.read_bytes())
-            sent.append(DUTIES)
+        for name in KEPT:
+            if (ctx.paths.home / name).is_file():
+                repo.put(f"{FOLDER}/{name}", (ctx.paths.home / name).read_bytes())
+                sent.append(name)
     except (HttpError, HandoffError, OSError) as exc:
         return f"Push stopped: {getattr(exc, 'status', '') or exc}. Sent so far: {', '.join(sent) or 'nothing'}."
     return f"Pushed to {repo.repo}: {', '.join(sent)}." if sent else "Nothing to push (no templates or duties yet)."
 
 
 def push_duties(ctx) -> None:
-    """After an offer: the duties table up to the store, quietly (no store, or GitHub down: kept locally)."""
+    push_file(ctx, DUTIES)
+
+
+def push_file(ctx, name: str) -> None:
+    """After a change: that file in $HERMES_HOME/hr/ up to the store, quietly (no store, or GitHub down:
+    kept locally)."""
     repo = _repo(ctx)
-    duties = ctx.paths.home / DUTIES
-    if not repo.ready or not duties.is_file():
+    path = ctx.paths.home / name
+    if not repo.ready or not path.is_file():
         return
     try:
-        repo.put(f"{FOLDER}/{DUTIES}", duties.read_bytes())
+        repo.put(f"{FOLDER}/{name}", path.read_bytes())
     except (HttpError, HandoffError, OSError):
         pass
