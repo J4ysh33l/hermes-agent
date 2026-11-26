@@ -296,6 +296,22 @@ class Queue(unittest.TestCase):
         self.assertEqual(self.stand.videos, [("video.mp4", 5)])
         self.assertIn("hook 3", self.sent("sendVideo")[-1].data.decode("utf-8", "replace"))
 
+    def test_a_made_video_that_cannot_be_sent_stays_made_and_is_sent_once_telegram_works(self):
+        job = queue.add(self.ctx(), NOTES)
+        (self.home / ".env").write_text("ANTHROPIC_API_KEY=a\n", encoding="utf-8")  # no Telegram yet
+        said = self.run_queue()
+        self.assertIn("made but not sent yet", said)
+        self.assertIn("video.mp4", said)
+        job = queue.load(self.home, job.id)
+        self.assertEqual(job.state, "rendered")  # made, not failed
+        self.assertEqual(self.run_queue(), "")  # told once, not on every run
+        self.assertEqual(len(self.stand.videos), 3)  # and not made again
+        self.envfile("ANTHROPIC_API_KEY=a\n")
+        self.assertIn("delivered", self.run_queue())
+        job = queue.load(self.home, job.id)
+        self.assertEqual(job.state, "done")
+        self.assertNotIn("delivery_error", job.data)
+
     def test_two_runs_never_overlap_and_a_failure_is_named(self):
         queue.add(self.ctx(), NOTES)
         with queue._lock(self.home) as mine:

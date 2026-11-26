@@ -483,6 +483,24 @@ def _deliver(ctx: Any, job: Job) -> None:
     job.log("delivered", "done")
 
 
+def _try_delivery(ctx: Any, job: Job) -> str:
+    """Sending is not making: a video that failed to reach Telegram or Drive stays rendered (made, waiting to
+    be sent), and every run tries again. The reason is logged and told once, not on every run."""
+    title = job.data.get("title", job.id)
+    try:
+        _deliver(ctx, job)
+    except STEP_ERRORS as exc:
+        why = (str(exc).splitlines() or [""])[0][:200]  # no HTML error pages
+        if job.data.get("delivery_error") == why:
+            return ""
+        job.data["delivery_error"] = why
+        job.log(f"not sent yet (retried each run): {why}")
+        return f"🎞 {title}: made but not sent yet (job {job.id}): {why}. The video: {job.data['outputs']['video']}"
+    job.data.pop("delivery_error", None)
+    job.save()
+    return f"🎬 {title}: delivered (job {job.id})"
+
+
 def report(ctx: Any, job: Job) -> str:
     """Every step with its time and tokens (steps.py); saved as report.md in the job's folder."""
     issues = sorted({int(r["issue"]) for r in steps.read(job.folder) if r.get("event") == "asked" and r.get("issue")})
@@ -550,8 +568,7 @@ def _advance(ctx: Any, job: Job, tools: Tools, render: bool) -> str:
     if job.state == "ready" and render:
         _render(ctx, job, tools)
     if job.state == "rendered":
-        _deliver(ctx, job)
-        return f"🎬 {job.data.get('title', job.id)}: delivered (job {job.id})"
+        return _try_delivery(ctx, job)
     return f"✍️ {job.data.get('title', job.id)}: written, renders in {ctx.settings.render_window}" \
         if job.state == "ready" and not render else ""
 

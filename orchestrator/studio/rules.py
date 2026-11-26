@@ -298,12 +298,27 @@ def _structure(scenes: list[dict[str, Any]], p: Params) -> list[str]:
                             else f'scene {n}: no "src": this page has no images')
         if scene.type == "custom" and scene.fields["component"]:
             problems.append(f'scene {n}: no "component" (the animator names it)')
+    for n, scene in enumerate(board.scenes, 1):
+        problems += [f"scene {n} (terminal): {why}" for why in terminal_problems(scene.fields.get("lines", ()))
+                     if scene.type == "terminal"]
     if p.countries:
         known = {c.lower() for c in p.countries}
         for n, scene in enumerate(board.scenes, 1):
             for name in storyboard.countries(scene.fields) if scene.type == "map" else ():
                 if ALIASES.get(name.lower(), name).lower() not in known:
                     problems.append(f"scene {n}: no country called {name!r} on the map (countries only, never cities)")
+    return problems
+
+
+def terminal_problems(lines: Any) -> list[str]:
+    """A terminal shows a session: a "$ " command and what it printed. One bare command is an empty black box."""
+    lines = [str(line) for line in lines or ()]
+    problems = []
+    if not any(line.startswith("$") for line in lines):
+        problems.append('no "$ " command line')
+    if not any(line and not line.startswith("$") for line in lines):
+        problems.append("no output line: show what the command printed (a terminal is for software topics only; "
+                        "otherwise use a statement, a timeline or a custom scene)")
     return problems
 
 

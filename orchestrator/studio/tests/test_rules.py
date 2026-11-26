@@ -41,6 +41,12 @@ class HookTest(unittest.TestCase):
         self.assertTrue(any("first sentence has 12 words" in p for p in said))
         self.assertTrue(any("not an intro" in p for p in said))
 
+    def test_a_terminal_is_a_command_and_what_it_printed(self):
+        self.assertEqual(rules.terminal_problems(["$ cargo new hello", "Created binary package"]), [])
+        self.assertEqual(len(rules.terminal_problems(["$ memorise --rows"])), 1)  # a bare command: an empty box
+        self.assertIn("software topics only", rules.terminal_problems(["$ memorise --rows"])[0])
+        self.assertEqual(len(rules.terminal_problems(["Rows of thirteen"])), 1)
+
     def test_a_short_claim_with_a_turn_is_one(self):
         self.assertEqual(rules.hook_problems("Japan's trains apologise for being early. Here's why."), [])
         self.assertIn("no pause", rules.hook_problems("Japan's trains [beat] apologise.")[0])
