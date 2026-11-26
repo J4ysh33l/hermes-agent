@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 from orchestrator.outreach.build import fill
+from orchestrator.outreach import graph
 from orchestrator.outreach.errors import OutreachError
 
 from . import redact
@@ -194,9 +195,12 @@ def as_html(text: str) -> str:
     return "".join(f"<p>{html.escape(p).replace(chr(10), '<br>')}</p>" for p in text.split("\n\n"))
 
 
-def send(http: Http, token: str, msg_id: str, text: str, mailbox: str) -> None:
-    """Graph's reply action: the answer joins the thread (Re: subject, headers kept)."""
+def send(http: Http, token: str, msg_id: str, text: str, mailbox: str, cc: tuple[str, ...] = ()) -> None:
+    """Graph's reply action: the answer joins the thread (Re: subject, headers kept); ``cc`` copied."""
     message: dict = {"body": {"contentType": "HTML", "content": as_html(text)}}
+    copied = graph.cc_list(cc)
+    if copied:
+        message["ccRecipients"] = copied
     if mailbox:
         message["from"] = {"emailAddress": {"address": mailbox}}
     try:  # 202 Accepted, empty body

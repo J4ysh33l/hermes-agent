@@ -23,3 +23,23 @@ in `/opt/hermes-setup`. At the start of a studio session:
   (the repo is J4ysh33l/hermes-handoffs; attach it with add_repo if it is not in the session).
 - Tokens come from the environment's variables (`GITHUB_HANDOFF_TOKEN`, `CLAUDE_ROUTINE_URL`,
   `CLAUDE_ROUTINE_TOKEN`); nothing to set up by hand.
+
+## HR offer letters and certificates in a cloud session
+
+When the user sends offer details ("send them internship offer letters…"), use the `/hr offer` code,
+not a one-off script, so every rule applies (unpaid, months, several people, signature, PDF only, cc).
+- `export HERMES_HOME=/home/user/brief-test-home` (Outlook login, GEMINI_API_KEY, `hr:` settings incl.
+  `cc`). If it is missing, the Outlook login has to be redone (`python -m orchestrator.brief auth microsoft`).
+- Templates, saved duties and certificate numbers live in the private repo, folder `hr/`: copy them in first:
+  `git -C /home/user/hermes-handoffs pull -q && mkdir -p $HERMES_HOME/hr/templates && cp /home/user/hermes-handoffs/hr/templates/* $HERMES_HOME/hr/templates/ && cp /home/user/hermes-handoffs/hr/*.json $HERMES_HOME/hr/`
+- Make: `python -m orchestrator.hr offer internship <the user's lines as sent>` (fte / consultant the same).
+  Show the user what it made (names, dates, pay, duties, the PDF). Read the user's format as it is; a
+  message the code cannot read goes to Gemma 31B → Gemma 26B → Gemini 3.1 → 3.5 Flash-Lite by itself.
+- Send only on the user's word: `offer test` (PDFs to the user only), `offer yes` (each person, from
+  hr@medochealth.in, PDF only, `hr.cc` copied on every HR mail).
+- After a new position: copy `$HERMES_HOME/hr/duties.json` back to `hermes-handoffs/hr/duties.json`,
+  commit and push, so the next session reuses the same duties.
+- Experience / completion certificates: `python -m orchestrator.hr certificate <Name/Position/Start/End lines>`
+  (Email:, Pronoun: optional). The Ref.No HR/<year>/<month>/<number> is added by itself; after making or
+  dropping any, copy `$HERMES_HOME/hr/certificates.json` back to `hermes-handoffs/hr/` and push, or the
+  next session reuses numbers. Send only on the user's word (`certificate test` / `certificate yes`).

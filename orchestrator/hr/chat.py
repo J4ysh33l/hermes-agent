@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -30,7 +31,7 @@ from orchestrator.notes.errors import NotesError
 from orchestrator.notes.telegram import Telegram
 from orchestrator.recap.parts import pending_files
 
-from . import duties, inbox, interview, offer, payslips, reply, request, settings
+from . import certificate, duties, inbox, intake, interview, offer, payslips, reply, request, settings, store
 from .docfill import TemplateError
 from .pdf import PdfError, convert
 from .payroll import Period
@@ -69,8 +70,10 @@ HR_HELP = """**/hr** — HR jobs from your files, sent from your Outlook only af
 /hr interview — one Teams link, each candidate invited to their own slot (/hr interview help)
 /hr inbox — mail to the HR mailbox sorted: urgent, people, campus, applications (/hr inbox help)
 /hr reply — answer HR mail in its thread: Gemini drafts, or a template with no model (/hr reply help)
-/hr offer — an internship offer letter from your Word template (/hr offer help)
+/hr offer — offer letters (internship, full-time, consultant) from your Word templates (/hr offer help)
 /hr duties — the duties kept per position for offer letters (/hr duties help)
+/hr certificate — experience certificates with their own Ref.No (/hr certificate help)
+/hr sync — templates and duties kept in your private repo (/hr sync help)
 /menu — all your commands"""
 
 REPLY_HELP = """**/hr reply** — answer HR mail in its own thread, From the HR mailbox, only after your yes
@@ -93,24 +96,51 @@ INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules 
 Swept at 10:00 and 17:00 (cron); it messages you only when there is new HR mail, and the first sweep
 of the day also reminds you of urgent mail still unanswered. /menu — all your commands"""
 
-OFFER_HELP = """**/hr offer** — an offer letter from your template; emailed only after your yes
-/hr offer internship · /hr offer fte · /hr offer consultant, then one line each:
+OFFER_HELP = """**/hr offer** — offer letters from your template; emailed only after your yes
+/hr offer internship · /hr offer fte · /hr offer consultant, then the details:
 Name: Asha Verma
 Position: Marketing Intern
-Start: 01/12/2026
-Tenure: 3 months   (internship, consultant; a full-time offer may leave it out)
-Stipend: 15000     (or Salary: / Fee: a month; or CTC: 12 LPA a year)
-Email: asha@gmail.com   (optional; needed to send it)
-Any other line fills the bracket of the same name in that template, e.g. Location: Mohali → [Location].
+Month: June - July     (or Start: 01/12/2026 and Tenure: 3 months; no year = the next June)
+Stipend: 15000         (or Unpaid; Salary: / Fee: a month; or CTC: 12 LPA a year)
+Email: asha@gmail.com  (optional; needed to send it)
+Several people: one Name: line starts each; a line written once (e.g. Stipend: Unpaid at the
+end) is for everyone. Any other line fills the bracket of the same name, e.g. Location: Mohali.
 Or one line: /hr offer internship Asha Verma, Marketing Intern, 01/12/2026, 3, 15000, asha@gmail.com
-→ the letter (Word + PDF) comes to you here to check; nothing is sent.
+A message in another shape is read by Gemma (then Gemini) and checked the same way; that sends
+your message as it is to Google. Missing values are asked for, never guessed.
+→ the letters (PDF + Word) come to you here to check; nothing is sent.
 Duties: a position seen before uses its saved duties (no model); a new one gets one Gemma call
 (only the position and the kind of offer are sent), saved for next time. /hr duties to see or set them.
-/hr offer show · yes · no — see it again, email it to the person From the HR mailbox, drop it
+/hr offer show · test · yes · no — see them again, the PDFs to you only, the PDF to each person
+From the HR mailbox, drop them
+Unpaid: the pay table goes and hr.unpaid_line says so. A Word signature line with your signature
+over it is redrawn so the PDF shows the whole signature.
 Templates in $HERMES_HOME/hr/templates/: offer_internship.docx, offer_fte.docx, offer_consultant.docx,
 with [Name] [Position] [Date] [Start date] [End date] [duration spelled] [duration number] [Monthly]
-[Annual] and a [duties and responsibilities] bullet.
+[Annual] and a [duties and responsibilities] bullet. /hr sync pull fetches them from your private repo.
 /menu — all your commands"""
+
+CERT_HELP = """**/hr certificate** — experience (completion) certificates from your design, numbered by script
+/hr certificate, then for each person:
+Name: Kushagra
+Position: SDE Intern
+Start: 01/08/2025
+End: 31/08/2026
+Email: kushagra@gmail.com   (optional; needed to send it)
+Pronoun: he                 (optional: he · she · they; without it the text says "they")
+Several people: one Name: line starts each; a line written once is for everyone.
+Ref.No is added by itself: HR/<year>/<month>/<next number>, e.g. HR/2026/11/0160.
+A tech position (developer, engineer, SDE, data, QA…) gets the software wording; any other a general one.
+/hr certificate show · test · yes · no — see them, the PDFs to you only, each to the person From the HR
+mailbox, drop them (their numbers are given back)
+/hr certificate next — the next number · /hr certificate next 160 — set it
+Template: $HERMES_HOME/hr/templates/certificate_experience.svg (/hr sync pull fetches it). No model is used."""
+
+SYNC_HELP = """**/hr sync** — your templates and saved duties, kept in your private GitHub repo
+/hr sync pull — fetch hr/templates/*.docx and hr/duties.json into $HERMES_HOME/hr/ (new machine)
+/hr sync push — send yours up (after you change a template here)
+The repo: hr.store_repo, else notes.handoff_repo (private!); token GITHUB_HANDOFF_TOKEN.
+New duties go up by themselves after each offer."""
 
 DUTIES_HELP = """**/hr duties** — duties and responsibilities kept per position, used by /hr offer
 /hr duties list — every saved position
@@ -191,7 +221,7 @@ def _mail(ctx: Context, token: str, plan: dict, item: dict, to: tuple[str, str],
     try:
         graph.send_mail(ctx.http, token, to=to, subject=subject, body_html=body,
                         attachments=((Path(item["file"]).name, Path(item["file"]).read_bytes()),),
-                        sender=s.mailbox)
+                        sender=s.mailbox, cc=s.cc)
     except (OutreachError, HttpError, OSError) as exc:
         ctx.log(to[1], item["file"], False, str(exc), test)
         return f"{item['name']}: {exc}"
@@ -521,7 +551,7 @@ def _reply_yes(ctx: Context, _arg: str) -> str:
     store, failed = _inbox_store(ctx), []
     for item in saved["items"]:
         try:
-            reply.send(ctx.http, token, item["key"], item["text"], ctx.settings.mailbox)
+            reply.send(ctx.http, token, item["key"], item["text"], ctx.settings.mailbox, ctx.settings.cc)
         except OutreachError as exc:
             ctx.log(item["to"], "reply", False, str(exc))
             failed.append(f"{item['name']}: {exc}")
@@ -559,24 +589,66 @@ def _offer_saved(ctx: Context) -> dict | None:
     if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
         expiry.expire(path)
         return None
+    if "letters" not in saved:  # one letter, as saved before several could wait together
+        saved = {"created": saved["created"], "read_by": "", "letters": [saved]}
     return saved
 
 
+def _how(src: str) -> str:
+    return ("saved for this position, no model call" if src == "saved" else
+            f"written by {src} and saved for this position" if src != "you" else "set by you")
+
+
 def _offer_text(saved: dict, minutes: int) -> str:
-    o = saved["offer"]
-    src = saved["duties_from"]
-    how = ("saved for this position, no model call" if src == "saved" else
-           f"written by {src} and saved for this position" if src != "you" else "set by you")
-    lines = [f"**{saved.get('kind_label', 'Offer')} offer letter: {o['name']}**, {o['position']}",
-             f"{saved['dates']} · {saved.get('pay', 'stipend')} {saved['monthly']} a month ({saved['annual']} a year)",
-             f"To: {o['email'] or '(no email: add Email: to send it)'}",
-             f"Duties ({how}):", *(f"• {d}" for d in saved["duties"]),
-             f"Files: {', '.join(Path(f).name for f in saved['files'])}"]
-    if saved.get("note"):
-        lines.append(saved["note"])
-    lines.append(f"/hr offer yes — email it · /hr offer no — drop it (waits {minutes} min)"
-                 if o["email"] else "/hr offer no — drop it · send it again with an Email: line to mail it")
+    letters = saved["letters"]
+    lines = [f"**{len(letters)} offer letters**, not sent:"] if len(letters) > 1 else []
+    if saved.get("read_by"):
+        lines.append(f"(Your message was read by {saved['read_by']}: check the names and dates.)")
+    shown: set[str] = set()
+    for n, one in enumerate(letters, 1):
+        o = one["offer"]
+        pay = (f"{one.get('pay', 'stipend')}: unpaid" if one.get("unpaid") else
+               f"{one.get('pay', 'stipend')} {one['monthly']} a month ({one['annual']} a year)")
+        head = f"{n}. " if len(letters) > 1 else ""
+        lines += [f"{head}**{one.get('kind_label', 'Offer')} offer letter: {o['name']}**, {o['position']}",
+                  f"{one['dates']} · {pay}",
+                  f"To: {o['email'] or '(no email: add Email: to send it)'}"]
+        if o["position"].lower() not in shown:
+            shown.add(o["position"].lower())
+            lines += [f"Duties ({_how(one['duties_from'])}):", *(f"• {d}" for d in one["duties"])]
+        lines.append(f"Files: {', '.join(Path(f).name for f in one['files'])}")
+        if one.get("note"):
+            lines.append(one["note"])
+    mailable = sum(1 for one in letters if one["offer"]["email"])
+    lines.append(f"/hr offer test — the PDFs to you · /hr offer yes — email {'each' if mailable > 1 else 'it'} to "
+                 f"the person · /hr offer no — drop (waits {minutes} min)" if mailable else
+                 "/hr offer test — the PDFs to you · /hr offer no — drop · add Email: lines to mail the people")
     return "\n".join(lines)
+
+
+def _offer_parse(ctx: Context, kind, rest: str, today: date) -> tuple[list, list[str], str]:
+    """(offers, problems, the model that read the message or ""). The plain reading first; a model only
+    when that leaves a problem, and its reading is checked the same way."""
+    def plain(blocks: list[str]) -> tuple[list, list[str]]:
+        made, problems = [], []
+        for n, block in enumerate(blocks, 1):
+            one, found = offer.parse(block, kind, today)
+            if one:
+                made.append(one)
+            who = f"Person {n}: " if len(blocks) > 1 else ""
+            problems += [who + p for p in found]
+        return made, problems
+
+    made, problems = plain(offer.people(rest))
+    if not problems:
+        return made, [], ""
+    try:
+        blocks, model = intake.read(ctx.http, _gemini_key(ctx), ctx.settings.duties_models, rest, kind.role,
+                                    today, kind.pay)
+    except intake.IntakeError:
+        return [], problems, ""
+    again, still = plain(blocks)
+    return (again, [], model) if not still else ([], still, model)
 
 
 def _offer_make(ctx: Context, text: str) -> str:
@@ -585,47 +657,55 @@ def _offer_make(ctx: Context, text: str) -> str:
     if kind is None:
         return ("Which kind of offer? /hr offer internship · /hr offer fte · /hr offer consultant, then the "
                 "details.\n\n" + OFFER_HELP)
-    made, problems = offer.parse(rest, kind)
+    s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
+    made, problems, read_by = _offer_parse(ctx, kind, rest, today)
     if problems:
+        note = [f"(Read by {read_by}.)"] if read_by else []
         return "\n".join(["No letter was made. Fix this and send it again:", *(f"• {p}" for p in problems),
-                          "", "/hr offer help for the format"])
-    template = ctx.paths.templates / dict(ctx.settings.offer_templates)[kind.name]
+                          *note, "", "/hr offer help for the format"])
+    if len(made) > s.max_offers:
+        return f"No letter was made: {len(made)} people in one message, at most {s.max_offers} (hr.max_offers)."
+    template = ctx.paths.templates / dict(s.offer_templates)[kind.name]
     if not template.is_file():
         return (f"No {kind.label.lower()} offer template at {template}. Put your Word letter there (the "
                 "[Name], [Position]… fields as they are); /hr offer help lists them.")
-    s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
     table = duties.Table(ctx.paths.home)
-    try:
-        found = duties.find_or_write(table, ctx.http, _gemini_key(ctx), s.duties_models, made.position,
-                                     s.interview.company, s.company_about, today, s.duties_count, kind.role)
-        folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{kind.name}-{offer.key_part(made)}"
-        doc = folder / (offer.file_stem(made) + ".docx")
-        offer.make(template, made, found.items, doc, today)
-    except (duties.DutiesError, TemplateError) as exc:
-        return f"No letter was made. {exc}"
-    files, note = [doc], ""
-    try:
-        files = convert([doc], folder) + [doc]
-    except PdfError as exc:
-        note = f"⚠️ Word file only: {exc}"
-    v = made.values(today)
-    dates = (f"{v['start date']} – {v['end date']} ({made.months} months)" if made.months
-             else f"from {v['start date']}")
-    saved = {"created": ctx.now, "offer": {"name": made.name, "position": made.position, "email": made.email,
-                                            "start": v["start date"]},
-             "kind": kind.name, "kind_label": kind.label, "role": kind.role, "pay": kind.pay.lower(),
-             "dates": dates, "monthly": v["monthly"], "annual": v["annual"], "duties": list(found.items),
-             "duties_from": "saved" if found.saved and found.by != "you" else found.by,
-             "files": [str(f) for f in files], "items": [{"file": str(files[0])}], "note": note}
+    letters = []
+    for one in made:
+        try:
+            found = duties.find_or_write(table, ctx.http, _gemini_key(ctx), s.duties_models, one.position,
+                                         s.interview.company, s.company_about, today, s.duties_count, kind.role)
+            folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{kind.name}-{offer.key_part(one)}"
+            doc = folder / (offer.file_stem(one) + ".docx")
+            offer.make(template, one, found.items, doc, today, s.unpaid_line, s.unpaid_drop)
+        except (duties.DutiesError, TemplateError) as exc:
+            return f"No letter was made ({one.name}). {exc}"
+        files, note = [doc], ""
+        try:
+            files = convert([doc], folder) + [doc]
+        except PdfError as exc:
+            note = f"⚠️ Word file only: {exc}"
+        v = one.values(today)
+        dates = (f"{v['start date']} – {v['end date']} ({one.months} months)" if one.months
+                 else f"from {v['start date']}")
+        letters.append({"offer": {"name": one.name, "position": one.position, "email": one.email,
+                                  "start": v["start date"]},
+                        "kind": kind.name, "kind_label": kind.label, "role": kind.role, "pay": kind.pay.lower(),
+                        "dates": dates, "monthly": v["monthly"], "annual": v["annual"], "unpaid": one.unpaid,
+                        "duties": list(found.items),
+                        "duties_from": "saved" if found.saved and found.by != "you" else found.by,
+                        "files": [str(f) for f in files], "items": [{"file": str(files[0])}], "note": note})
+        try:  # the letter itself, to check before it goes out
+            Telegram(ctx.http, ctx.secrets).file(files[0], f"{kind.label} offer letter: {one.name} (not sent)")
+        except (NotesError, HttpError, OSError):
+            pass  # the paths are in the reply
+    store.push_duties(ctx)
+    saved = {"created": ctx.now, "read_by": read_by, "letters": letters}
     path = _offer_path(ctx)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(saved, fh)
-    try:  # the letter itself, to check before it goes out
-        Telegram(ctx.http, ctx.secrets).file(files[0], f"{kind.label} offer letter: {made.name} (not sent)")
-    except (NotesError, HttpError, OSError):
-        pass  # the paths are in the reply
     return _offer_text(saved, s.preview_minutes)
 
 
@@ -634,29 +714,57 @@ def _offer_show(ctx: Context, _arg: str) -> str:
     return _offer_text(saved, ctx.settings.preview_minutes) if saved else "No offer letter is waiting."
 
 
+def _offer_mail(ctx: Context, token: str, one: dict, to: tuple[str, str]) -> str:
+    """'' when sent, else why not. The PDF only (the first file; the Word file when no PDF was made)."""
+    s, o = ctx.settings, one["offer"]
+    letter = Path(one["files"][0])
+    if not letter.is_file():
+        return f"{o['name']}: {letter.name} is gone; make the letter again with /hr offer"
+    values = {"first": o["name"].split()[0], "name": o["name"], "position": o["position"], "start": o["start"],
+              "role": one.get("role", "role"), "company": s.interview.company, "sender": s.sender_name or "HR Team"}
+    try:
+        graph.send_mail(ctx.http, token, to=to, subject=fill(s.offer_subject, **values),
+                        body_html=fill(s.offer_body, **values),
+                        attachments=((letter.name, letter.read_bytes()),), sender=s.mailbox, cc=s.cc)
+    except (OutreachError, HttpError, OSError) as exc:
+        ctx.log(to[1], str(letter), False, str(exc))
+        return f"{o['name']}: {exc}"
+    ctx.log(to[1], str(letter), True)
+    return ""
+
+
+def _offer_test(ctx: Context, _arg: str) -> str:
+    """Each letter, as the person would get it, to you only (the signed-in Outlook account)."""
+    saved = _offer_saved(ctx)
+    if saved is None:
+        return f"No offer letter is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    token = _token(ctx)
+    me = graph.me(ctx.http, token)
+    failed = [f for one in saved["letters"] if (f := _offer_mail(ctx, token, one, (one["offer"]["name"], me)))]
+    sent = len(saved["letters"]) - len(failed)
+    return "\n".join([f"Sent {sent} letter(s) to {me} only, as each person would get them. Nobody else got "
+                      "anything; /hr offer yes mails the people.", *(f"❌ {f}" for f in failed)])
+
+
 def _offer_yes(ctx: Context, _arg: str) -> str:
     saved = _offer_saved(ctx)
     if saved is None:
         return f"No offer letter is waiting (one expires after {ctx.settings.preview_minutes} min)."
-    o, s = saved["offer"], ctx.settings
-    if not o["email"]:
-        return "This letter has no email address. Send /hr offer again with an Email: line."
-    letter = Path(saved["files"][0])
-    if not letter.is_file():
-        return f"{letter.name} is gone; make the letter again with /hr offer."
-    sender = s.sender_name or "HR Team"
-    values = {"first": o["name"].split()[0], "name": o["name"], "position": o["position"], "start": o["start"],
-              "role": saved.get("role", "role"), "company": s.interview.company, "sender": sender}
+    letters = [one for one in saved["letters"] if one["offer"]["email"]]
+    if not letters:
+        return "No letter has an email address. Send /hr offer again with Email: lines."
     _offer_path(ctx).unlink()  # before sending: a second yes can never mail twice
-    try:
-        graph.send_mail(ctx.http, _token(ctx), to=(o["name"], o["email"]),
-                        subject=fill(s.offer_subject, **values), body_html=fill(s.offer_body, **values),
-                        attachments=((letter.name, letter.read_bytes()),), sender=s.mailbox)
-    except (OutreachError, HttpError, OSError) as exc:
-        ctx.log(o["email"], str(letter), False, str(exc))
-        return f"❌ Not sent: {exc}. The letter is still at {letter}; /hr offer again to retry."
-    ctx.log(o["email"], str(letter), True)
-    return f"✅ Offer letter sent to {o['name']} <{o['email']}>" + (f" from {s.mailbox}." if s.mailbox else ".")
+    token = _token(ctx)
+    failed = [f for one in letters if (f := _offer_mail(ctx, token, one, (one["offer"]["name"], one["offer"]["email"])))]
+    s = ctx.settings
+    sender = f" from {s.mailbox}" if s.mailbox else ""
+    if len(saved["letters"]) == 1 and not failed:
+        o = letters[0]["offer"]
+        return f"✅ Offer letter sent to {o['name']} <{o['email']}>{sender}."
+    skipped = [one["offer"]["name"] for one in saved["letters"] if not one["offer"]["email"]]
+    out = [f"✅ Sent {len(letters) - len(failed)} of {len(letters)} offer letters{sender}."]
+    out += [f"❌ {f}" for f in failed] + ([f"Not sent (no email): {', '.join(skipped)}"] if skipped else [])
+    return "\n".join(out + (["Make the failed ones again with /hr offer to retry."] if failed else []))
 
 
 def _offer_no(ctx: Context, _arg: str) -> str:
@@ -665,6 +773,171 @@ def _offer_no(ctx: Context, _arg: str) -> str:
         path.unlink()
         return "Dropped. Nothing was sent (the files stay in $HERMES_HOME/hr/offers/)."
     return "Dropped the expired offer letter from the recap." if expiry.clear(path) else "Nothing was waiting."
+
+
+# ---- /hr certificate -----------------------------------------------------------------------------------
+
+
+def _cert_path(ctx: Context) -> Path:
+    return ctx.paths.home / "certificate.json"
+
+
+def _cert_saved(ctx: Context) -> dict | None:
+    path = _cert_path(ctx)
+    if not path.is_file():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    if ctx.now - saved["created"] > ctx.settings.preview_minutes * 60:
+        expiry.expire(path)
+        return None
+    return saved
+
+
+def _cert_text(saved: dict, minutes: int) -> str:
+    items = saved["items"]
+    lines = [f"**{len(items)} experience certificates**, not sent:"] if len(items) > 1 else []
+    if saved.get("read_by"):
+        lines.append(f"(Your message was read by {saved['read_by']}: check the names, dates and emails.)")
+    for n, it in enumerate(items, 1):
+        head = f"{n}. " if len(items) > 1 else ""
+        lines += [f"{head}**Experience certificate: {it['name']}**, {it['position']} · Ref.No {it['ref']}",
+                  f"{it['dates']} · {it['wording']} wording · To: {it['email'] or '(no email)'}",
+                  it["paragraph"], f"File: {Path(it['file']).name}"]
+    mailable = any(it["email"] for it in items)
+    lines.append(f"/hr certificate test — to you only · /hr certificate yes — email each person · "
+                 f"/hr certificate no — drop, numbers given back (waits {minutes} min)" if mailable else
+                 "/hr certificate test — to you only · /hr certificate no — drop · add Email: lines to mail them")
+    return "\n".join(lines)
+
+
+def _cert_make(ctx: Context, text: str) -> str:
+    s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
+    text = re.sub(r"(?i)^\s*certificates?\b", "", text)  # "/hr completion certificate …"
+    people, problems = certificate.parse(text, today)
+    read_by = ""
+    if problems:  # not in the usual shape: Gemma, then Gemini read it; checked again the same way
+        try:
+            lines, read_by = intake.read_certificates(ctx.http, _gemini_key(ctx), s.duties_models, text, today)
+            mine = "\n".join(ln for ln in text.splitlines() if re.match(r"(?i)\s*(pronouns?|gender)\s*[:=-]", ln))
+            people, problems = certificate.parse(lines + ("\n" + mine if mine else ""), today)
+        except intake.IntakeError:
+            pass
+    if problems:
+        note = [f"(Read by {read_by}.)"] if read_by else []
+        return "\n".join(["No certificate was made. Fix this and send it again:", *(f"• {p}" for p in problems),
+                          *note, "", "/hr certificate help for the format"])
+    if len(people) > s.max_offers:
+        return f"No certificate was made: {len(people)} people in one message, at most {s.max_offers}."
+    template = ctx.paths.templates / certificate.TEMPLATE
+    if not template.is_file():
+        return (f"No certificate template at {template}. /hr sync pull fetches it from your private repo.")
+    svg = template.read_text(encoding="utf-8")
+    register = certificate.Register(ctx.paths.home)
+    texts = dict(s.certificate_texts)
+    words = s.tech_words or certificate.TECH_WORDS
+    items = []
+    for p in people:
+        ref = register.take(p, today)
+        text_ = certificate.paragraph(p, s.interview.company, texts, words)
+        out = ctx.paths.home / "certificates" / f"{today:%Y%m%d}-{certificate.key_part(p)}" / \
+            (certificate.file_stem(p) + ".pdf")
+        try:
+            certificate.render(certificate.fill(svg, ref, p.name, text_), out)
+        except (certificate.CertificateError, OSError, subprocess.SubprocessError) as exc:
+            return f"No certificate was made ({p.name}): {exc}. No number was used."
+        items.append({"name": p.name, "position": p.position, "email": p.email, "ref": ref,
+                      "dates": f"{certificate.long_date(p.start)} – {certificate.long_date(p.end)}",
+                      "wording": "tech" if certificate.is_tech(p.position, words) else "general",
+                      "paragraph": text_, "file": str(out)})
+        try:
+            Telegram(ctx.http, ctx.secrets).file(out, f"Experience certificate: {p.name} {ref} (not sent)")
+        except (NotesError, HttpError, OSError):
+            pass
+    register.save()  # numbers are used only once every certificate was made
+    store.push_file(ctx, certificate.FILE)
+    saved = {"created": ctx.now, "items": items, "read_by": read_by}
+    path = _cert_path(ctx)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(saved, fh)
+    return _cert_text(saved, s.preview_minutes)
+
+
+def _cert_mail(ctx: Context, token: str, it: dict, to: tuple[str, str]) -> str:
+    s = ctx.settings
+    pdf = Path(it["file"])
+    if not pdf.is_file():
+        return f"{it['name']}: {pdf.name} is gone; make it again with /hr certificate"
+    values = {"first": it["name"].split()[0], "name": it["name"], "position": it["position"], "ref": it["ref"],
+              "company": s.interview.company, "sender": s.sender_name or "HR Team"}
+    try:
+        graph.send_mail(ctx.http, token, to=to, subject=fill(s.certificate_subject, **values),
+                        body_html=fill(s.certificate_body, **values), attachments=((pdf.name, pdf.read_bytes()),),
+                        sender=s.mailbox, cc=s.cc)
+    except (OutreachError, HttpError, OSError) as exc:
+        ctx.log(to[1], str(pdf), False, str(exc))
+        return f"{it['name']}: {exc}"
+    ctx.log(to[1], str(pdf), True)
+    return ""
+
+
+def _cert_show(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    return _cert_text(saved, ctx.settings.preview_minutes) if saved else "No certificate is waiting."
+
+
+def _cert_test(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    if saved is None:
+        return f"No certificate is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    token = _token(ctx)
+    me = graph.me(ctx.http, token)
+    failed = [f for it in saved["items"] if (f := _cert_mail(ctx, token, it, (it["name"], me)))]
+    return "\n".join([f"Sent {len(saved['items']) - len(failed)} certificate(s) to {me} only. Nobody else got "
+                      "anything; /hr certificate yes mails the people.", *(f"❌ {f}" for f in failed)])
+
+
+def _cert_yes(ctx: Context, _arg: str) -> str:
+    saved = _cert_saved(ctx)
+    if saved is None:
+        return f"No certificate is waiting (one expires after {ctx.settings.preview_minutes} min)."
+    items = [it for it in saved["items"] if it["email"]]
+    if not items:
+        return "No certificate has an email address. Send /hr certificate again with Email: lines."
+    _cert_path(ctx).unlink()  # before sending: a second yes can never mail twice
+    token = _token(ctx)
+    failed = [f for it in items if (f := _cert_mail(ctx, token, it, (it["name"], it["email"])))]
+    sender = f" from {ctx.settings.mailbox}" if ctx.settings.mailbox else ""
+    skipped = [it["name"] for it in saved["items"] if not it["email"]]
+    out = [f"✅ Sent {len(items) - len(failed)} of {len(items)} certificates{sender}."]
+    return "\n".join(out + [f"❌ {f}" for f in failed] + ([f"Not sent (no email): {', '.join(skipped)}"] if skipped else []))
+
+
+def _cert_no(ctx: Context, _arg: str) -> str:
+    path = _cert_path(ctx)
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if saved is None:
+        return "Nothing was waiting."
+    path.unlink()
+    register = certificate.Register(ctx.paths.home)
+    back = register.give_back([it["ref"] for it in saved["items"]])
+    register.save()
+    store.push_file(ctx, certificate.FILE)
+    note = f" Numbers given back: {', '.join(back)}." if back else " Their numbers stay used (newer ones were given since)."
+    return "Dropped. Nothing was sent (the PDFs stay in $HERMES_HOME/hr/certificates/)." + note
+
+
+def _cert_next(ctx: Context, arg: str) -> str:
+    register = certificate.Register(ctx.paths.home)
+    if not arg.strip():
+        return f"The next certificate gets number {register.last + 1:04d}. /hr certificate next 160 to change it."
+    if not re.fullmatch(r"\d{1,6}", arg.strip()):
+        return "Give the next number, e.g. /hr certificate next 160"
+    register.set_next(int(arg))
+    register.save()
+    store.push_file(ctx, certificate.FILE)
+    return f"The next certificate gets number {int(arg):04d}."
 
 
 def _duties_list(ctx: Context) -> str:
@@ -748,12 +1021,18 @@ def _list(ctx: Context, _arg: str) -> str:
 
 REPLY = {"show": _reply_show, "yes": _reply_yes, "no": _reply_no, "cancel": _reply_no, "again": _reply_again,
          "edit": _reply_edit, "applications": _reply_applications}
+CERT_TOPIC = ({"show": _cert_show, "test": _cert_test, "yes": _cert_yes, "no": _cert_no, "cancel": _cert_no,
+                         "next": _cert_next}, _cert_make, CERT_HELP)
 TOPICS = {"payslip": (PAYSLIP, _make, PAYSLIP_HELP),
           "interview": (INTERVIEW, _interview_make, INTERVIEW_HELP),
           "inbox": (INBOX, lambda _ctx, _rest: INBOX_HELP, INBOX_HELP),
           "reply": (REPLY, _reply_make, REPLY_HELP),
-          "offer": ({"show": _offer_show, "yes": _offer_yes, "no": _offer_no, "cancel": _offer_no},
+          "offer": ({"show": _offer_show, "test": _offer_test, "yes": _offer_yes, "no": _offer_no,
+                     "cancel": _offer_no},
                     _offer_make, OFFER_HELP),
+          "certificate": CERT_TOPIC, "completion": CERT_TOPIC, "experience": CERT_TOPIC,
+          "sync": ({"pull": lambda ctx, _a: store.pull(ctx), "push": lambda ctx, _a: store.push(ctx)},
+                   lambda _ctx, _rest: SYNC_HELP, SYNC_HELP),
           "duties": ({"forget": _duties_forget, "list": lambda ctx, _a: _duties_list(ctx)}, _duties, DUTIES_HELP)}
 HELP_WORDS = {"help", "-help", "--help", "-h", "?"}
 

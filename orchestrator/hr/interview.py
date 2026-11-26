@@ -260,7 +260,7 @@ def _invite(http: Http, token: str, c: Candidate, v: dict[str, str], settings: S
                        start=c.start, end=c.end, attendees=guests, teams=False, transaction_id=tag,
                        location="Microsoft Teams Meeting")
     if mailbox:
-        graph.send_mail(http, token, to=(c.name, c.email), subject=subject, body_html=body, sender=mailbox,
+        graph.send_mail(http, token, to=(c.name, c.email), subject=subject, body_html=body, sender=mailbox, cc=settings.cc,
                         attachments=(("interview.ics", ics(c, subject, v["join"], f"{tag}@hermes")),))
 
 

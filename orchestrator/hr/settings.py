@@ -86,6 +86,19 @@ class Settings:
     offer_body: str = ("Hi {first},<br><br>We are delighted to offer you the <b>{position}</b> {role} at "
                        "{company}, starting {start}. Your offer letter is attached. Please read it, sign it and "
                        "send us a signed copy by replying to this email.<br><br>Regards,<br>{sender}")
+    # Stipend: Unpaid → the pay table goes, this line takes the place of the line that introduced it, and
+    # paragraphs starting with any of unpaid_drop (about pay changes) go too.
+    unpaid_line: str = "This is an unpaid internship: no stipend, salary or other compensation is payable for its duration."
+    unpaid_drop: tuple[str, ...] = ("Any changes to your salary",)
+    max_offers: int = 20  # letters made from one message
+    certificate_subject: str = "Experience certificate: {position} at {company}"
+    certificate_body: str = ("Hi {first},<br><br>Please find attached your experience certificate for your time as "
+                             "{position} at {company}. Thank you for your contribution, and all the best for what "
+                             "comes next.<br><br>Regards,<br>{sender}")
+    certificate_texts: tuple[tuple[str, str], ...] = ()  # your own "tech" / "general" paragraph ({name} {He} {his}…)
+    tech_words: tuple[str, ...] = ()  # positions that get the tech paragraph; () = the built-in list
+    cc: tuple[str, ...] = ()  # copied on every mail Hermes sends for HR (offers, payslips, invites, replies)
+    store_repo: str = ""  # private owner/name keeping hr/templates and hr/duties.json (default notes.handoff_repo)
 
     def template(self, name: str) -> str | None:
         return dict(self.reply_templates).get(name)
@@ -122,6 +135,17 @@ def parse(raw: dict[str, Any]) -> Settings:
         duties_count=int(hr.get("duties_count", base.duties_count)),
         offer_subject=str(hr.get("offer_subject", base.offer_subject)),
         offer_body=str(hr.get("offer_body", base.offer_body)),
+        unpaid_line=str(hr.get("unpaid_line", base.unpaid_line)),
+        unpaid_drop=tuple(str(x) for x in hr["unpaid_drop"]) if "unpaid_drop" in hr else base.unpaid_drop,
+        max_offers=int(hr.get("max_offers", base.max_offers)),
+        certificate_subject=str(hr.get("certificate_subject", base.certificate_subject)),
+        certificate_body=str(hr.get("certificate_body", base.certificate_body)),
+        certificate_texts=tuple((str(k), str(v)) for k, v in (hr.get("certificate_texts") or {}).items()
+                                if str(k) in ("tech", "general")),
+        tech_words=tuple(str(w).lower() for w in hr.get("tech_words") or ()),
+        cc=tuple(str(a).strip() for a in ([hr["cc"]] if isinstance(hr.get("cc"), str) else hr.get("cc") or ())
+                 if str(a).strip()),
+        store_repo=str(hr.get("store_repo") or (raw.get("notes") or {}).get("handoff_repo") or ""),
     )
 
 
