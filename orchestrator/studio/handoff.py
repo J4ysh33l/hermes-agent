@@ -42,6 +42,7 @@ import json
 import sys
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # no __pycache__ in the repo: a dirty tree stops `git pull --rebase` at hand-in
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from studio import rules  # noqa: E402
 

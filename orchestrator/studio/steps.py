@@ -43,10 +43,15 @@ def mark(folder: Path, step: str, event: str, **fields: Any) -> None:
 @contextmanager
 def timed(folder: Path, step: str, note: str = "") -> Iterator[None]:
     started, at = time.monotonic(), _now()
+    failed = ""
     try:
         yield
+    except Exception as exc:  # the row says so; the error goes on to whoever handles it
+        failed = "failed: " + ((str(exc).splitlines() or [""])[0][:120] or exc.__class__.__name__)
+        raise
     finally:
-        mark(folder, step, "done", started=at, seconds=round(time.monotonic() - started, 1), note=note)
+        mark(folder, step, "done", started=at, seconds=round(time.monotonic() - started, 1),
+             note=" · ".join(x for x in (note, failed) if x))
 
 
 def read(folder: Path) -> list[dict[str, Any]]:
@@ -91,7 +96,7 @@ def _t(stamp: str) -> datetime | None:
         when = datetime.fromisoformat(stamp)
     except (ValueError, AttributeError):
         return None
-    return when.astimezone(usage.TZ) if when.tzinfo else when.replace(tzinfo=usage.TZ)
+    return when.astimezone(usage.TZ)  # a stamp without a zone (job.json's "created") is this server's clock
 
 
 def _span(seconds: float | None) -> str:

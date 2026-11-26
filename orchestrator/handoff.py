@@ -38,10 +38,22 @@ gh api -X DELETE "repos/$R/issues/$n/labels/$L" >/dev/null || {{ echo "GITHUB ER
 echo "$n" > "$(git rev-parse --git-dir)/hermes-issue"  # for tools/usage_hook.py: whose tokens this run reports
 gh api "repos/$R/issues/$n" --jq '"ISSUE \\(.number)\\n\\(.body)"'
 """
+# Hands in: pushes the run's commits to main itself, pulling first whenever main moved (jobs running side
+# by side hand in within seconds of each other), and closes the issue only once they are there.
 CLOSE = """#!/bin/sh
-# Closes issue $1 once its answer is pushed. Written by Hermes; do not edit.
-gh api -X PATCH "repos/{repo}/issues/$1" -f state=closed >/dev/null && echo "CLOSED $1"
+# Hands in issue $1 (default: the one tools/claim.sh claimed): pushes this run's commits to main, pulling
+# first whenever main moved, then closes the issue. Written by Hermes; do not edit.
+n=${{1:-$(cat "$(git rev-parse --git-dir)/hermes-issue" 2>/dev/null)}}
+[ -n "$n" ] || {{ echo "NO ISSUE: give its number"; exit 1; }}
+i=0
+until git push -q origin HEAD:main; do
+  i=$((i + 1))
+  [ "$i" -lt 5 ] || {{ echo "PUSH FAILED: issue $n left open"; exit 1; }}
+  git pull -q --rebase --autostash origin main || {{ git rebase --abort 2>/dev/null; echo "PUSH FAILED: rebase conflict"; exit 1; }}
+done
+gh api -X PATCH "repos/{repo}/issues/$n" -f state=closed >/dev/null && echo "CLOSED $n"
 """
+IGNORE = "__pycache__/\n*.pyc\n"  # the checks' leftovers: never committed, never a dirty tree at hand-in
 # A Stop hook in the repo (.claude/settings.json runs it when a run ends): sums the run's tokens from
 # its own transcript and posts them on the issue it claimed, as a comment Hermes reads for its report.
 USAGE_MARK = "<!-- hermes-usage -->"
@@ -191,7 +203,7 @@ class Handoff:
             tools = {"tools/claim.sh": CLAIM.format(repo=self.repo, label=LABEL),
                      "tools/close.sh": CLOSE.format(repo=self.repo),
                      "tools/usage_hook.py": USAGE_HOOK.format(repo=self.repo, mark=USAGE_MARK),
-                     ".claude/settings.json": SETTINGS}
+                     ".claude/settings.json": SETTINGS, ".gitignore": IGNORE}
             for path, text in {**tools, **files}.items():
                 self.put(path, text)
             self.lane_used = SONNET if self.lane == SONNET and self.sonnet_url and self.sonnet_token else ""
@@ -262,6 +274,20 @@ class Handoff:
             return self._call("GET", f"issues/{number}")["state"] == "closed"
         except HttpError as exc:
             raise HandoffError(f"GitHub handoff: HTTP {exc.status}") from None
+
+    def answered(self, number: int) -> bool:
+        """True once Claude's run on ``number`` is over: it closed the issue, or its run ended (the Stop hook
+        posted the run's tokens) without closing it. Seen 2026-11-26: a push refused because another job had
+        just handed in stopped the chained close, and the job waited for good. Hermes then closes it."""
+        if self.closed(number):
+            return True
+        if not self.usage(number):
+            return False
+        try:
+            self._call("PATCH", f"issues/{number}", json_body={"state": "closed"})
+        except (HttpError, HandoffError, OSError):
+            pass  # tidiness only: the answer is read either way
+        return True
 
     def read(self, path: str) -> str | None:
         """A file Claude committed, or None while it is not there yet."""

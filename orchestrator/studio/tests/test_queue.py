@@ -25,6 +25,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,6 +37,7 @@ from fakes import FakeHttp, http_error
 from test_writer import BOARD, NOTES, RACE as RACE_SCENE, SCRIPT, TSX, component
 
 from hermes_platform.resolver import locate_command
+from orchestrator import handoff
 from orchestrator.studio import audio, chat, qc, queue, rules, video
 
 CLAUDE = "https://api.anthropic.com/v1/messages"
@@ -108,11 +110,12 @@ class Hub:
         self.files: dict[str, str] = {}
         self.issues: dict[int, dict] = {}
         self.closed: set[int] = set()
+        self.comments: dict[int, list[dict]] = {}
         http.on("PUT", GH + "contents/", self.put)
         http.on("GET", GH + "contents/", self.get)
         http.on("POST", GH + "issues", self.open)
-        http.on("GET", GH + "issues/", lambda c: {"state": "closed" if int(c.url.rsplit("/", 1)[1]) in self.closed
-                                                   else "open"})
+        http.on("GET", GH + "issues/", self.issue)
+        http.on("PATCH", GH + "issues/", self.close)
         http.on("POST", GH + "labels", http_error(422))  # it exists already
 
     def put(self, call) -> dict:
@@ -130,10 +133,23 @@ class Hub:
         self.issues[number] = call.json_body
         return {"number": number}
 
-    def answer(self, number: int, files: dict[str, str]) -> None:
-        """Claude commits its files and closes the issue."""
+    def issue(self, call) -> Any:
+        number, _, rest = call.url.split("issues/")[1].partition("/")
+        if rest.startswith("comments"):
+            return self.comments.get(int(number), [])
+        return {"state": "closed" if int(number) in self.closed else "open"}
+
+    def close(self, call) -> dict:
+        self.closed.add(int(call.url.rsplit("/", 1)[1]))
+        return {}
+
+    def answer(self, number: int, files: dict[str, str], close: bool = True) -> None:
+        """Claude commits its files and closes the issue; its run's Stop hook posts the run's tokens."""
         self.files.update(files)
-        self.closed.add(number)
+        self.comments.setdefault(number, []).append(
+            {"body": f'{handoff.USAGE_MARK}\n{{"issue": {number}, "output_tokens": 10}}'})
+        if close:
+            self.closed.add(number)
 
 
 class Queue(unittest.TestCase):
@@ -271,6 +287,21 @@ class Queue(unittest.TestCase):
         board = json.loads(job.folder.joinpath("storyboard.json").read_text(encoding="utf-8"))
         self.assertEqual(board["scenes"][2]["component"], "scene03.tsx")
         self.assertEqual(len(hub.issues), 5)
+
+    def test_an_answer_handed_in_without_closing_its_issue_is_read_once_the_run_has_ended(self):
+        # Seen 2026-11-26: three jobs handed in at once, one push was refused and its chained close never ran.
+        self.envfile("GITHUB_HANDOFF_TOKEN=g\n")
+        self.brief("  handoff_repo: me/hand\n  research: false\n", via="")
+        hub = Hub(self.http)
+        chat.handle("make " + NOTES, self.home, self.http)
+        folder = f"studio/{queue.jobs(self.home)[0].id}"
+        hub.files[f"{folder}/script.json"] = json.dumps(SCRIPT)  # committed, run still going: not read yet
+        self.run_queue(DAY)
+        self.assertEqual(len(hub.issues), 1)
+        hub.answer(1, {f"{folder}/storyboard.json": json.dumps(WITH_RACE)}, close=False)  # the run ended open
+        self.run_queue(DAY)
+        self.assertIn(1, hub.closed)  # Hermes closed it
+        self.assertIn("### scene03.tsx (scene 3)", hub.issues[2]["body"])  # and moved on to the animation
 
     def test_a_component_that_keeps_failing_is_drawn_as_its_fallback(self):
         self.http.on("POST", CLAUDE, writer_answers(WITH_RACE))

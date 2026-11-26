@@ -7,8 +7,8 @@ scheduled task (claude.ai/code → Routines) through its API trigger; Claude cla
 answer and closes the issue; Hermes picks the answer up on its next run. Code: `orchestrator/handoff.py`.
 
 There are no instruction files in the repo to copy or keep up to date: each request carries its own.
-Hermes also keeps `tools/claim.sh` and `tools/close.sh` there (claim the oldest waiting issue, close
-one), so the prompt below has no commands to retype. They use `gh api` (REST) only: `gh issue`
+Hermes also keeps `tools/claim.sh` and `tools/close.sh` there (claim the oldest waiting issue; hand
+one in: push, retrying when main moved, then close), so the prompt below has no commands to retype. They use `gh api` (REST) only: `gh issue`
 needs GitHub's GraphQL API, which the task's sessions block.
 
 Used by:
@@ -102,9 +102,10 @@ This run started because Hermes has work for you in this repo.
 2. Do the one job the body describes. Everything you need is in the body. Read only the files the
    body names. Do not list, open or search anything else, and do not look at earlier jobs.
 3. Finish with ONE shell command: write every answer file the body names (quoted heredocs), run the
-   check command the body gives (if it gives one), then, chained with &&, git add, commit, push to
-   main, and run: sh tools/close.sh NUMBER (the issue number). If the check prints problems, fix
-   exactly those and run the same command again.
+   check command the body gives (if it gives one), then, chained with &&, git add, commit, and run:
+   sh tools/close.sh NUMBER (the issue number; it pushes to main, pulling first if main moved, then
+   closes the issue). If the check prints problems, fix exactly those and run the same command again.
+   If close.sh prints PUSH FAILED, fix that and run sh tools/close.sh NUMBER again.
 4. Delete any __pycache__ folder the check made. Then stop: no summary, no comment on the issue.
 
 Never post the job's contents anywhere else. Never write outside the folder the body names.

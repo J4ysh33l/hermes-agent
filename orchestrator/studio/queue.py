@@ -397,7 +397,7 @@ def _collect(ctx: Any, job: Job, tools: Tools) -> bool:
     if job.data["stage"] == "verify":
         _verify(w)
         return True
-    if not _hand(ctx).closed(job.data["issue"]):
+    if not _hand(ctx).answered(job.data["issue"]):
         return False
     steps.mark(job.folder, job.data["stage"], "answered", issue=job.data["issue"])
     STEPS[job.data["stage"]](w)
