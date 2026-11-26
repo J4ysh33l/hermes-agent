@@ -32,6 +32,8 @@ from orchestrator.hr import chat, duties, offer
 from orchestrator.hr.docfill import TemplateError
 
 NOW = 1_795_000_000.0  # 2026-11-19
+TODAY = date(2026, 11, 19)
+INTERN, FTE = offer.KINDS["internship"], offer.KINDS["fte"]
 GRAPH = "https://graph.microsoft.com/v1.0"
 GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/"
 FIVE = ["Assist the marketing team in planning and running social media campaigns across channels.",
@@ -72,40 +74,41 @@ def text_of(path: Path) -> tuple[list, str]:
 
 class Parse(unittest.TestCase):
     def test_keyed_lines_and_one_line_give_the_same_offer(self):
-        a, _ = offer.parse(ASHA)
-        b, _ = offer.parse("Asha Verma, Marketing Intern, 1 Dec, 2026, 3 months, Rs 15000/-, asha@example.com")
+        a, _ = offer.parse(ASHA, INTERN)
+        b, _ = offer.parse("Asha Verma, Marketing Intern, 1 Dec, 2026, 3 months, Rs 15000/-, asha@example.com", INTERN)
         self.assertEqual(a, b)
-        self.assertEqual(a, offer.Offer("Asha Verma", "Marketing Intern", date(2026, 12, 1), 3, 15000,
+        self.assertEqual(a, offer.Offer(INTERN, "Asha Verma", "Marketing Intern", date(2026, 12, 1), 3, 15000,
                                         "asha@example.com"))
 
     def test_every_problem_is_named_at_once(self):
         made, problems = offer.parse("Name: Asha\nPosition: Intern\nStart: 31/02/2026\nMonths: forty\n"
-                                     "Stipend: lots\nEmail: asha@")
+                                     "Stipend: lots\nEmail: asha@", INTERN)
         self.assertIsNone(made)
         self.assertEqual(len(problems), 4, problems)
-        _, missing = offer.parse("Name: Asha")
+        _, missing = offer.parse("Name: Asha", INTERN)
         self.assertIn("Position is missing", missing)
 
     def test_values_dates_and_money(self):
-        v = offer.Offer("Asha Verma", "Intern", date(2026, 12, 1), 3, 15000).values()
-        self.assertEqual((v["start_date"], v["end_date"]), ("1 December 2026", "28 February 2027"))
-        self.assertEqual((v["duration_words"], v["duration_number"]), ("three", "3"))
+        v = offer.Offer(INTERN, "Asha Verma", "Intern", date(2026, 12, 1), 3, 15000).values(date(2026, 11, 19))
+        self.assertEqual((v["start date"], v["end date"], v["date"]), ("1 December 2026", "28 February 2027",
+                                                                         "19 November 2026"))
+        self.assertEqual((v["duration spelled"], v["duration number"]), ("three", "3"))
         self.assertEqual((v["monthly"], v["annual"]), ("₹15,000", "₹1,80,000"))
-        self.assertEqual(offer.Offer("A", "I", date(2027, 1, 31), 1, 1).end, date(2027, 2, 28))
+        self.assertEqual(offer.Offer(INTERN, "A", "I", date(2027, 1, 31), 1, 1).end, date(2027, 2, 28))
 
 
 class Letter(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
-        self.offer, _ = offer.parse(ASHA)
+        self.offer, _ = offer.parse(ASHA, INTERN)
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def test_every_field_is_filled_and_duties_become_bullets(self):
         template(self.dir / "t.docx")
-        offer.make(self.dir / "t.docx", self.offer, tuple(FIVE), self.dir / "out.docx")
+        offer.make(self.dir / "t.docx", self.offer, tuple(FIVE), self.dir / "out.docx", TODAY)
         paragraphs, text = text_of(self.dir / "out.docx")
         self.assertNotIn("[", text)
         for bit in ("Dear Asha Verma,", "position of Marketing Intern starting on 1 December 2026.",
@@ -120,11 +123,51 @@ class Letter(unittest.TestCase):
     def test_an_unknown_field_or_a_duties_field_inside_a_sentence_stops_the_letter(self):
         template(self.dir / "t.docx", extra="Report to [Manager name].")
         with self.assertRaisesRegex(TemplateError, r"\[Manager name\]"):
-            offer.make(self.dir / "t.docx", self.offer, tuple(FIVE), self.dir / "out.docx")
+            offer.make(self.dir / "t.docx", self.offer, tuple(FIVE), self.dir / "out.docx", TODAY)
         template(self.dir / "t2.docx", extra="You will do [duties] daily.")
         with self.assertRaisesRegex(TemplateError, "paragraph of its own"):
-            offer.make(self.dir / "t2.docx", self.offer, tuple(FIVE), self.dir / "out.docx")
+            offer.make(self.dir / "t2.docx", self.offer, tuple(FIVE), self.dir / "out.docx", TODAY)
         self.assertFalse((self.dir / "out.docx").exists())
+
+
+class FullTime(unittest.TestCase):
+    """A full-time offer: no tenure, pay as CTC, and the template's own extra fields filled from your lines."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        d = docx.Document()
+        d.add_paragraph("[Date]")
+        d.add_paragraph("Dear [Name], you join as [Position] in [Location] on [Start date], CTC [Annual] "
+                        "([Monthly] a month).")
+        d.add_paragraph("[duties and responsibilities]", style="List Bullet")
+        d.save(str(self.dir / "fte.docx"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ctc_and_your_own_fields_fill_the_letter(self):
+        made, problems = offer.parse("Name: Ravi Kumar\nPosition: Backend Engineer\nStart: 01/01/2027\n"
+                                     "CTC: 12 LPA\nLocation: Mohali", FTE)
+        self.assertEqual(problems, [])
+        self.assertEqual((made.months, made.monthly, made.annual), (0, 100000, 1200000))
+        offer.make(self.dir / "fte.docx", made, tuple(FIVE[:4]), self.dir / "out.docx", TODAY)
+        _paragraphs, text = text_of_plain(self.dir / "out.docx")
+        self.assertIn("19 November 2026", text)
+        self.assertIn("Backend Engineer in Mohali on 1 January 2027, CTC ₹12,00,000 (₹1,00,000 a month).", text)
+
+    def test_a_field_with_no_value_is_named(self):
+        made, _ = offer.parse("Ravi, Backend Engineer, 01/01/2027, 90000", FTE)
+        self.assertEqual(made.monthly, 90000)
+        with self.assertRaisesRegex(TemplateError, r"\[Location\]"):
+            offer.make(self.dir / "fte.docx", made, tuple(FIVE), self.dir / "out.docx", TODAY)
+        _, problems = offer.parse("Ravi, Consultant, 01/01/2027", offer.KINDS["consultant"])
+        self.assertTrue(problems)
+
+
+def text_of_plain(path: Path) -> tuple[list, str]:
+    d = docx.Document(str(path))
+    return d.paragraphs, "\n".join(p.text for p in d.paragraphs)
 
 
 class Duties(unittest.TestCase):
@@ -190,7 +233,7 @@ class Chat(unittest.TestCase):
         (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n  sender_name: Medoc HR\n",
                                                encoding="utf-8")
         (self.home / "hr/templates").mkdir(parents=True)
-        template(self.home / "hr/templates/offer_intern.docx")
+        template(self.home / "hr/templates/offer_internship.docx")
         self.mails: list[dict] = []
         self.http = FakeHttp()
         self.http.on("POST", "https://login.microsoftonline.com/t/oauth2/v2.0/token",
@@ -216,8 +259,8 @@ class Chat(unittest.TestCase):
         return chat.handle(words, self.state, self.http, at)
 
     def test_offer_then_yes_sends_once_and_the_next_intern_costs_no_call(self):
-        shown = self.hr("offer " + ASHA)
-        self.assertIn("Offer letter: Asha Verma", shown)
+        shown = self.hr("offer internship\n" + ASHA)
+        self.assertIn("Internship offer letter: Asha Verma", shown)
         self.assertIn("written by gemma-4-31b-it", shown)
         prompt = json.dumps(self.http.calls[0].json_body)
         for private in ("Asha", "Verma", "15,000", "15000", "asha@example.com", "2026", "December"):
@@ -229,7 +272,7 @@ class Chat(unittest.TestCase):
         self.assertEqual(mail["from"]["emailAddress"]["address"], "hr@co.com")
         self.assertEqual(mail["attachments"][0]["name"], "Offer Letter - Asha Verma.pdf")
         self.assertIn("No offer letter is waiting", self.hr("offer yes"))
-        shown = self.hr("offer Rohan Das, Marketing intern, 05/01/2027, 6, 12000")
+        shown = self.hr("offer intern Rohan Das, Marketing intern, 05/01/2027, 6, 12000")
         self.assertIn("saved for this position, no model call", shown)
         self.assertEqual(self.http.count(GEMINI), 1)
         self.assertIn("no email", shown)
@@ -240,15 +283,28 @@ class Chat(unittest.TestCase):
                        "Write short notes explaining trends to managers and clinicians; "
                        "Help automate recurring reports with spreadsheets and simple scripts")
         self.assertIn("Saved 4 duties", said)
-        self.assertIn("set by you", self.hr("offer Meera, Data Analyst Intern, 01/12/2026, 2, 10000"))
+        self.assertIn("set by you", self.hr("offer internship Meera, Data Analyst Intern, 01/12/2026, 2, 10000"))
         self.assertEqual(self.http.count(GEMINI), 0)
         self.assertIn("Data Analyst Intern: 4 duties, you", self.hr("duties list"))
         self.assertIn("Forgot", self.hr("duties forget data analyst intern"))
 
+    def test_the_kind_is_asked_for_and_the_duties_call_uses_its_own_key(self):
+        self.assertIn("Which kind of offer?", self.hr("offer " + ASHA))
+        with open(self.home / ".env", "a", encoding="utf-8") as fh:
+            fh.write("HR_GEMINI_API_KEY=hr-key\n")
+        (self.home / "hr/templates/offer_consultant.docx").write_bytes(
+            (self.home / "hr/templates/offer_internship.docx").read_bytes())
+        shown = self.hr("offer consultant\n" + ASHA.replace("Marketing Intern", "Growth Consultant"))
+        self.assertIn("Consultant offer letter: Asha Verma", shown)
+        self.assertIn("fee ₹15,000 a month", shown)
+        call = self.http.calls[0]
+        self.assertEqual(call.headers["x-goog-api-key"], "hr-key")
+        self.assertIn("Growth Consultant (consulting engagement)", json.dumps(call.json_body))
+
     def test_a_bad_request_or_a_missing_template_makes_nothing(self):
-        self.assertIn("Stipend is missing", self.hr("offer Name: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3"))
-        (self.home / "hr/templates/offer_intern.docx").unlink()
-        self.assertIn("No offer template", self.hr("offer " + ASHA))
+        self.assertIn("Stipend is missing", self.hr("offer internship\nName: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3"))
+        (self.home / "hr/templates/offer_internship.docx").unlink()
+        self.assertIn("No internship offer template", self.hr("offer internship\n" + ASHA))
         self.assertEqual(self.http.count(GEMINI), 0)
         self.assertIn("Nothing was waiting", self.hr("offer no"))
 

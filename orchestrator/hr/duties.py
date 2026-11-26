@@ -10,8 +10,10 @@ The next offer for the same position reads it, so only a new position costs a mo
 set or change an entry yourself (``/hr duties <position> = a; b; c``), or forget it so the next offer
 asks the model again.
 
-The call: one ``generateContent`` with only the position title and what the company does (never a
-person's name, pay or dates). Models are tried in order (``hr.duties_models``: Gemma 4 31B, Gemma 4
+Every kind of offer (internship, full-time, consultant) uses the same table, keyed by position.
+
+The call: one ``generateContent`` with only the position title, the kind of offer and what the company
+does (never a person's name, pay or dates), on its own key ``HR_GEMINI_API_KEY``. Models are tried in order (``hr.duties_models``: Gemma 4 31B, Gemma 4
 26B, then Gemini Flash-Lite); the next is tried only when one fails or its answer does not pass the
 checks, so a normal run is exactly one call.
 """
@@ -29,12 +31,13 @@ from orchestrator import llm
 from orchestrator.brief.net import Http, HttpError
 
 FILE = "duties.json"
+KEY_NAME = "HR_GEMINI_API_KEY"  # the duties call's own key in $HERMES_HOME/.env (GEMINI_API_KEY if it is not set)
 MIN_DUTIES, MAX_DUTIES = 4, 6
 MIN_WORDS, MAX_WORDS = 5, 40
 
 PROMPT = """List the duties and responsibilities for an offer letter.
 Company: {company}, {about}.
-Position: {position}
+Position: {position} ({role})
 Rules:
 - Exactly {count} duties, each ONE sentence of 8 to 25 words, starting with a verb (e.g. "Assist", "Prepare").
 - Specific to this position's day-to-day work; suitable for a formal offer letter in Indian English.
@@ -132,12 +135,12 @@ def _answer(text: str) -> list[str]:
 
 
 def write(http: Http, key_: str, models, position: str, company: str, about: str,
-          count: int = 5) -> Duties:
+          count: int = 5, role: str = "internship") -> Duties:
     """One model call that passed the checks; the next model only when one fails."""
     if not key_:
-        raise DutiesError("GEMINI_API_KEY is not set in $HERMES_HOME/.env, and no duties are saved for "
+        raise DutiesError(f"{KEY_NAME} is not set in $HERMES_HOME/.env, and no duties are saved for "
                           f"{position!r}. Set them yourself: /hr duties {position} = first duty; second duty; …")
-    prompt = PROMPT.format(company=company, about=about, position=position.strip(), count=count)
+    prompt = PROMPT.format(company=company, about=about, position=position.strip(), count=count, role=role)
     failures = []
     for model in models:
         try:
@@ -158,11 +161,11 @@ def write(http: Http, key_: str, models, position: str, company: str, about: str
 
 
 def find_or_write(table: Table, http: Http, key_: str, models, position: str, company: str, about: str,
-                  today: date, count: int = 5) -> Duties:
+                  today: date, count: int = 5, role: str = "internship") -> Duties:
     """The saved duties for this position, else one model call whose answer is saved for next time."""
     saved = table.get(position)
     if saved:
         return saved
-    made = write(http, key_, models, position, company, about, count)
+    made = write(http, key_, models, position, company, about, count, role)
     table.put(position, made.items, made.by, today)
     return made

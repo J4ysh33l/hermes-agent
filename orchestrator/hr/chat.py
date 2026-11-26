@@ -93,21 +93,23 @@ INBOX_HELP = """**/hr inbox** — mail to the HR mailbox, sorted by fixed rules 
 Swept at 10:00 and 17:00 (cron); it messages you only when there is new HR mail, and the first sweep
 of the day also reminds you of urgent mail still unanswered. /menu — all your commands"""
 
-OFFER_HELP = """**/hr offer** — an internship offer letter from your template; emailed only after your yes
-/hr offer, then one line each:
+OFFER_HELP = """**/hr offer** — an offer letter from your template; emailed only after your yes
+/hr offer internship · /hr offer fte · /hr offer consultant, then one line each:
 Name: Asha Verma
 Position: Marketing Intern
 Start: 01/12/2026
-Months: 3
-Stipend: 15000
+Tenure: 3 months   (internship, consultant; a full-time offer may leave it out)
+Stipend: 15000     (or Salary: / Fee: a month; or CTC: 12 LPA a year)
 Email: asha@gmail.com   (optional; needed to send it)
-Or one line: /hr offer Asha Verma, Marketing Intern, 01/12/2026, 3, 15000, asha@gmail.com
+Any other line fills the bracket of the same name in that template, e.g. Location: Mohali → [Location].
+Or one line: /hr offer internship Asha Verma, Marketing Intern, 01/12/2026, 3, 15000, asha@gmail.com
 → the letter (Word + PDF) comes to you here to check; nothing is sent.
-The duties come from /hr duties: a position seen before uses its saved duties (no model); a new one
-gets one Gemma call (only the position title is sent), saved for next time.
-/hr offer show · yes · no — see it again, email it to the candidate From the HR mailbox, drop it
-Template: $HERMES_HOME/hr/templates/offer_intern.docx with [Name] [Position] [Start date] [End date]
-[duration spelled] [duration number] [Monthly] [Annual] and a [duties and responsibilities] bullet.
+Duties: a position seen before uses its saved duties (no model); a new one gets one Gemma call
+(only the position and the kind of offer are sent), saved for next time. /hr duties to see or set them.
+/hr offer show · yes · no — see it again, email it to the person From the HR mailbox, drop it
+Templates in $HERMES_HOME/hr/templates/: offer_internship.docx, offer_fte.docx, offer_consultant.docx,
+with [Name] [Position] [Date] [Start date] [End date] [duration spelled] [duration number] [Monthly]
+[Annual] and a [duties and responsibilities] bullet.
 /menu — all your commands"""
 
 DUTIES_HELP = """**/hr duties** — duties and responsibilities kept per position, used by /hr offer
@@ -545,6 +547,11 @@ def _reply_no(ctx: Context, _arg: str) -> str:
 # ---- /hr offer · /hr duties -----------------------------------------------------------------------
 
 
+def _duties_key(ctx: Context) -> str:
+    """The duties call's own key; the general Gemini key only when it is not set."""
+    return ctx.secrets.get(duties.KEY_NAME) or _gemini_key(ctx)
+
+
 def _offer_path(ctx: Context) -> Path:
     return ctx.paths.home / "offer.json"
 
@@ -565,8 +572,8 @@ def _offer_text(saved: dict, minutes: int) -> str:
     src = saved["duties_from"]
     how = ("saved for this position, no model call" if src == "saved" else
            f"written by {src} and saved for this position" if src != "you" else "set by you")
-    lines = [f"**Offer letter: {o['name']}**, {o['position']}",
-             f"{saved['dates']} · stipend {saved['monthly']} a month ({saved['annual']} a year)",
+    lines = [f"**{saved.get('kind_label', 'Offer')} offer letter: {o['name']}**, {o['position']}",
+             f"{saved['dates']} · {saved.get('pay', 'stipend')} {saved['monthly']} a month ({saved['annual']} a year)",
              f"To: {o['email'] or '(no email: add Email: to send it)'}",
              f"Duties ({how}):", *(f"• {d}" for d in saved["duties"]),
              f"Files: {', '.join(Path(f).name for f in saved['files'])}"]
@@ -578,22 +585,27 @@ def _offer_text(saved: dict, minutes: int) -> str:
 
 
 def _offer_make(ctx: Context, text: str) -> str:
-    made, problems = offer.parse(text)
+    word, rest = _split(text)
+    kind = offer.kind_of(word)
+    if kind is None:
+        return ("Which kind of offer? /hr offer internship · /hr offer fte · /hr offer consultant, then the "
+                "details.\n\n" + OFFER_HELP)
+    made, problems = offer.parse(rest, kind)
     if problems:
         return "\n".join(["No letter was made. Fix this and send it again:", *(f"• {p}" for p in problems),
                           "", "/hr offer help for the format"])
-    template = ctx.paths.templates / ctx.settings.offer_template
+    template = ctx.paths.templates / dict(ctx.settings.offer_templates)[kind.name]
     if not template.is_file():
-        return (f"No offer template at {template}. Put your Word letter there (the [Name], [Position]… "
-                "fields as they are); /hr offer help lists them.")
+        return (f"No {kind.label.lower()} offer template at {template}. Put your Word letter there (the "
+                "[Name], [Position]… fields as they are); /hr offer help lists them.")
     s, today = ctx.settings, datetime.fromtimestamp(ctx.now, TZ).date()
     table = duties.Table(ctx.paths.home)
     try:
-        found = duties.find_or_write(table, ctx.http, _gemini_key(ctx), s.duties_models, made.position,
-                                     s.interview.company, s.company_about, today, s.duties_count)
-        folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{offer.key_part(made)}"
+        found = duties.find_or_write(table, ctx.http, _duties_key(ctx), s.duties_models, made.position,
+                                     s.interview.company, s.company_about, today, s.duties_count, kind.role)
+        folder = ctx.paths.home / "offers" / f"{today:%Y%m%d}-{kind.name}-{offer.key_part(made)}"
         doc = folder / (offer.file_stem(made) + ".docx")
-        offer.make(template, made, found.items, doc)
+        offer.make(template, made, found.items, doc, today)
     except (duties.DutiesError, TemplateError) as exc:
         return f"No letter was made. {exc}"
     files, note = [doc], ""
@@ -601,11 +613,13 @@ def _offer_make(ctx: Context, text: str) -> str:
         files = convert([doc], folder) + [doc]
     except PdfError as exc:
         note = f"⚠️ Word file only: {exc}"
-    v = made.values()
+    v = made.values(today)
+    dates = (f"{v['start date']} – {v['end date']} ({made.months} months)" if made.months
+             else f"from {v['start date']}")
     saved = {"created": ctx.now, "offer": {"name": made.name, "position": made.position, "email": made.email,
-                                            "start": v["start_date"]},
-             "dates": f"{v['start_date']} – {v['end_date']} ({made.months} months)", "monthly": v["monthly"],
-             "annual": v["annual"], "duties": list(found.items),
+                                            "start": v["start date"]},
+             "kind": kind.name, "kind_label": kind.label, "role": kind.role, "pay": kind.pay.lower(),
+             "dates": dates, "monthly": v["monthly"], "annual": v["annual"], "duties": list(found.items),
              "duties_from": "saved" if found.saved and found.by != "you" else found.by,
              "files": [str(f) for f in files], "items": [{"file": str(files[0])}], "note": note}
     path = _offer_path(ctx)
@@ -614,7 +628,7 @@ def _offer_make(ctx: Context, text: str) -> str:
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(saved, fh)
     try:  # the letter itself, to check before it goes out
-        Telegram(ctx.http, ctx.secrets).file(files[0], f"Offer letter: {made.name} (not sent)")
+        Telegram(ctx.http, ctx.secrets).file(files[0], f"{kind.label} offer letter: {made.name} (not sent)")
     except (NotesError, HttpError, OSError):
         pass  # the paths are in the reply
     return _offer_text(saved, s.preview_minutes)
@@ -637,7 +651,7 @@ def _offer_yes(ctx: Context, _arg: str) -> str:
         return f"{letter.name} is gone; make the letter again with /hr offer."
     sender = s.sender_name or "HR Team"
     values = {"first": o["name"].split()[0], "name": o["name"], "position": o["position"], "start": o["start"],
-              "company": s.interview.company, "sender": sender}
+              "role": saved.get("role", "role"), "company": s.interview.company, "sender": sender}
     _offer_path(ctx).unlink()  # before sending: a second yes can never mail twice
     try:
         graph.send_mail(ctx.http, _token(ctx), to=(o["name"], o["email"]),
