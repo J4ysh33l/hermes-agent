@@ -1,11 +1,14 @@
 import React from "react";
 import {AbsoluteFill, interpolate, random, spring, useCurrentFrame, useVideoConfig} from "remotion";
-import {FEELS} from "./motion";
-import {useProfile} from "./theme";
+import {EMOJI_BAND, FEELS} from "./motion";
+import {SAFE, useProfile} from "./theme";
 
 const SPARKS = 8;
+const SIZE = 180;
 
-// One big emoji pops in upper right, wobbles, and throws a ring of small copies outward that fade.
+// One big emoji pops in at the upper right of the safe area, wobbles, and throws small copies up and out
+// that fade. It stays inside the band SceneFrame keeps free above the scene (EMOJI_BAND), so it never lands
+// on the scene's words; its copies fly upward and sideways, never down into the scene.
 export const Emoji: React.FC<{char: string; at: number}> = ({char, at}) => {
   const frame = useCurrentFrame() - at;
   const {fps} = useVideoConfig();
@@ -17,12 +20,12 @@ export const Emoji: React.FC<{char: string; at: number}> = ({char, at}) => {
   const tilt = motion.feel === "soft" ? 0 : 10 * Math.sin(frame / 4) * (1 - burst * 0.6);
   return (
     <AbsoluteFill style={{pointerEvents: "none"}}>
-      <div style={{position: "absolute", right: 120, top: 330, fontSize: 200, transform: `scale(${pop}) rotate(${tilt}deg)`,
+      <div style={{position: "absolute", right: SAFE.side + 30, top: SAFE.top + (EMOJI_BAND - SIZE * 1.15) / 2, fontSize: SIZE, transform: `scale(${pop}) rotate(${tilt}deg)`,
         opacity: fade, filter: "drop-shadow(0 18px 30px rgba(0,0,0,0.35))"}}>
         {char}
         {Array.from({length: SPARKS}, (_, i) => {
-          const angle = (i / SPARKS) * Math.PI * 2 + random(`${char}${i}`) * 0.6;
-          const reach = 170 + 90 * random(`${char}r${i}`);
+          const angle = Math.PI + (i / (SPARKS - 1)) * Math.PI + (random(`${char}${i}`) - 0.5) * 0.3; // the upper half
+          const reach = 110 + 70 * random(`${char}r${i}`);
           return (
             <span key={i} style={{position: "absolute", left: 50, top: 60, fontSize: 64, opacity: 1 - burst,
               transform: `translate(${Math.cos(angle) * reach * burst}px, ${Math.sin(angle) * reach * burst}px)`}}>

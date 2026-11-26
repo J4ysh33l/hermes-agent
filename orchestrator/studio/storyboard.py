@@ -45,7 +45,12 @@ other picture: ``brief`` says what it shows; Claude writes it as a component for
 component reads; ``fallback`` is a library scene (no "say") drawn instead if the component cannot be
 built or fails its checks, so a video never breaks.
 
-Any scene may also have ``"emoji": "🔥"``: it pops on the scene's first *emphasised* word.
+Any scene may also have ``"emoji": "🔥"``: it pops on the scene's first *emphasised* word, in a band kept
+free above the scene (the scene moves down to make room).
+
+``terminal`` is for software only: real commands and what they print, at least one ``"$ "`` command and one
+output line. A scene that is not about a command line (a history, an experiment) is not a terminal:
+use a statement, a timeline or a custom scene.
 
 List items, chart bars, diagram boxes, timeline events, statement lines, stack rows, steps, points and bars,
 and the "after" panel appear on the sentence that says them when ``say`` has one sentence per item (after any

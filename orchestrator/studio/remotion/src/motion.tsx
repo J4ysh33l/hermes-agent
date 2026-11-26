@@ -97,9 +97,13 @@ export const Arrive: React.FC<{delay?: number; enter?: Enter; style?: Style; chi
   const p = usePop(delay);
   const {motion} = useProfile();
   if ((enter ?? motion.enter) === "mask") {  // the text slides up from under its own baseline
+    // The element keeps its own style (margins, background, padding) on the outer box; the mask is a box
+    // inside it, padded so descenders and italics are not clipped and pulled back by the same amount.
     return (
-      <div style={{...style, overflow: "hidden", padding: "0 0.18em 0.12em 0.06em", margin: "0 -0.18em -0.12em -0.06em"}}>
-        <div style={{transform: `translateY(${(1 - p) * 110}%)`, opacity: p > 0 ? 1 : 0}}>{children}</div>
+      <div style={style}>
+        <div style={{overflow: "hidden", padding: "0 0.18em 0.12em 0.06em", margin: "0 -0.18em -0.12em -0.06em"}}>
+          <div style={{transform: `translateY(${(1 - p) * 110}%)`, opacity: p > 0 ? 1 : 0}}>{children}</div>
+        </div>
       </div>
     );
   }
@@ -124,8 +128,11 @@ export const Stepped: React.FC<{children: React.ReactNode}> = ({children}) => {
 
 // A scene's frame: entrance (or the transition in), slow drift, exit (or the transition out, drawn in the
 // `out.frames` past `frames` while the next scene arrives); padded into the safe area unless full-bleed.
+// Height kept free at the top of the safe area for a scene's emoji (Emoji.tsx draws inside it).
+export const EMOJI_BAND = 260;
+
 export const SceneFrame: React.FC<{frames: number; enter?: Enter; exit?: Exit; into?: Passage; out?: Passage;
-  fullBleed?: boolean; children: React.ReactNode}> = ({frames, enter, exit, into, out, fullBleed, children}) => {
+  fullBleed?: boolean; reserveTop?: number; children: React.ReactNode}> = ({frames, enter, exit, into, out, fullBleed, reserveTop = 0, children}) => {
   const frame = useCurrentFrame();
   const {motion} = useProfile();
   const p = usePop();
@@ -139,7 +146,7 @@ export const SceneFrame: React.FC<{frames: number; enter?: Enter; exit?: Exit; i
   const style = combine(combine({transform: `scale(${drift})`}, arriving), leaving);
   return (
     <AbsoluteFill style={{...style, ...(fullBleed ? {} : {
-      padding: `${SAFE.top}px ${SAFE.side}px ${SAFE.bottom + 260}px`, justifyContent: "center"})}}>
+      padding: `${SAFE.top + reserveTop}px ${SAFE.side}px ${SAFE.bottom + 260}px`, justifyContent: "center"})}}>
       <Stepped>{children}</Stepped>
     </AbsoluteFill>
   );

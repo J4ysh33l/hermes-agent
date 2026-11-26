@@ -3,7 +3,7 @@ import {AbsoluteFill, Audio, Sequence, interpolate, staticFile, useCurrentFrame,
 import {Captions} from "./Captions";
 import {customView} from "./custom";
 import {Emoji} from "./Emoji";
-import {Camera, Passage, SceneFrame, TRANSITION_LIGHT, overlaps} from "./motion";
+import {Camera, EMOJI_BAND, Passage, SceneFrame, TRANSITION_LIGHT, overlaps} from "./motion";
 import {Bullets} from "./scenes/Bullets";
 import {Code} from "./scenes/Code";
 import {Compare} from "./scenes/Compare";
@@ -140,7 +140,8 @@ const Body: React.FC<ShortProps> = ({audio, scenes, words}) => {
           return (
             <Sequence key={n} from={from} durationInFrames={frames + (out?.frames ?? 0)} layout="none">
               <SceneFrame frames={frames} enter={scene.enter || undefined} exit={scene.exit || undefined}
-                into={n > 0 ? passage(scenes, n - 1, motion) : undefined} out={out} fullBleed={fills(scene)}>
+                into={n > 0 ? passage(scenes, n - 1, motion) : undefined} out={out} fullBleed={fills(scene)}
+                reserveTop={scene.emoji && !fills(scene) ? EMOJI_BAND : 0}>
                 <View scene={scene as never} frames={frames} />
               </SceneFrame>
               {scene.emoji ? (

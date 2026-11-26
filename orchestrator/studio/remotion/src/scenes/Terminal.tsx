@@ -39,7 +39,7 @@ export const Terminal: React.FC<{scene: TerminalScene; frames: number}> = ({scen
         background: "#151922"}}>
         {scene.title || "terminal"}
       </div>
-      <div style={{padding: "28px 32px", fontFamily: theme.monoFamily, fontSize: 42, lineHeight: 1.45, minHeight: 420,
+      <div style={{padding: "28px 32px", fontFamily: theme.monoFamily, fontSize: 42, lineHeight: 1.45,
         whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
         {rows}
         <span style={{color: theme.accent, opacity: Math.floor(frame / 8) % 2 ? 0 : 1}}>▌</span>
