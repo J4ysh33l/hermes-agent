@@ -8,7 +8,7 @@
 #   - $HERMES_HOME/brief/brief.yaml for the studio (only when there is none)
 # It needs no secrets: the repo is public and the setup script cannot read the environment's
 # variables anyway. Tokens (GITHUB_HANDOFF_TOKEN, CLAUDE_ROUTINE_URL/TOKEN) stay in the environment's
-# variables. Your voice file is not here: copy it to $HERMES_HOME/studio/voices/me.pt in the session.
+# variables. Your voice file lives in the private handoff repo (voices/me.pt); the session copies it (CLAUDE.md).
 # Safe to re-run: install.sh skips what is already there.
 set -euo pipefail
 export HERMES_HOME="${HERMES_HOME:-/home/user/faceless-home}"
@@ -37,4 +37,4 @@ studio:
 EOF
 fi
 echo "ready   HERMES_HOME=$HERMES_HOME (voice env, models, brief.yaml); Remotion in $SRC"
-echo "Next, in the session: ln -s $SRC/orchestrator/studio/remotion/node_modules orchestrator/studio/remotion/node_modules; copy your me.pt"
+echo "Next, in the session: ln -s $SRC/orchestrator/studio/remotion/node_modules orchestrator/studio/remotion/node_modules; copy voices/me.pt from the handoff repo"

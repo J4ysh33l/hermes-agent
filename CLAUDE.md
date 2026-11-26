@@ -17,7 +17,9 @@ in `/opt/hermes-setup`. At the start of a studio session:
 - `export HERMES_HOME=/home/user/faceless-home`
 - link Remotion if `orchestrator/studio/remotion/node_modules` is missing:
   `ln -s /opt/hermes-setup/orchestrator/studio/remotion/node_modules orchestrator/studio/remotion/node_modules`
-- the voice file `$HERMES_HOME/studio/voices/me.pt` is not installed by the script; ask the user for it
-  if it is missing.
+- the voice file: copy the user's approved cloned voice from the private handoff repo if
+  `$HERMES_HOME/studio/voices/me.pt` is missing:
+  `git -C /home/user/hermes-handoffs pull -q && cp /home/user/hermes-handoffs/voices/me.pt $HERMES_HOME/studio/voices/me.pt`
+  (the repo is J4ysh33l/hermes-handoffs; attach it with add_repo if it is not in the session).
 - Tokens come from the environment's variables (`GITHUB_HANDOFF_TOKEN`, `CLAUDE_ROUTINE_URL`,
   `CLAUDE_ROUTINE_TOKEN`); nothing to set up by hand.
