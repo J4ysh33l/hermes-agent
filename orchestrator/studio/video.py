@@ -103,6 +103,17 @@ def _with_assets(value: Any, copy: Any) -> Any:
     return value
 
 
+# A scene's own field named like a timing key reaches the renderer under another name: a counter's "start"
+# (the number it counts up from) once overwrote the scene's start time, so every counter was drawn from 0 s
+# over all the scenes before it (seen 2026-11-26).
+RENAMED = {"start": "count_from"}
+
+
+def scene_props(timing: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """The scene as the renderer reads it: its fields (renamed where they clash), then its timing, which wins."""
+    return {**{RENAMED.get(k, k): v for k, v in fields.items()}, **timing}
+
+
 def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> dict[str, Any]:
     spans = list(speech.lines)
     scenes, words, used = [], [], 0
@@ -117,9 +128,9 @@ def props(board: Storyboard, job: Path, speech: voice.Speech, look: Profile) -> 
                               lambda src, n=n: _asset(board, job, n, src))
         start = 0.0 if n == 0 else mine[0][1]
         beats = [round(s - start, 3) for _t, s, _e in mine]  # each sentence's start, from the scene's start
-        scenes.append({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats,
-                       "enter": scene.enter, "exit": scene.exit, "transition": scene.transition,
-                       "emoji": scene.emoji, **fields})
+        scenes.append(scene_props({"type": scene.type, "start": start, "end": mine[-1][2], "beats": beats,
+                                   "enter": scene.enter, "exit": scene.exit, "transition": scene.transition,
+                                   "emoji": scene.emoji}, fields))
     if used != len(spans):
         raise VideoError(f"The voice gave {len(spans)} sentences for {used}; nothing rendered")
     return {"profile": look.render_props(), "audio": speech.path.name, "seconds": round(speech.seconds + TAIL, 3), "scenes": scenes, "words": words}

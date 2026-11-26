@@ -37,8 +37,9 @@ def props(board: Storyboard, n: int, words: str, job: Path, look: profiles.Profi
                                 lambda src: video._asset(board, job, n, src))
     beats = [0.0] * max(1, len(sentences(scene.say)))  # every part already said
     return {"profile": look.render_props(), "words": words,
-            "scene": {"type": scene.type, "start": 0.0, "end": FRAMES / 30, "beats": beats, "enter": scene.enter,
-                      "exit": scene.exit, "transition": "", "emoji": scene.emoji, **fields}}
+            "scene": video.scene_props({"type": scene.type, "start": 0.0, "end": FRAMES / 30, "beats": beats,
+                                        "enter": scene.enter, "exit": scene.exit, "transition": "",
+                                        "emoji": scene.emoji}, fields)}
 
 
 def still_args(settings: Settings, job: Path, out: Path, entry: str = "src/index.ts") -> list[str]:
