@@ -10,7 +10,7 @@ between two sentences. Never change, add, drop or reorder a word, a punctuation 
 or a [direction]. A "show" is the writer's picture idea: use it or beat it.
 $script
 
-## This page's look
+## This page's look (the house look: motion and captions stay; you choose the colours below)
 $look
 
 ## How these videos look
@@ -22,8 +22,16 @@ $look
   *chaos*"), causes or who pays as a stack (crosses or ticks), a process as steps, the usual answers as
   points struck out, the real fixes as numbered points, small cost against big cost as bars, "it's not X,
   it's Y" as a balance, an outcome as a badge. Star the one or two words that carry a heading or line.
-- Colours and fonts are the page's; never name a colour. "tone" (problem / solution) says what a line means
-  and the page colours it.
+- The colours are yours to choose, once, for the whole video ("theme" below): a palette that belongs to
+  THIS story, not the house navy-and-yellow. Think of what the subject looks like and feels like:
+  its era, its world, its mood (a neon city at dusk, a hospital's calm teal and white, old paper and ink,
+  a terminal's green on black). Pick a background, a panel a step lighter or darker, a text colour that
+  reads easily, a muted grey of the same family, one loud accent (big numbers, the spoken word) and a
+  second colour that sets it off ("cool", *emphasised* words). Dark or light both work; it must stay
+  readable (the check measures contrast) and should not be the house colours. Optionally a font that
+  suits it (inter, intertight, montserrat, anton) and a background style (glow-grid, glow, flat).
+- In scenes never name a colour. "tone" (problem / solution) says what a line means and the theme
+  colours it.
 - One idea per scene, and every scene a new kind of picture: never two that look alike in a row (the
   check refuses it). Title, statement, badge and quote are all text cards; bullets, points, steps and
   stack are all lists; counter and stat are both big numbers. Between two text cards put a drawing, a
@@ -81,7 +89,9 @@ The file is storyboard.json:
 {"hooks": [<scene for hook 1>, <hook 2>, <hook 3>],
  "scenes": [<scene>, ...],
  "cover": {"scene": <n>, "words": "<2–4 words>"},
- "music": "<a mood of 2–6 words> or none"}
+ "music": "<a mood of 2–6 words> or none",
+ "theme": {"bg": "#rrggbb", "panel": "#rrggbb", "text": "#rrggbb", "muted": "#rrggbb",
+           "accent": "#rrggbb", "cool": "#rrggbb", "font": "<optional>", "background": "<optional>"}}
 - Each hook scene says that hook's text; "scenes" carries the lines after the hook (shared by all three).
 - The cover is the most striking scene (1 = the hook, 2 = the first of "scenes") plus 2–4 huge words
   that add to the title "$title" and never repeat it.

@@ -106,6 +106,19 @@ class MusicLibraryTest(unittest.TestCase):
         self.assertEqual(again.music.path, chosen.music.path)
         self.assertEqual(self.http.count(OPENVERSE), 1)  # kept in music.yaml: searched once
 
+    def test_the_directors_mood_is_never_swapped_for_an_unrelated_track(self):
+        # seen 2026-11-26: "neon synthwave pulse" found nothing (Openverse throttled) and a chill track played
+        (self.folder / "music.yaml").write_text("- {file: free.mp3, licence: CC0, mood: chill}\n"
+                                                "- {file: paperonly.mp3, licence: CC0, mood: retro synth}\n",
+                                                encoding="utf-8")
+        chosen = sound.plan(self.http, self.home, look(self.home, "m", "auto", "auto"), PROPS, "t", "neon synthwave pulse")
+        self.assertIsNone(chosen.music)
+        self.assertIn("an unrelated track would be worse", chosen.notes[0])
+        searched = [c.url.replace("+", " ").replace("%20", " ") for c in self.http.calls]
+        self.assertTrue(any("q=synthwave&" in u or u.endswith("q=synthwave") for u in searched), searched)
+        near = sound.plan(self.http, self.home, look(self.home, "m", "auto", "auto"), PROPS, "t", "dark synth pulse")
+        self.assertEqual(near.music.path.name, "paperonly.mp3")  # shares "synth": close enough
+
     def test_no_library_means_no_music_and_always_says_so(self):
         (self.folder / "music.yaml").unlink()
         self.assertEqual(sound.plan(self.http, self.home, look(self.home, "a", "auto", "auto"), PROPS, "t").notes, ())

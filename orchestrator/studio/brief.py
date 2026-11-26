@@ -43,15 +43,22 @@ STAGES = ("script", "direction", "animation")
 WRITING = "script + direction"  # the handoff's first call: both, in one run (``writing``)
 ANSWERS = {"script": "script.json", "direction": "storyboard.json"}
 
+# Every step of a run re-sends the whole run so far, so a run hands in with as few commands as it can:
+# the answer files, the check and the hand-in in ONE command (26 Nov: 9 steps, ~230k tokens re-read).
+HAND_IN = ' && git add studio/$job && git commit -qm "studio $job" && sh tools/close.sh'
+ONE_COMMAND = ("Write the files with quoted heredocs (cat > file <<'EOF'), check and hand in, all in ONE shell command:\n"
+               "    {files} && {check}" + HAND_IN + "\n"
+               "If a check prints problems, fix exactly those and run the same command again. Run nothing else: no reading "
+               "files back, no listing folders, no git status, no summary.\n")
 HANDOFF = {
-    "script": "\nWrite it to `studio/$job/script.json`, then check and finish in one command:\n"
-              "    python3 tools/check.py script studio/$job\n",
-    "direction": "\nWrite it to `studio/$job/storyboard.json`, then check and finish in one command:\n"
-                 "    python3 tools/check.py direction studio/$job\n",
-    "animation": "\nWrite each component to `studio/$job/<its file name>`, then check and finish in one command:\n"
-                 "    python3 tools/check.py animation studio/$job\n"
-                 "That check refuses imports and APIs outside the contract. TypeScript and a real render run on my "
-                 "server after you finish; a scene that fails comes back to you once with its error.\n",
+    "script": "\n" + ONE_COMMAND.format(files="<write studio/$job/script.json>",
+                                        check="python3 tools/check.py script studio/$job"),
+    "direction": "\n" + ONE_COMMAND.format(files="<write studio/$job/storyboard.json>",
+                                           check="python3 tools/check.py direction studio/$job"),
+    "animation": "\n" + ONE_COMMAND.format(files="<write each component to studio/$job/<its file name>>",
+                                           check="python3 tools/check.py animation studio/$job")
+                 + "That check refuses imports and APIs outside the contract. TypeScript and a real render run on my "
+                   "server after you finish; a scene that fails comes back to you once with its error.\n",
 }
 API = {
     "script": "\nAnswer with that JSON only.\n",
@@ -102,7 +109,8 @@ def countries() -> tuple[str, ...]:
 
 def params(look: Profile, notes: str, seconds: float) -> rules.Params:
     return rules.Params(target_words(look, seconds_of(look, seconds)), tuple(look.section("writing")["avoid"]),
-                        tuple(allowed_scenes(look)), footage(look), notes.strip(), countries())
+                        tuple(allowed_scenes(look)), footage(look), notes.strip(), countries(),
+                        {k: v for k, v in look.section("theme").items() if k in rules.THEME_COLOURS})
 
 
 def _section(pattern: str) -> str:
@@ -169,18 +177,19 @@ scenes' animation is a separate, later job: in part 2 you only describe them (br
 
 """
 WRITING_END = """
-## Handing in both
-1. Write `studio/$job/script.json` and run `python3 tools/check.py script studio/$job`; fix what it
-   prints until it says OK. Only then start part 2: the storyboard copies the script's words.
-2. Write `studio/$job/storyboard.json`, then check and finish in one command:
-    python3 tools/check.py script studio/$job && python3 tools/check.py direction studio/$job
+## Handing in both, in ONE command
+Think both parts through first (the storyboard copies the script's words), then write every file with
+quoted heredocs (cat > file <<'EOF'), check and hand in, all in ONE shell command:
+    <write studio/$job/research.txt, script.json and storyboard.json> && python3 tools/check.py script studio/$job && python3 tools/check.py direction studio/$job""" + HAND_IN + """
+If a check prints problems, fix exactly those and run the same command again. Run nothing else: no reading
+files back, no listing folders, no git status, no summary.
 """
 
 
 RESEARCH_PART = """## Part 0: research, by a subagent
 Before part 1, start ONE subagent with the Agent tool, model "$model", with exactly this prompt:
 "Read studio/$job/research-brief.md and do what it says with web search. Reply with only the fact lines."
-Write its fact lines, as they are, to `studio/$job/research.txt`. They count as part of the notes below:
+Its fact lines, as they are, go in `studio/$job/research.txt` (written in your one final command). They count as part of the notes below:
 use them in parts 1 and 2 like the notes (the checks read research.txt too). Do no searching yourself.
 If the subagent finds nothing, write an empty research.txt and go on with the notes alone.
 

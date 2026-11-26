@@ -225,14 +225,16 @@ def fetch_music(http: Http, home: Path, query: str, count: int = 1) -> list[Trac
 
 
 def queries(*moods: str) -> list[str]:
-    """What to search for a mood: Openverse finds little for 3+ words, so then fewer."""
+    """What to search for a mood: Openverse finds little for 3+ words, so then fewer, then each word alone
+    (the genre is often in the middle: "neon *synthwave* pulse")."""
     out: list[str] = []
     for text in moods:
         words = text.split()
-        for q in (" ".join(words), " ".join(words[:2]), " ".join(words[-2:]), words[-1] if words else ""):
+        singles = [w for w in words if len(w) > 2 and w.lower() not in openverse.STOP]
+        for q in (" ".join(words), " ".join(words[:2]), " ".join(words[-2:]), *singles):
             if q and q not in out:
                 out.append(q)
-    return out[:6]
+    return out[:8]
 
 
 def _fits(track: Track, mood: str) -> float:
@@ -255,10 +257,12 @@ def used(home: Path, track: Track, title: str) -> None:
     path.write_text("".join(f"{f}\t{t}\n" for f, t in rows[-RECENT:]), encoding="utf-8")
 
 
-def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], title: str) -> tuple[Track | None, tuple[str, ...]]:
+def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], title: str,
+           strict: bool = False) -> tuple[Track | None, tuple[str, ...]]:
     """The track for a video: yours (this profile's) that suits the first mood best; none suits: three found
     for it on Openverse; nothing found: any of yours. A track one of the last videos used is passed over
-    while another fits. The same title gets the same track among equals."""
+    while another fits. The same title gets the same track among equals. ``strict`` (the director chose the
+    mood): never fall back to an unrelated track; no fit = no music."""
     last = {f for f, t in recent(home) if t != title}  # its own hook clips keep the video's track
     mine = [t for t in library(home) if isinstance(t, Track) and (not t.profiles or profile in t.profiles)]
     fresh = [t for t in mine if t.path.name not in last]
@@ -271,6 +275,13 @@ def choose(http: Http | None, home: Path, profile: str, moods: tuple[str, ...], 
             tracks = fetch_music(http, home, query, 3)
             if tracks:
                 break
+    if not tracks and strict:  # the director's mood: a track that shares a word of it, or none at all
+        near = max((_fits(t, mood) for t in mine), default=0.0)
+        tracks = [t for t in mine if _fits(t, mood) == near] if near > 0 else []
+        if not tracks:
+            why = openverse.blocked() or "none found on Openverse"
+            return None, (f"music: none: nothing in the library suits the director's {mood!r} and {why}; "
+                          "an unrelated track would be worse than the voice alone",)
     tracks = [t for t in tracks if t.path.name not in last] or tracks or mine
     if not tracks:
         return None, ("no music: nothing in studio/music/music.yaml suits it and none found on Openverse",)
@@ -291,10 +302,11 @@ def plan(http: Http, home: Path, look: Profile, props: dict[str, Any], title: st
         return Plan(tuple(found), None, ())
     if music == "none" and elements["music"] != "always":
         return Plan(tuple(found), None, ("music: none (the director's choice)",))
-    moods = tuple(m for m in (music if music != "none" else "", elements["music_query"] or "calm") if m)
-    track, notes = choose(http, home, look.name, moods, title)
+    directed = music not in ("", "none")
+    moods = (music,) if directed else (elements["music_query"] or "calm",)  # the director's mood replaces the house one
+    track, notes = choose(http, home, look.name, moods, title, strict=directed)
     if track is None:
-        return Plan(tuple(found), None, notes if elements["music"] == "always" else ())
+        return Plan(tuple(found), None, notes if elements["music"] == "always" or directed else ())
     used(home, track, title)
     return Plan(tuple(found), track, notes)
 

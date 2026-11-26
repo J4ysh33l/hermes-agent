@@ -65,7 +65,7 @@ def make(http: Http, keys: Keys, settings: Settings, home: Path, board: Storyboa
         raise CoverError(f"Scene {scene}? The storyboard has {len(board.scenes)}")
     if not (video.PROJECT / "node_modules/.bin/remotion").is_file():
         raise CoverError("Remotion is not installed: run orchestrator/studio/install.sh (needs Node 18+)")
-    look = profiles.load(profile_name or board.profile or settings.profile, home)
+    look = profiles.load(profile_name or board.profile or settings.profile, home).with_theme(board.theme)
     board = video.check_countries(board)
     job = home / "studio" / "cover" / f"{datetime.now():%Y%m%d-%H%M%S-%f}"
     job.mkdir(parents=True)

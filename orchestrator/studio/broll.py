@@ -172,5 +172,6 @@ def resolve(http: Http, keys: Keys, home: Path, board: Storyboard, look: Profile
             notes.append(f"scene {n + 1} b-roll: {got[1]}")
         else:
             scenes[n] = _title(scene, query)
-            notes.append(f"scene {n + 1}: no b-roll for {query!r} ({why or 'nothing fitting found, or its host refused the download'}); drawn as a title card")
+            why = why or openverse.blocked() or "nothing fitting found, or its host refused the download"
+            notes.append(f"scene {n + 1}: no b-roll for {query!r} ({why}); drawn as a title card")
     return replace(board, scenes=tuple(scenes)), tuple(notes)

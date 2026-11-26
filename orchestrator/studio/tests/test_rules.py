@@ -69,6 +69,22 @@ class DirectionTest(unittest.TestCase):
         self.assertEqual(len(rules.music_problems(None)), 1)  # not chosen
         self.assertEqual(len(rules.music_problems("music")), 1)
 
+    def test_the_director_picks_readable_colours_of_its_own(self):
+        house = {"bg": "#0b0f19", "accent": "#ffd23f", "bad": "#ff5d73", "good": "#3ddc97"}
+        vice = {"bg": "#1a0b2e", "panel": "#2b1548", "text": "#fdf4ff", "muted": "#c4a7d9", "accent": "#ff5fa2",
+                "cool": "#3ee6e0", "font": "anton", "background": "glow"}
+        self.assertEqual(rules.theme_problems(vice, house), [])
+        paper = {"bg": "#efe6d2", "panel": "#fffaf0", "text": "#1d1a16", "muted": "#6b6153", "accent": "#c2410c",
+                 "cool": "#1d4ed8", "bad": "#b91c1c", "good": "#15803d"}
+        self.assertEqual(rules.theme_problems(paper, house), [])
+        self.assertIn("theme.bad", " ".join(rules.theme_problems({**paper, "bad": "#ff5d73"}, house)))
+        grey = rules.theme_problems({**vice, "text": "#5a4a6a"}, house)
+        self.assertIn("theme.text #5a4a6a on bg #1a0b2e has contrast", grey[0])
+        self.assertIn("house colours", rules.theme_problems({**vice, "bg": "#0b0f19", "accent": "#ffd23f"}, house)[-1])
+        self.assertIn("theme.cool is missing", rules.theme_problems({k: v for k, v in vice.items() if k != "cool"}))
+        self.assertIn("must be one of", rules.theme_problems({**vice, "font": "comic"})[0])
+        self.assertEqual(len(rules.theme_problems(None)), 1)
+
     def test_a_hook_never_waits_a_sentence_before_its_first_part(self):
         scene = {"type": "statement", "say": "Most people invest backwards. Time beats money.",
                  "lines": [{"text": "time beats money"}]}

@@ -69,6 +69,8 @@ BOARD = {
     ],
     "cover": {"scene": 3, "words": "25x faster"},
     "music": "fast punchy electronic",
+    "theme": {"bg": "#101820", "panel": "#1c2a36", "text": "#f2f5f7", "muted": "#9fb0bd", "accent": "#ff8a3d",
+              "cool": "#5ed3c4"},
 }
 RACE = {"type": "custom", "say": "It installs packages up to *25 times* faster than npm.",
         "brief": "Two progress bars race; Bun's fills while npm's crawls.", "props": {"speedup": 25},

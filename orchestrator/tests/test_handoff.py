@@ -126,18 +126,21 @@ class HandInTest(unittest.TestCase):
         (a / "tools/old.pyc").write_text("1", encoding="utf-8")  # a tracked leftover the checks rewrite
         subprocess.run("git add -A && git commit -qm tools && git push -q origin HEAD:main", shell=True, cwd=a,
                        env=env, check=True)
-        subprocess.run("git pull -q origin main", shell=True, cwd=b, env=env, check=True)
+        subprocess.run("git pull -q origin main && git checkout -q -b claude/run", shell=True, cwd=b, env=env,
+                       check=True)  # a cloud run works on its own branch
         for clone, job in ((a, "one"), (b, "two")):
             (clone / f"{job}.json").write_text("{}", encoding="utf-8")
             subprocess.run(f"git add -A && git commit -qm {job}", shell=True, cwd=clone, env=env, check=True)
         subprocess.run("git push -q origin HEAD:main", shell=True, cwd=a, env=env, check=True)  # a hands in first
         (b / "tools/old.pyc").write_text("2", encoding="utf-8")  # a dirty tree: a plain pull --rebase refuses
         (b / ".git/hermes-issue").write_text("9\n", encoding="utf-8")  # what tools/claim.sh claimed
-        out = subprocess.run(["sh", "tools/close.sh"], cwd=b, env=env, capture_output=True, text=True)
+        out = subprocess.run(["sh", "tools/close.sh"], cwd=b, env=env, capture_output=True, text=True, check=False)
         self.assertEqual(out.stdout.strip().splitlines()[-1:], ["CLOSED 9"], out.stderr)
         self.assertEqual(self.git(tmp / "origin.git", "ls-tree", "--name-only", "main").split(),
                          ["one.json", "tools", "two.json"])
         self.assertIn("repos/me/hand/issues/9 -f state=closed", (tmp / "gh.log").read_text(encoding="utf-8"))
+        status = self.git(b, "status", "-sb").splitlines()[0]  # nothing left unpushed for the run's end check
+        self.assertEqual(status, "## main...origin/main")
 
 
 class AnsweredTest(unittest.TestCase):
