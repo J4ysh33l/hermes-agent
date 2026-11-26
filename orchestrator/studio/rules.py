@@ -267,6 +267,38 @@ def evidence(where: str, scene: dict[str, Any], notes: str) -> list[str]:
     return problems
 
 
+# Scenes that look alike on screen: two in a row read as the same picture again (seen 2026-11-26: a
+# statement, then a title, then another heading, in the first 10 s). Other types are their own family.
+LOOKS = {"title": "text card", "statement": "text card", "badge": "text card", "quote": "text card",
+         "bullets": "list", "points": "list", "steps": "list", "stack": "list",
+         "counter": "big number", "stat": "big number"}
+MUSIC_WORDS = (2, 6)  # a mood to search for: "tense ticking electronic"
+
+
+def look_of(kind: str) -> str:
+    return LOOKS.get(kind, kind)
+
+
+def variety(scenes: list[dict[str, Any]], first: int = 1) -> list[str]:
+    """Consecutive scenes must look different; a custom scene is its own picture each time."""
+    problems = []
+    for n, (a, b) in enumerate(zip(scenes, scenes[1:]), first + 1):
+        kind_a, kind_b = str(a.get("type", "")), str(b.get("type", ""))
+        if "custom" not in (kind_a, kind_b) and look_of(kind_a) == look_of(kind_b):
+            problems.append(f"scene {n} ({kind_b}) looks like scene {n - 1} ({kind_a}), both a {look_of(kind_b)}: "
+                            "a new kind of picture each scene (a drawing, a chart, a custom scene)")
+    return problems
+
+
+def music_problems(value: Any) -> list[str]:
+    if value == "none":
+        return []
+    words = str(value).split() if isinstance(value, str) else []
+    if not MUSIC_WORDS[0] <= len(words) <= MUSIC_WORDS[1]:
+        return ['"music" must be "none" or a mood of 2–6 words to search for (e.g. "tense ticking electronic")']
+    return []
+
+
 def pacing(where: str, scene: dict[str, Any]) -> list[str]:
     said = sentences(spoken(scene.get("say", "")))
     problems = []
@@ -276,6 +308,9 @@ def pacing(where: str, scene: dict[str, Any]) -> list[str]:
         problems.append(f"{where} ({scene['type']}): {parts} parts but {len(said)} sentences; one sentence per part")
     elif parts and len(said) > parts + 1:
         problems.append(f"{where} ({scene['type']}): {len(said)} sentences for {parts} parts; at most one intro sentence")
+    elif parts and len(said) > parts and where.startswith("hook"):  # its first part would wait a whole sentence
+        problems.append(f"{where} ({scene['type']}): the first frame must show something; no intro sentence in a "
+                        f"hook ({len(said)} sentences for {parts} parts: one sentence per part)")
     limit = SCENE_WORDS + PART_WORDS * parts if parts else CUSTOM_WORDS if scene.get("type") == "custom" else SCENE_WORDS
     if words > limit:
         problems.append(f"{where}: {words} words is too long for one picture (at most {limit}); split it into scenes")
@@ -331,13 +366,18 @@ def check_direction(raw: Any, script: dict[str, Any], p: Params) -> list[str]:
         return ['"hooks" must be 3 scenes, one for each hook of the script, in order']
     if not raw["scenes"] or not all(isinstance(s, dict) for s in raw["scenes"]):
         return ['"scenes" must be scene objects, at least one']
-    broken = [f"unknown key {k!r} (only hooks, scenes, cover)" for k in sorted(set(raw) - {"hooks", "scenes", "cover"})]
+    broken = [f"unknown key {k!r} (only hooks, scenes, cover, music)"
+              for k in sorted(set(raw) - {"hooks", "scenes", "cover", "music"})]
     for n, hook in enumerate(raw["hooks"], 1):
         found = _structure([hook, *raw["scenes"]], p)
         broken += [f"hook {n}: {x}" if x.startswith("scene 1:") or x.startswith("scene 1 ") else x for x in found]
     problems = _locked(raw, script)
     if broken:  # unparsable scenes: the content checks below would misfire
         return list(dict.fromkeys(broken + problems))
+    problems += music_problems(raw.get("music"))
+    problems += variety(raw["scenes"], 2)
+    for n, hook in enumerate(raw["hooks"], 1):
+        problems += [f"hook {n}: {x}" for x in variety([hook, raw["scenes"][0]])]
     for n, hook in enumerate(raw["hooks"], 1):
         problems += pacing(f"hook {n}", hook) + evidence(f"hook {n}", hook, p.notes)
     for n, scene in enumerate(raw["scenes"], 2):
@@ -410,4 +450,5 @@ def merge(script: dict[str, Any], board: dict[str, Any]) -> dict[str, Any]:
         if f"scene {n}" in names:
             scene["component"] = names[f"scene {n}"]
         scenes.append(scene)
-    return {"title": _text(script["title"]), "hooks": hooks, "scenes": scenes, "cover": board["cover"]}
+    return {"title": _text(script["title"]), "hooks": hooks, "scenes": scenes, "cover": board["cover"],
+            "music": board.get("music", "")}

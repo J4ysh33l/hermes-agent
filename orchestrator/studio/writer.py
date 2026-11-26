@@ -60,9 +60,11 @@ class Draft:
     notes: tuple[str, ...]  # soft warnings, shown, not refused
     wishes: tuple[str, ...] = ()  # visuals the director wanted but we cannot make yet (scene type: wish)
     cover: tuple[int, str] = (1, "")  # the scene the cover shows (1 = the hook) and its 2–4 big words
+    music: str = ""  # the director's: "none", a mood to search for, or "" (the profile's music_query)
 
     def storyboard(self, hook: int, profile: str) -> dict[str, Any]:
-        return {"title": self.title, "profile": profile, "scenes": [self.hooks[hook].scene, *self.scenes]}
+        return {"title": self.title, "profile": profile, "music": self.music,
+                "scenes": [self.hooks[hook].scene, *self.scenes]}
 
     def script(self, hook: int = 0) -> str:
         return "\n".join(s["say"] for s in (self.hooks[hook].scene, *self.scenes))
@@ -130,7 +132,7 @@ def finish(folder: Path, model: str, rounds: int, wishes: list[str]) -> Draft:
     cover = merged["cover"]
     return Draft(merged["title"], hooks, tuple(merged["scenes"]), model, rounds,
                  tuple(soft_notes([hooks[0].scene, *merged["scenes"]])), tuple(wishes),
-                 (cover["scene"], " ".join(str(cover["words"]).split())))
+                 (cover["scene"], " ".join(str(cover["words"]).split())), str(merged.get("music") or ""))
 
 
 def _to_fallback(scene: dict[str, Any]) -> None:

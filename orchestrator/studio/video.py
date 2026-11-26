@@ -207,7 +207,7 @@ def _render(http: Http, keys: Keys, settings: Settings, home: Path, board: Story
     text = "\n".join(scene.say for scene in board.scenes)
     speech = voice.speak(http, keys.gemini, voiced(settings, look), home, text, job / "voice.wav")
     made = props(board, job, replace(speech, path=job / "soundtrack.wav"), look)
-    chosen = sound.plan(http, home, look, made, board.title)  # effects on the cuts, music under the voice
+    chosen = sound.plan(http, home, look, made, board.title, board.music)  # effects on the cuts, music under the voice
     audio.normalize(sound.mix(home, speech.path, chosen, made["seconds"], job / "mix.wav"), job / "soundtrack.wav")
     voice_took = time.monotonic() - started
     (job / "props.json").write_text(json.dumps(made, ensure_ascii=False), encoding="utf-8")

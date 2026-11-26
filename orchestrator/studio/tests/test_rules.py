@@ -52,6 +52,30 @@ class HookTest(unittest.TestCase):
         self.assertIn("no pause", rules.hook_problems("Japan's trains [beat] apologise.")[0])
 
 
+class DirectionTest(unittest.TestCase):
+    """What the director chooses: a new picture each scene, the music (or none), a hook that shows at once."""
+
+    def test_two_scenes_that_look_alike_in_a_row_are_refused(self):
+        # seen 2026-11-26: a statement, then a title, then another heading: the same picture three times
+        text = [{"type": "statement"}, {"type": "title"}]
+        self.assertIn("both a text card", rules.variety(text)[0])
+        self.assertIn("both a big number", rules.variety([{"type": "counter"}, {"type": "stat"}])[0])
+        self.assertEqual(rules.variety([{"type": "title"}, {"type": "map"}, {"type": "statement"}]), [])
+        self.assertEqual(rules.variety([{"type": "custom"}, {"type": "custom"}]), [])  # each its own drawing
+
+    def test_music_is_a_mood_or_none(self):
+        self.assertEqual(rules.music_problems("none"), [])
+        self.assertEqual(rules.music_problems("tense ticking electronic"), [])
+        self.assertEqual(len(rules.music_problems(None)), 1)  # not chosen
+        self.assertEqual(len(rules.music_problems("music")), 1)
+
+    def test_a_hook_never_waits_a_sentence_before_its_first_part(self):
+        scene = {"type": "statement", "say": "Most people invest backwards. Time beats money.",
+                 "lines": [{"text": "time beats money"}]}
+        self.assertIn("first frame must show something", rules.pacing("hook 1", scene)[0])
+        self.assertEqual(rules.pacing("scene 4", scene), [])  # later on, one intro sentence is fine
+
+
 class SpokenLengthTest(unittest.TestCase):
     """A number is budgeted as the words the voice reads: a real script full of years ran 53 s, not 45."""
 

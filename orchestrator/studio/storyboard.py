@@ -115,6 +115,7 @@ class Storyboard:
     scenes: tuple[Scene, ...]
     folder: Path  # where relative ``src`` files are
     profile: str  # "" = studio.profile
+    music: str = ""  # "none" = no music; a mood ("tense ticking electronic"); "" = the profile's music_query
 
 
 Field = Callable[[str, Any], Any]
@@ -375,7 +376,7 @@ def parse(raw: Any, folder: Path) -> Storyboard:
         raise StoryboardError('A storyboard is {"title": ..., "scenes": [...]} with at least one scene')
     if len(raw["scenes"]) > MAX_SCENES:
         raise StoryboardError(f"At most {MAX_SCENES} scenes")
-    unknown = set(raw) - {"title", "scenes", "profile"}
+    unknown = set(raw) - {"title", "scenes", "profile", "music"}
     if unknown:
         raise StoryboardError(f"unknown key {min(unknown)!r} in the storyboard")
     scenes = tuple(_scene(n, s) for n, s in enumerate(raw["scenes"]))
@@ -390,7 +391,7 @@ def parse(raw: Any, folder: Path) -> Storyboard:
             elif not src.startswith("https://") and not (folder / src).is_file():
                 raise StoryboardError(f"scene {n + 1}: {folder / src} not found")
     return Storyboard(_text(False)("title", raw.get("title", MISSING)), scenes, folder,
-                      _text(False)("profile", raw.get("profile", MISSING)))
+                      _text(False)("profile", raw.get("profile", MISSING)), _text(False)("music", raw.get("music", MISSING)))
 
 
 def load(path: Path) -> Storyboard:

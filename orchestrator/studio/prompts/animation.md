@@ -24,6 +24,9 @@ $customs
   same scene must work on a dark page and a light one (the page's colours change, your code doesn't).
 - No small label above a heading, no gradient text, no glow halos; the accent marks one or two words.
 - Readable on a phone: large type, at most about 8 words on screen at once.
+- Never hide or fade out what the voice is still talking about. To show that things merge, repeat or
+  point at each other, keep every container on screen and draw the link between them (an arrow, a
+  ghosted copy, a tick); a box that vanishes looks like a broken scene.
 - Under about 2,000 SVG/DOM nodes per frame; large blurs rarely.
 
 $contract
