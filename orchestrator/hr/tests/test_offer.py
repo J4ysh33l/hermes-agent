@@ -300,11 +300,72 @@ class Chat(unittest.TestCase):
         self.assertIn("Growth Consultant (consulting engagement)", json.dumps(call.json_body))
 
     def test_a_bad_request_or_a_missing_template_makes_nothing(self):
-        self.assertIn("Stipend is missing", self.hr("offer internship\nName: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3"))
+        # the plain reading misses the stipend; the models are asked to read it, their answer (here no
+        # people at all) is not trusted, and the missing stipend is asked for, never guessed
+        said = self.hr("offer internship\nName: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3")
+        self.assertIn("Stipend is missing", said)
+        self.assertEqual(self.http.count(GEMINI), 4)  # Gemma 31B, 26B, Flash-Lite 3.1, 3.5: none usable
         (self.home / "hr/templates/offer_internship.docx").unlink()
         self.assertIn("No internship offer template", self.hr("offer internship\n" + ASHA))
-        self.assertEqual(self.http.count(GEMINI), 0)
+        self.assertEqual(self.http.count(GEMINI), 4)
         self.assertIn("Nothing was waiting", self.hr("offer no"))
+
+    def test_cc_is_copied_on_every_offer_mail_but_never_twice_to_the_same_person(self):
+        (self.state / "brief.yaml").write_text("hr:\n  mailbox: hr@co.com\n  sender_name: Medoc HR\n"
+                                               "  cc: [Boss@co.com]\n", encoding="utf-8")
+        self.http.on("GET", GRAPH + "/me", {"mail": "boss@co.com"})
+        self.hr("offer internship\n" + ASHA)
+        self.assertIn("to boss@co.com only", self.hr("offer test"))
+        self.assertNotIn("ccRecipients", self.mails[0])  # the To is the cc already
+        self.hr("offer yes")
+        self.assertEqual(self.mails[1]["ccRecipients"], [{"emailAddress": {"address": "Boss@co.com"}}])
+        self.assertEqual(self.mails[1]["toRecipients"][0]["emailAddress"]["address"], "asha@example.com")
+
+    def test_several_people_unpaid_months_one_message_two_letters_one_duties_call(self):
+        said = self.hr("offer internship\nName : Rishabh Mishra\nmonth :June -July\nrole : Trainee software developer\n"
+                       "Email: r@example.com\n\nName : sanidhya pawar\nmonth : june -july\n"
+                       "role : Trainee software developer\nEmail: s@example.com\n\nStipend - Unpaid")
+        self.assertIn("2 offer letters", said)
+        self.assertIn("Sanidhya Pawar", said)
+        self.assertIn("1 June 2027 – 31 July 2027 (2 months)", said)
+        self.assertIn("stipend: unpaid", said)
+        self.assertEqual(self.http.count(GEMINI), 1)  # duties once for the position, nothing to read
+        letter = next((self.home / "hr/offers").glob("*sanidhya-pawar/*.docx"))
+        d = docx.Document(str(letter))
+        self.assertEqual(d.tables, [])
+        self.assertIn("unpaid internship", "\n".join(p.text for p in d.paragraphs))
+        self.assertIn("Sent 2 of 2", self.hr("offer yes"))
+        self.assertEqual([m["attachments"][0]["name"] for m in self.mails],
+                         ["Offer Letter - Rishabh Mishra.pdf", "Offer Letter - Sanidhya Pawar.pdf"])
+
+    def test_a_message_in_another_shape_is_read_by_the_model_then_checked(self):
+        people = {"people": [{"name": "Meera Iyer", "position": "Data Analyst Intern", "start": "",
+                              "period": "January - March", "months": "", "pay": "12000", "email": ""}]}
+        answers = iter([people, {"duties": FIVE}])
+        self.http.on("POST", GEMINI, lambda _c: {"candidates": [{"content": {"parts": [
+            {"text": json.dumps(next(answers))}]}}], "usageMetadata": {}})
+        said = self.hr("offer internship Please make one for Meera Iyer, our data analyst intern, "
+                       "January to March, 12k a month")
+        self.assertIn("read by gemma-4-31b-it", said)
+        self.assertIn("1 January 2027 – 31 March 2027 (3 months)", said)
+        self.assertIn("Meera Iyer", json.dumps(self.http.calls[0].json_body))
+
+
+class Unpaid(unittest.TestCase):
+    def test_period_words_to_a_start_and_months(self):
+        today = date(2026, 11, 26)
+        self.assertEqual(offer.period("June -July", today), (date(2027, 6, 1), 2))
+        self.assertEqual(offer.period("Dec to Feb", today), (date(2026, 12, 1), 3))
+        self.assertEqual(offer.period("Nov 2026 - Jan 2027", today), (date(2026, 11, 1), 3))
+        self.assertIsNone(offer.period("soon", today))
+
+    def test_a_line_given_once_is_for_everyone_and_lines_before_the_first_name_too(self):
+        blocks = offer.people("Position: Intern\nName: A\nTenure: 2\nName: B\nTenure: 3\nStipend: Unpaid")
+        self.assertEqual(len(blocks), 2)
+        for block in blocks:
+            self.assertIn("stipend: unpaid", block.lower())
+            self.assertIn("position: intern", block.lower())
+        self.assertEqual(offer.people(ASHA), [ASHA])
 
 
 if __name__ == "__main__":

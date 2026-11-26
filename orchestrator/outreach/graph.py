@@ -106,17 +106,33 @@ def me(http: Http, token: str) -> str:
     return data.get("mail") or data.get("userPrincipalName") or ""
 
 
+def cc_list(cc: tuple[str, ...], *skip: str) -> list[dict]:
+    """Graph recipients for ``cc``, without blanks, repeats or any address in ``skip`` (any case)."""
+    seen = {s.strip().lower() for s in skip if s}
+    out = []
+    for address in cc:
+        key = address.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            out.append({"emailAddress": {"address": address.strip()}})
+    return out
+
+
 def send_mail(http: Http, token: str, *, to: tuple[str, str], subject: str, body_html: str,
-              attachments: tuple[tuple[str, bytes], ...] = (), sender: str = "") -> None:
+              attachments: tuple[tuple[str, bytes], ...] = (), sender: str = "", cc: tuple[str, ...] = ()) -> None:
     """One email from your mailbox (kept in Sent Items). ``to``: (name, address). Attachments:
     (file name, bytes), typed by extension; Graph takes up to 3 MB per message this way.
-    ``sender``: another address it goes out From, e.g. a group you have Send As on."""
+    ``sender``: another address it goes out From, e.g. a group you have Send As on. ``cc``: addresses
+    copied (one that is also the To is left out, so nobody gets it twice)."""
     message = {"subject": subject, "body": {"contentType": "HTML", "content": body_html},
                "toRecipients": [{"emailAddress": {"name": to[0], "address": to[1]}}],
                "attachments": [{"@odata.type": "#microsoft.graph.fileAttachment", "name": name,
                                 "contentType": mimetypes.guess_type(name)[0] or "application/octet-stream",
                                 "contentBytes": base64.b64encode(data).decode()}
                                for name, data in attachments]}
+    copied = cc_list(cc, to[1])
+    if copied:
+        message["ccRecipients"] = copied
     if sender:
         message["from"] = {"emailAddress": {"address": sender}}
     headers = {"Authorization": f"Bearer {token}"}

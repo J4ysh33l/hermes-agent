@@ -91,6 +91,7 @@ class Settings:
     unpaid_line: str = "This is an unpaid internship: no stipend, salary or other compensation is payable for its duration."
     unpaid_drop: tuple[str, ...] = ("Any changes to your salary",)
     max_offers: int = 20  # letters made from one message
+    cc: tuple[str, ...] = ()  # copied on every mail Hermes sends for HR (offers, payslips, invites, replies)
     store_repo: str = ""  # private owner/name keeping hr/templates and hr/duties.json (default notes.handoff_repo)
 
     def template(self, name: str) -> str | None:
@@ -131,6 +132,8 @@ def parse(raw: dict[str, Any]) -> Settings:
         unpaid_line=str(hr.get("unpaid_line", base.unpaid_line)),
         unpaid_drop=tuple(str(x) for x in hr["unpaid_drop"]) if "unpaid_drop" in hr else base.unpaid_drop,
         max_offers=int(hr.get("max_offers", base.max_offers)),
+        cc=tuple(str(a).strip() for a in ([hr["cc"]] if isinstance(hr.get("cc"), str) else hr.get("cc") or ())
+                 if str(a).strip()),
         store_repo=str(hr.get("store_repo") or (raw.get("notes") or {}).get("handoff_repo") or ""),
     )
 

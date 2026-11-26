@@ -169,6 +169,7 @@ hr:
   preview_minutes: 120        # a batch waiting for /hr payslip yes expires after this
   sender_name: "hr@medochealth.in, Medoc Health"   # signs the payslip email
   mailbox: hr@medochealth.in  # payslips go out From this address (Send As); leave out for your own
+  cc: []                      # copied on every HR mail (offers, payslips, invites, replies), e.g. [you@company.com]
   # Saturdays are working days; only Sunday is off.
   mail_subject: "Payslip for {month}"
   mail_body: "Hi {first},<br><br>Please find attached your payslip for {month}.<br><br>Regards,<br>{sender}"

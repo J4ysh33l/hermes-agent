@@ -203,7 +203,7 @@ def _mail(ctx: Context, token: str, plan: dict, item: dict, to: tuple[str, str],
     try:
         graph.send_mail(ctx.http, token, to=to, subject=subject, body_html=body,
                         attachments=((Path(item["file"]).name, Path(item["file"]).read_bytes()),),
-                        sender=s.mailbox)
+                        sender=s.mailbox, cc=s.cc)
     except (OutreachError, HttpError, OSError) as exc:
         ctx.log(to[1], item["file"], False, str(exc), test)
         return f"{item['name']}: {exc}"
@@ -533,7 +533,7 @@ def _reply_yes(ctx: Context, _arg: str) -> str:
     store, failed = _inbox_store(ctx), []
     for item in saved["items"]:
         try:
-            reply.send(ctx.http, token, item["key"], item["text"], ctx.settings.mailbox)
+            reply.send(ctx.http, token, item["key"], item["text"], ctx.settings.mailbox, ctx.settings.cc)
         except OutreachError as exc:
             ctx.log(item["to"], "reply", False, str(exc))
             failed.append(f"{item['name']}: {exc}")
@@ -707,7 +707,7 @@ def _offer_mail(ctx: Context, token: str, one: dict, to: tuple[str, str]) -> str
     try:
         graph.send_mail(ctx.http, token, to=to, subject=fill(s.offer_subject, **values),
                         body_html=fill(s.offer_body, **values),
-                        attachments=((letter.name, letter.read_bytes()),), sender=s.mailbox)
+                        attachments=((letter.name, letter.read_bytes()),), sender=s.mailbox, cc=s.cc)
     except (OutreachError, HttpError, OSError) as exc:
         ctx.log(to[1], str(letter), False, str(exc))
         return f"{o['name']}: {exc}"
