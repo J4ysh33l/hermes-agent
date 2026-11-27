@@ -210,6 +210,18 @@ class Duties(unittest.TestCase):
         self.assertEqual((made.items, made.by), (tuple(FIVE), "gemini-3.1-flash-lite"))
         self.assertEqual(self.http.count(GEMINI), 3)
 
+    def test_gemini_2_5_flash_is_the_last_resort_in_the_default_order(self):
+        from orchestrator.hr.settings import DUTIES_MODELS, REPLY_MODELS
+        self.assertEqual(DUTIES_MODELS[-1], ModelChoice("gemini-2.5-flash"))
+        self.assertEqual(REPLY_MODELS[-1], ModelChoice("gemini-2.5-flash"))
+        for m in DUTIES_MODELS[:-1]:
+            self.http.on("POST", GEMINI + m.id, http_error(503))
+        self.http.on("POST", GEMINI + "gemini-2.5-flash", self.answer(json.dumps({"duties": FIVE})))
+        made = duties.find_or_write(self.table, self.http, "g", DUTIES_MODELS, "Marketing Intern", "Medoc Health",
+                                    "x", date(2026, 11, 19))
+        self.assertEqual((made.items, made.by), (tuple(FIVE), "gemini-2.5-flash"))
+        self.assertEqual(self.http.count(GEMINI), len(DUTIES_MODELS))
+
     def test_nothing_passes_or_no_key_says_how_to_set_them_yourself(self):
         for m in self.MODELS:
             self.http.on("POST", GEMINI + m.id, http_error(429))
@@ -304,10 +316,10 @@ class Chat(unittest.TestCase):
         # people at all) is not trusted, and the missing stipend is asked for, never guessed
         said = self.hr("offer internship\nName: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3")
         self.assertIn("Stipend is missing", said)
-        self.assertEqual(self.http.count(GEMINI), 4)  # Gemma 31B, 26B, Flash-Lite 3.1, 3.5: none usable
+        self.assertEqual(self.http.count(GEMINI), 5)  # Gemma 31B, 26B, Flash-Lite 3.1, 3.5, 2.5 Flash: none usable
         (self.home / "hr/templates/offer_internship.docx").unlink()
         self.assertIn("No internship offer template", self.hr("offer internship\n" + ASHA))
-        self.assertEqual(self.http.count(GEMINI), 4)
+        self.assertEqual(self.http.count(GEMINI), 5)  # no new call: the template check comes first
         self.assertIn("Nothing was waiting", self.hr("offer no"))
 
     def test_cc_is_copied_on_every_offer_mail_but_never_twice_to_the_same_person(self):

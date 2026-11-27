@@ -51,11 +51,13 @@ REPLY_TEMPLATES = {
     "salary": "Thank you for writing to us. We have received your query and are looking into it. "
               "We'll get back to you{by_when}.",
 }
-# Duties for a new position: one call; the next model only if one fails (Gemma takes no JSON mode).
+# Duties for a new position, and offer / certificate messages the script cannot read: one call; the next
+# model only if one fails (Gemma takes no JSON mode). Gemini 2.5 Flash is the last resort.
 DUTIES_MODELS = (ModelChoice("gemma-4-31b-it", False), ModelChoice("gemma-4-26b-a4b-it", False),
-                 ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"))
+                 ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"),
+                 ModelChoice("gemini-2.5-flash"))
 REPLY_MODELS = (ModelChoice("gemini-3.1-flash-lite"), ModelChoice("gemini-3.5-flash-lite"),
-                ModelChoice("gemma-4-31b-it", False))
+                ModelChoice("gemma-4-31b-it", False), ModelChoice("gemini-2.5-flash"))
 
 
 @dataclass(frozen=True)
