@@ -165,7 +165,7 @@ thread, From `hr.mailbox`, only after `/hr reply yes`.
     exact form and listed under "Fixed in its answer";
   - a placeholder the mail never had (`[NAME_7]`), or an email, phone, link, amount or ID number
     written out, means the model made it up: the draft is refused and asked for once more with the
-    problem named, then the next model is tried (3.1 Flash-Lite, 3.5 Flash-Lite, Gemma 4);
+    problem named, then the next model is tried (3.1 Flash-Lite, 3.5 Flash-Lite, Gemma 4, 2.5 Flash);
   - if none passes, nothing is drafted and you see every reason, with the template as a way out.
 - **Templates:** `hr.replies` in `brief.yaml` changes or adds them; the words after the name fill
   `{for_role}` (" for the X role"), `{by_when}` (" by X", else " shortly"), `{for_when}`, `{arg}`.

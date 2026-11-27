@@ -4,7 +4,7 @@
 Only used when the plain reading fails (a missing field, a sentence instead of lines, a pasted table).
 Unlike the duties call, this one has to send your message as it is (names, emails, months) to Google,
 because that is what it reads. Models are tried in order (``hr.duties_models``: Gemma 4 31B, Gemma 4
-26B, Gemini 3.1 Flash-Lite, 3.5 Flash-Lite); the next only when one fails or answers nothing usable.
+26B, Gemini 3.1 Flash-Lite, 3.5 Flash-Lite, 2.5 Flash); the next only when one fails or answers nothing usable.
 The model copies; it is told never to fill a gap, so a value you did not write comes back missing and
 the reply asks you for it.
 """

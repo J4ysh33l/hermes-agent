@@ -34,7 +34,7 @@ not a one-off script, so every rule applies (unpaid, months, several people, sig
   `git -C /home/user/hermes-handoffs pull -q && mkdir -p $HERMES_HOME/hr/templates && cp /home/user/hermes-handoffs/hr/templates/* $HERMES_HOME/hr/templates/ && cp /home/user/hermes-handoffs/hr/*.json $HERMES_HOME/hr/`
 - Make: `python -m orchestrator.hr offer internship <the user's lines as sent>` (fte / consultant the same).
   Show the user what it made (names, dates, pay, duties, the PDF). Read the user's format as it is; a
-  message the code cannot read goes to Gemma 31B → Gemma 26B → Gemini 3.1 → 3.5 Flash-Lite by itself.
+  message the code cannot read goes to Gemma 31B → Gemma 26B → Gemini 3.1 → 3.5 Flash-Lite → 2.5 Flash by itself.
 - Send only on the user's word: `offer test` (PDFs to the user only), `offer yes` (each person, from
   hr@medochealth.in, PDF only, `hr.cc` copied on every HR mail).
 - After a new position: copy `$HERMES_HOME/hr/duties.json` back to `hermes-handoffs/hr/duties.json`,
