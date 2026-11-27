@@ -316,10 +316,10 @@ class Chat(unittest.TestCase):
         # people at all) is not trusted, and the missing stipend is asked for, never guessed
         said = self.hr("offer internship\nName: Asha\nPosition: Intern\nStart: 01/12/2026\nMonths: 3")
         self.assertIn("Stipend is missing", said)
-        self.assertEqual(self.http.count(GEMINI), 4)  # Gemma 31B, 26B, Flash-Lite 3.1, 3.5: none usable
+        self.assertEqual(self.http.count(GEMINI), 5)  # Gemma 31B, 26B, Flash-Lite 3.1, 3.5, 2.5 Flash: none usable
         (self.home / "hr/templates/offer_internship.docx").unlink()
         self.assertIn("No internship offer template", self.hr("offer internship\n" + ASHA))
-        self.assertEqual(self.http.count(GEMINI), 4)
+        self.assertEqual(self.http.count(GEMINI), 5)  # no new call: the template check comes first
         self.assertIn("Nothing was waiting", self.hr("offer no"))
 
     def test_cc_is_copied_on_every_offer_mail_but_never_twice_to_the_same_person(self):

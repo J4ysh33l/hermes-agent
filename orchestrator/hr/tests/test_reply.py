@@ -159,7 +159,7 @@ class Reply(unittest.TestCase):
         self.assertIn("refused: [NAME_7] is not in the mail", self.prompts[1])
 
         bad = {"paragraphs": ["We will pay Rs 50,000 on Monday."]}
-        self.answers = [bad] * 6  # two tries on each of the three models
+        self.answers = [bad] * 8  # two tries on each of the four models
         shown = self.hr("reply 1")
         self.assertIn("No draft passed the checks, so nothing was drafted", shown)
         self.assertIn("amount 'Rs 50,000' is not in the mail", shown)
