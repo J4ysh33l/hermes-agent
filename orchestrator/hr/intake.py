@@ -4,7 +4,8 @@
 Only used when the plain reading fails (a missing field, a sentence instead of lines, a pasted table).
 Unlike the duties call, this one has to send your message as it is (names, emails, months) to Google,
 because that is what it reads. Models are tried in order (``hr.duties_models``: Gemma 4 31B, Gemma 4
-26B, Gemini 3.1 Flash-Lite, 3.5 Flash-Lite, 2.5 Flash); the next only when one fails or answers nothing usable.
+26B, Gemini 3.1 Flash-Lite, 3.5 Flash-Lite, 2.5 Flash); the next when one fails, answers nothing usable,
+or answers with a reading that still does not pass the checks (a field dropped, a date garbled).
 The model copies; it is told never to fill a gap, so a value you did not write comes back missing and
 the reply asks you for it.
 """
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import date
 
 from orchestrator import llm
@@ -26,21 +28,24 @@ For each person copy, exactly as written:
 - start: the start date as dd/mm/yyyy, or "" when only months are given
 - period: the months as words, e.g. "June - July" or "June 2027 - August 2027", or ""
 - months: the length in months as digits, or ""
-- pay: "unpaid" if it says unpaid / no stipend; else the amount a month in rupees as digits; or ""
+- pay: "unpaid" if it says unpaid / no stipend; else the total amount a month in rupees as digits; or ""
+- base: the base (basic) part of the pay a month in rupees as digits, only when written; or ""
+- hra: the HRA (house rent allowance) part a month in rupees as digits, only when written; or ""
 - email: or ""
 A value written once for everyone (e.g. "Stipend: Unpaid" at the end) applies to every person.
 Never guess or invent a value: leave it "" when it is not written.
-Answer JSON only: {{"people": [{{"name": "", "position": "", "start": "", "period": "", "months": "", "pay": "", "email": ""}}]}}
+Answer JSON only: {{"people": [{{"name": "", "position": "", "start": "", "period": "", "months": "", "pay": "", "base": "", "hra": "", "email": ""}}]}}
 
 Request:
 <<<
 {text}
 >>>"""
-FIELDS = ("name", "position", "start", "period", "months", "pay", "email")
+FIELDS = ("name", "position", "start", "period", "months", "pay", "base", "hra", "email")
 SCHEMA = {"type": "object", "properties": {"people": {"type": "array", "items": {
-    "type": "object", "properties": {f: {"type": "string"} for f in FIELDS}}}}, "required": ["people"]}
+    "type": "object", "properties": {f: {"type": "string"} for f in FIELDS}, "required": list(FIELDS)}}},
+          "required": ["people"]}  # every field asked for: a light model otherwise drops some
 LINES = {"name": "Name", "position": "Position", "start": "Start", "period": "Period", "months": "Tenure",
-         "pay": "Stipend", "email": "Email"}
+         "pay": "Stipend", "base": "Base", "hra": "HRA", "email": "Email"}
 
 
 class IntakeError(Exception):
@@ -69,20 +74,29 @@ def blocks(people: list[dict], pay_word: str = "Stipend") -> list[str]:
     return out
 
 
-def read(http, key: str, models, text: str, role: str, today: date, pay_word: str = "Stipend") -> tuple[list[str], str]:
-    """(one block of lines per person, the model that read it)."""
+def read(http, key: str, models, text: str, role: str, today: date, pay_word: str = "Stipend",
+         check: Callable[[list[str]], list[str]] | None = None) -> tuple[list[str], str]:
+    """(one block of lines per person, the model that read it). ``check`` (the plain reading's checks): a
+    reading with problems moves on to the next model; when none passes, the last reading is returned so
+    its problems are shown."""
     if not key:
         raise IntakeError("GEMINI_API_KEY is not set")
     prompt = PROMPT.format(role=role, today=f"{today.day} {today:%B %Y}", text=text.strip()[:6000])
-    failures = []
+    failures, last = [], None
     for model in models:
         try:
             raw = llm.gemini(http, key, model.id, prompt, workflow="hr", step="offer-intake",
                              json_mode=model.json_mode, schema=SCHEMA if model.json_mode else None,
                              max_output_tokens=2000, temperature=0)
-            return blocks(_people(raw), pay_word), model.id
+            found = blocks(_people(raw), pay_word)
         except (HttpError, ValueError, json.JSONDecodeError, AttributeError) as exc:
             failures.append(f"{model.id}: {str(exc)[:100]}")
+            continue
+        if check is None or not check(found):
+            return found, model.id
+        last = (found, model.id)
+    if last:
+        return last
     raise IntakeError("; ".join(failures))
 
 
@@ -106,16 +120,18 @@ Request:
 >>>"""
 CERT_FIELDS = ("name", "position", "start", "end", "period", "email")
 CERT_SCHEMA = {"type": "object", "properties": {"people": {"type": "array", "items": {
-    "type": "object", "properties": {f: {"type": "string"} for f in CERT_FIELDS}}}}, "required": ["people"]}
+    "type": "object", "properties": {f: {"type": "string"} for f in CERT_FIELDS}, "required": list(CERT_FIELDS)}}},
+               "required": ["people"]}
 
 
-def read_certificates(http, key: str, models, text: str, today: date) -> tuple[str, str]:
+def read_certificates(http, key: str, models, text: str, today: date,
+                      check: Callable[[str], list[str]] | None = None) -> tuple[str, str]:
     """(the people as 'Key: value' lines, one block per person, the model that read them). A pronoun is
-    never taken from the model: only a Pronoun: line you write sets one."""
+    never taken from the model: only a Pronoun: line you write sets one. ``check`` as in ``read``."""
     if not key:
         raise IntakeError("GEMINI_API_KEY is not set")
     prompt = CERT_PROMPT.format(today=f"{today.day} {today:%B %Y}", text=text.strip()[:6000])
-    failures = []
+    failures, last = [], None
     for model in models:
         try:
             raw = llm.gemini(http, key, model.id, prompt, workflow="hr", step="certificate-intake",
@@ -129,7 +145,13 @@ def read_certificates(http, key: str, models, text: str, today: date) -> tuple[s
                 if values["period"]:  # the months as written decide the dates, never a date the model made up
                     values["start"] = values["end"] = ""
                 blocks.append("\n".join(f"{f.title()}: {v}" for f, v in values.items() if v))
-            return "\n\n".join(blocks), model.id
         except (HttpError, ValueError, json.JSONDecodeError, AttributeError) as exc:
             failures.append(f"{model.id}: {str(exc)[:100]}")
+            continue
+        lines = "\n\n".join(blocks)
+        if check is None or not check(lines):
+            return lines, model.id
+        last = (lines, model.id)
+    if last:
+        return last
     raise IntakeError("; ".join(failures))

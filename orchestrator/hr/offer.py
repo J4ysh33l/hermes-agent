@@ -11,8 +11,12 @@ it, with square-bracket fields (any case; a field may appear more than once):
     [End date]                           start + months − 1 day: "28 February 2027" (needs a tenure)
     [duration spelled] [duration number] "three", "3" (the tenure in months)
     [Monthly] [Annual]                   the pay: "₹15,000" and 12 × monthly "₹1,80,000"
+    [Monthly Base] [Annual Base]         a salary split into base and HRA (also [Monthly Basic]…):
+    [Monthly HRA] [Annual HRA]           "₹15,000" / "₹1,80,000", "₹5,000" / "₹60,000"; and the total
+    [Monthly Comp] [Annual Comp]         ([… CTC], [… Total] too); needs the split in the Salary line
     [duties and responsibilities]        a paragraph of its own (any bracket naming duties):
-                                         one bullet per duty, each a copy of that paragraph
+                                         one bullet per duty, each a copy of that paragraph;
+                                         or a count in a line about duties: "[4-5] points on duties…"
     [anything else]                      filled from a line you send with the same name, e.g.
                                          "Location: Mohali" fills [Location]
 
@@ -27,6 +31,7 @@ What you send::
     Start: 01/12/2026
     Tenure: 3 months                 (internship and consultant; a full-time offer may leave it out)
     Stipend: 15000                   (or Salary / Fee: a month; or CTC: a year)
+                                     Salary: 20000 pm 15K base 5K HRA splits it (or Base: / HRA: lines)
     Email: asha@example.com          (optional; needed for /hr offer yes)
 
 or one line: ``/hr offer internship Asha Verma, Marketing Intern, 01/12/2026, 3, 15000, asha@example.com``
@@ -88,11 +93,16 @@ KEYS = {"name": "name", "full name": "name", "candidate": "name",
         "monthly stipend": "pay", "monthly salary": "pay", "monthly fee": "pay",
         "ctc": "annual", "annual": "annual", "annual ctc": "annual", "yearly": "annual",
         "email": "email", "mail": "email", "email id": "email",
+        "base": "base", "basic": "base", "base salary": "base", "basic salary": "base", "basic pay": "base",
+        "hra": "hra", "house rent allowance": "hra",
         "month": "months", "period": "months", "internship period": "months", "duration of internship": "months"}
 UNPAID = re.compile(r"(?i)^\s*(unpaid|nil|none|no stipend|not paid|0|zero|-)\s*\.?\s*$")
 MONTHS = {m.lower(): i for i, m in enumerate(calendar.month_name) if m} | {
     m.lower(): i for i, m in enumerate(calendar.month_abbr) if m} | {"sept": 9}
 PERIOD = re.compile(r"(?i)^\s*([a-z]+)\.?\s*(\d{4})?\s*(?:-|–|—|to|till|until)\s*([a-z]+)\.?\s*(\d{4})?\s*$")
+SPLIT_NAMES = {"base": ("base", "basic", "base salary", "basic salary"), "hra": ("hra",),
+               "comp": ("comp", "ctc", "total", "total ctc", "compensation")}
+SPLIT_LABELS = {f"{when} {name}" for names in SPLIT_NAMES.values() for name in names for when in ("monthly", "annual")}
 ORDER = {True: ("name", "position", "start", "months", "pay", "email"),
          False: ("name", "position", "start", "pay", "email")}
 # the template's own fields (lower case, spaces collapsed); anything else comes from your extra lines
@@ -117,6 +127,8 @@ class Offer:
     annual: int = 0  # given as CTC; 0 = 12 × monthly
     extra: tuple[tuple[str, str], ...] = field(default=())  # your other lines: (bracket label, text)
     unpaid: bool = False  # Stipend: Unpaid: no pay table, hr.unpaid_line instead
+    base: int = 0  # the salary split, a month: base + HRA = monthly (0 = not split)
+    hra: int = 0
 
     @property
     def end(self) -> date | None:
@@ -138,6 +150,12 @@ class Offer:
                "annual": "Nil" if self.unpaid else rupees(self.annual or self.monthly * 12)}
         if self.email:
             out["email"] = self.email
+        if self.base or self.hra:
+            annual = self.annual or self.monthly * 12
+            for word, month, year in (("base", self.base, self.base * 12), ("hra", self.hra, self.hra * 12),
+                                      ("comp", self.monthly, annual)):
+                for name in SPLIT_NAMES[word]:
+                    out |= {f"monthly {name}": rupees(month), f"annual {name}": rupees(year)}
         if self.months:
             out |= {"end date": long_date(self.end), "duration spelled": WORDS[self.months],
                     "duration number": str(self.months)}
@@ -170,10 +188,28 @@ def _date(text: str) -> date:
 
 def _amount(text: str) -> int | None:
     plain = re.sub(r"(?i)(rs\.?|inr|₹|/-|per (month|annum|year)|/(month|year|yr)|p\.?a\.?|pm|,|\s)", "", text)
-    if m := re.fullmatch(r"(\d+(?:\.\d+)?)(lpa|lakhs?|l)?", plain.lower()):
-        value = float(m.group(1)) * (100000 if m.group(2) else 1)
+    if m := re.fullmatch(r"(\d+(?:\.\d+)?)(lpa|lakhs?|l|k)?", plain.lower()):
+        value = float(m.group(1)) * {"k": 1000, None: 1}.get(m.group(2), 100000)
         return round(value) if value.is_integer() or m.group(2) else None
     return None
+
+
+SPLIT_PART = re.compile(r"(?i)(?:(?P<a>(?:rs\.?|inr|₹)?\s*\d[\d,]*(?:\.\d+)?\s*k?)\s*(?:as\s+)?(?P<w>basic|base|hra)\b"
+                        r"|\b(?P<w2>basic|base|hra)\s*[:=-]?\s*(?P<a2>(?:rs\.?|inr|₹)?\s*\d[\d,]*(?:\.\d+)?\s*k?))")
+
+
+def split_pay(text: str) -> tuple[str, dict[str, str]]:
+    """'20000 pm 15K base 5K HRA' → ('20000 pm', {'base': '15K', 'hra': '5K'}); the words around the parts
+    ((), +, 'with', 'and') go."""
+    parts: dict[str, str] = {}
+
+    def take(m: re.Match) -> str:
+        word = (m.group("w") or m.group("w2")).lower()
+        parts["hra" if word == "hra" else "base"] = (m.group("a") or m.group("a2")).strip()
+        return " "
+    rest = SPLIT_PART.sub(take, text)
+    rest = re.sub(r"(?i)[()+;,]|\b(with|and|incl\.?|including|of which|i\.e\.?)\b", " ", rest)
+    return " ".join(rest.split()), parts
 
 
 def period(text: str, today: date, past: bool = False) -> tuple[date, int] | None:
@@ -285,13 +321,17 @@ def parse(text: str, kind: Kind, today: date | None = None) -> tuple[Offer | Non
     """(the offer, problems); every problem at once, so one resend fixes them all."""
     today = today or date.today()
     raw, extra = _fields(text, kind)
+    if raw.get("pay"):
+        raw["pay"], parts = split_pay(raw["pay"])
+        for k, v in parts.items():
+            raw.setdefault(k, v)
     span = period(raw["months"], today) if raw.get("months") and not re.match(r"\s*\d", raw["months"]) else None
     needed = [("Name", "name"), ("Position", "position")]
     needed += [] if span else [("Start date", "start")]
     needed += [("Tenure", "months")] if kind.tenure else []
     problems = [f"{label} is missing" for label, k in needed if not raw.get(k)]
     unpaid = bool(raw.get("pay") and UNPAID.match(raw["pay"]))
-    if not raw.get("pay") and not raw.get("annual"):
+    if not raw.get("pay") and not raw.get("annual") and not (raw.get("base") and raw.get("hra")):
         problems.append(f"{kind.pay} is missing (a month; or CTC: a year; or Unpaid)")
     if problems:
         return None, problems
@@ -320,13 +360,37 @@ def parse(text: str, kind: Kind, today: date | None = None) -> tuple[Offer | Non
             problems.append(f"CTC '{raw['annual']}' is not an amount in rupees a year (e.g. 600000 or 6 LPA)")
         elif not monthly:
             monthly = round(annual / 12)
+    base = hra = 0
+    for k, label in (("base", "Base"), ("hra", "HRA")):
+        if raw.get(k):
+            if (value := _amount(raw[k])) is None:
+                problems.append(f"{label} '{raw[k]}' is not an amount in rupees a month (e.g. 15000 or 15K)")
+            elif k == "base":
+                base = value
+            else:
+                hra = value
+    if (base or hra) and not problems:
+        if not monthly:
+            monthly = base + hra if base and hra else 0
+            if not monthly:
+                problems.append(f"{kind.pay} is missing: with only a {'base' if base else 'HRA'}, send the total "
+                                "too (e.g. Salary: 20000 pm 15K base 5K HRA)")
+        elif not base:
+            base = monthly - hra
+        elif not hra:
+            hra = monthly - base
+        if monthly and base + hra != monthly:
+            problems.append(f"Base {rupees(base)} + HRA {rupees(hra)} = {rupees(base + hra)}, not the "
+                            f"{kind.pay.lower()} {rupees(monthly)} a month")
+        elif monthly and (base <= 0 or hra < 0):
+            problems.append(f"The split does not add up: base {rupees(base)}, HRA {rupees(hra)}")
     email = raw.get("email", "").strip()
     if email and not EMAIL.match(email):
         problems.append(f"'{email}' is not an email address")
     if problems:
         return None, problems
     return Offer(kind, _name(raw["name"]), _position(raw["position"]), start, months, monthly,
-                 email, annual, tuple(sorted(extra.items())), unpaid), []
+                 email, annual, tuple(sorted(extra.items())), unpaid, base, hra), []
 
 
 # ---- the Word letter ------------------------------------------------------------------------------
@@ -340,11 +404,23 @@ def _is_duties(label: str) -> bool:
     return "duties" in label or "responsibilit" in label
 
 
+COUNT = re.compile(r"\d{1,2}(?:\s*(?:-|–|to)\s*\d{1,2})?")
+
+
+def _duties_line(text: str) -> bool:
+    """'[4-5] points on duties and responsibilities based on the position': a count in brackets (the only
+    bracket) in a line about duties. The whole line is the placeholder."""
+    found = BRACKET.findall(text)
+    return (len(found) == 1 and bool(COUNT.fullmatch(found[0].strip()))
+            and _is_duties(text.lower().replace(f"[{found[0]}]", "")))
+
+
 def brackets(path: Path) -> set[str]:
-    """Every bracket field in the template, as written."""
+    """Every bracket field in the template, as written (not the count in a duties line)."""
     import docx
 
-    return {m for p in _all_paragraphs(docx.Document(str(path))) for m in BRACKET.findall(p.text)}
+    return {m for p in _all_paragraphs(docx.Document(str(path))) if not _duties_line(p.text)
+            for m in BRACKET.findall(p.text)}
 
 
 def unknown(path: Path, values: dict[str, str]) -> list[str]:
@@ -397,7 +473,7 @@ def unpaid(document, line: str, drop: tuple[str, ...]) -> None:
     from docx.text.paragraph import Paragraph
 
     body = document.element.body
-    for table in [t for t in body.iter(qn("w:tbl")) if re.search(r"(?i)\[\s*(monthly|annual)\s*\]", _text_of(t))]:
+    for table in [t for t in body.iter(qn("w:tbl")) if re.search(r"(?i)\[\s*(monthly|annual)\b[^\]]*\]", _text_of(t))]:
         before = table.getprevious()
         while before is not None and _blank(before):
             before = before.getprevious()
@@ -503,7 +579,9 @@ def make(template: Path, offer: Offer, duties: tuple[str, ...], out: Path, today
     values = offer.values(today)
     bad = unknown(template, values)
     if bad:
-        hint = (" (the tenure fields need a Tenure: line)" if any(_label(b[1:-1]) in OWN for b in bad) else "")
+        hint = (" (the tenure fields need a Tenure: line)" if any(_label(b[1:-1]) in OWN for b in bad) else
+                " (the salary split needs it in the Salary line, e.g. Salary: 20000 pm 15K base 5K HRA)"
+                if any(_label(b[1:-1]) in SPLIT_LABELS for b in bad) else "")
         raise TemplateError(f"The {offer.kind.label.lower()} template has fields with no value: " + ", ".join(bad) +
                             hint + ". Add a line for each, e.g. \"" + bad[0][1:-1] + ": …\".")
     if not duties:
@@ -516,6 +594,10 @@ def make(template: Path, offer: Offer, duties: tuple[str, ...], out: Path, today
     for paragraph in list(_all_paragraphs(document)):
         found = BRACKET.findall(paragraph.text)
         if not found:
+            continue
+        if _duties_line(paragraph.text):
+            _bullets(paragraph, duties)
+            placed = True
             continue
         if any(_is_duties(_label(b)) for b in found):
             if paragraph.text.strip() != f"[{found[0]}]" or len(found) != 1:

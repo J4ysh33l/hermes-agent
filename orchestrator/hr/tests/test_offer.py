@@ -165,6 +165,78 @@ class FullTime(unittest.TestCase):
         self.assertTrue(problems)
 
 
+class SalarySplit(unittest.TestCase):
+    """A full-time letter like the real one: a Base / HRA / Total table and "[4-5] points on duties…"."""
+
+    LINES = ("Name: Varad Nikam\nPosition: Data Analyst\nDOJ: 5/2/2027\nEmail: varad@example.com\n"
+             "Salary: 20000 pm 15K base 5K HRA")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        d = docx.Document()
+        d.add_paragraph("Dear [Name], your journey begins on [Start date].")
+        d.add_paragraph("[4-5] points on duties and responsibilities based on the position")
+        t = d.add_table(rows=4, cols=3)
+        for row, cells in zip(t.rows, (("Component", "Monthly", "Annual"),
+                                       ("Base Salary", "[monthly basic]", "[annual Base]"),
+                                       ("HRA", "[monthly HRA]", "[annual HRA]"),
+                                       ("Total CTC", "[monthly comp]", "[annual comp]")), strict=True):
+            for cell, text in zip(row.cells, cells, strict=True):
+                cell.text = text
+        d.save(str(self.dir / "fte.docx"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_split_is_read_in_any_usual_shape(self):
+        for pay in ("20000 pm 15K base 5K HRA", "20000 (15000 basic + 5000 HRA)", "Rs 20,000 with base 15k and hra 5k",
+                    "15K base 5K HRA"):
+            made, problems = offer.parse(f"Name: A\nPosition: B\nStart: 1/1/2027\nSalary: {pay}", FTE)
+            self.assertEqual(problems, [], pay)
+            self.assertEqual((made.monthly, made.base, made.hra), (20000, 15000, 5000), pay)
+        made, _ = offer.parse("Name: A\nPosition: B\nStart: 1/1/2027\nSalary: 20000\nHRA: 5000", FTE)
+        self.assertEqual((made.base, made.hra), (15000, 5000))
+        made, _ = offer.parse("Name: A\nPosition: B\nStart: 1/1/2027\nSalary: 25k", FTE)
+        self.assertEqual((made.monthly, made.base), (25000, 0))
+
+    def test_a_split_that_does_not_add_up_is_refused(self):
+        _, problems = offer.parse("Name: A\nPosition: B\nStart: 1/1/2027\nSalary: 20000 pm 15K base 6K HRA", FTE)
+        self.assertEqual(problems, ["Base ₹15,000 + HRA ₹6,000 = ₹21,000, not the salary ₹20,000 a month"])
+
+    def test_the_table_and_the_duties_line_are_filled(self):
+        made, problems = offer.parse(self.LINES, FTE)
+        self.assertEqual(problems, [])
+        offer.make(self.dir / "fte.docx", made, tuple(FIVE), self.dir / "out.docx", TODAY)
+        d = docx.Document(str(self.dir / "out.docx"))
+        self.assertEqual([p.text for p in d.paragraphs][1:], FIVE)
+        self.assertIn("begins on 5 February 2027.", d.paragraphs[0].text)
+        rows = [[c.text for c in r.cells] for r in d.tables[0].rows][1:]
+        self.assertEqual(rows, [["Base Salary", "₹15,000", "₹1,80,000"], ["HRA", "₹5,000", "₹60,000"],
+                                ["Total CTC", "₹20,000", "₹2,40,000"]])
+
+    def test_a_template_with_a_split_needs_the_split(self):
+        made, _ = offer.parse(self.LINES.replace("20000 pm 15K base 5K HRA", "20000"), FTE)
+        with self.assertRaisesRegex(TemplateError, r"\[annual Base\].*Salary: 20000 pm 15K base 5K HRA"):
+            offer.make(self.dir / "fte.docx", made, tuple(FIVE), self.dir / "out.docx", TODAY)
+
+
+class Fonts(unittest.TestCase):
+    def test_libreoffice_gets_the_letter_fonts_and_keeps_the_machines_own(self):
+        from orchestrator.hr import pdf
+
+        names = {f.name for f in pdf.FONTS.iterdir()}
+        self.assertTrue({"Poppins-Regular.ttf", "Poppins-Bold.ttf", "selawk.ttf", "selawkb.ttf",
+                         "OFL-Poppins.txt", "OFL-Selawik.txt"} <= names)
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict("os.environ", {"FONTCONFIG_FILE": "/x/sys.conf"}):
+            env = pdf.font_env(Path(folder))
+            conf = Path(env["FONTCONFIG_FILE"]).read_text(encoding="utf-8")
+        self.assertIn("<include ignore_missing=\"yes\">/x/sys.conf</include>", conf)
+        self.assertIn(f"<dir>{pdf.FONTS.resolve()}</dir>", conf)
+        self.assertIn("<string>Segoe UI</string>", conf)
+        self.assertIn("<string>Selawik</string>", conf)
+
+
 def text_of_plain(path: Path) -> tuple[list, str]:
     d = docx.Document(str(path))
     return d.paragraphs, "\n".join(p.text for p in d.paragraphs)
@@ -361,6 +433,24 @@ class Chat(unittest.TestCase):
         self.assertIn("read by gemma-4-31b-it", said)
         self.assertIn("1 January 2027 – 31 March 2027 (3 months)", said)
         self.assertIn("Meera Iyer", json.dumps(self.http.calls[0].json_body))
+
+    def test_a_reading_that_drops_a_field_moves_on_to_the_next_model(self):
+        d = docx.Document()
+        d.add_paragraph("Dear [Name], [Position] from [Start date], [Monthly Base] + [Monthly HRA].")
+        d.add_paragraph("[4-5] points on duties and responsibilities")
+        d.save(str(self.home / "hr/templates/offer_fte.docx"))
+        dropped = {"people": [{"name": "Varad Nikam", "position": "Data Analyst", "start": "05/02/2027"}]}
+        full = {"people": [{"name": "Varad Nikam", "position": "Data Analyst", "start": "05/02/2027", "period": "",
+                            "months": "", "pay": "20000", "base": "15000", "hra": "5000", "email": "v@example.com"}]}
+        answers = iter([dropped, full, {"duties": FIVE}])
+        self.http.on("POST", GEMINI, lambda _c: {"candidates": [{"content": {"parts": [
+            {"text": json.dumps(next(answers))}]}}], "usageMetadata": {}})
+        said = self.hr("offer fte please make one for Varad Nikam as Data Analyst joining 5/2/2027, "
+                       "salary 20000 pm with 15K base and 5K HRA, mail v@example.com")
+        self.assertIn("read by gemma-4-26b-a4b-it", said)  # the first reading had no salary: not used
+        self.assertIn("₹20,000 a month: ₹15,000 base + ₹5,000 HRA", said)
+        from orchestrator.hr import intake  # JSON mode asks for every field, so none is left out quietly
+        self.assertEqual(intake.SCHEMA["properties"]["people"]["items"]["required"], list(intake.FIELDS))
 
 
 class Unpaid(unittest.TestCase):
