@@ -102,6 +102,7 @@ Name: Asha Verma
 Position: Marketing Intern
 Month: June - July     (or Start: 01/12/2026 and Tenure: 3 months; no year = the next June)
 Stipend: 15000         (or Unpaid; Salary: / Fee: a month; or CTC: 12 LPA a year)
+Salary: 20000 pm 15K base 5K HRA   (a full-time offer whose table splits base and HRA)
 Email: asha@gmail.com  (optional; needed to send it)
 Several people: one Name: line starts each; a line written once (e.g. Stipend: Unpaid at the
 end) is for everyone. Any other line fills the bracket of the same name, e.g. Location: Mohali.
@@ -117,7 +118,8 @@ Unpaid: the pay table goes and hr.unpaid_line says so. A Word signature line wit
 over it is redrawn so the PDF shows the whole signature.
 Templates in $HERMES_HOME/hr/templates/: offer_internship.docx, offer_fte.docx, offer_consultant.docx,
 with [Name] [Position] [Date] [Start date] [End date] [duration spelled] [duration number] [Monthly]
-[Annual] and a [duties and responsibilities] bullet. /hr sync pull fetches them from your private repo.
+[Annual] ([Monthly Base] [Annual HRA] [Monthly Comp]… for a split) and a [duties and responsibilities]
+bullet (or "[4-5] points on duties…"). /hr sync pull fetches them from your private repo.
 /menu — all your commands"""
 
 CERT_HELP = """**/hr certificate** — experience (completion) certificates from your design, numbered by script
@@ -607,8 +609,9 @@ def _offer_text(saved: dict, minutes: int) -> str:
     shown: set[str] = set()
     for n, one in enumerate(letters, 1):
         o = one["offer"]
+        split = f": {one['base']} base + {one['hra']} HRA" if one.get("base") else ""
         pay = (f"{one.get('pay', 'stipend')}: unpaid" if one.get("unpaid") else
-               f"{one.get('pay', 'stipend')} {one['monthly']} a month ({one['annual']} a year)")
+               f"{one.get('pay', 'stipend')} {one['monthly']} a month{split} ({one['annual']} a year)")
         head = f"{n}. " if len(letters) > 1 else ""
         lines += [f"{head}**{one.get('kind_label', 'Offer')} offer letter: {o['name']}**, {o['position']}",
                   f"{one['dates']} · {pay}",
@@ -617,6 +620,8 @@ def _offer_text(saved: dict, minutes: int) -> str:
             shown.add(o["position"].lower())
             lines += [f"Duties ({_how(one['duties_from'])}):", *(f"• {d}" for d in one["duties"])]
         lines.append(f"Files: {', '.join(Path(f).name for f in one['files'])}")
+        if one.get("past"):
+            lines.append(f"⚠️ The start date {o['start']} has already passed: check the year.")
         if one.get("note"):
             lines.append(one["note"])
     mailable = sum(1 for one in letters if one["offer"]["email"])
@@ -692,6 +697,8 @@ def _offer_make(ctx: Context, text: str) -> str:
                                   "start": v["start date"]},
                         "kind": kind.name, "kind_label": kind.label, "role": kind.role, "pay": kind.pay.lower(),
                         "dates": dates, "monthly": v["monthly"], "annual": v["annual"], "unpaid": one.unpaid,
+                        "base": offer.rupees(one.base) if one.base or one.hra else "",
+                        "hra": offer.rupees(one.hra) if one.base or one.hra else "", "past": one.start < today,
                         "duties": list(found.items),
                         "duties_from": "saved" if found.saved and found.by != "you" else found.by,
                         "files": [str(f) for f in files], "items": [{"file": str(files[0])}], "note": note})

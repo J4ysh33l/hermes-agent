@@ -26,21 +26,23 @@ For each person copy, exactly as written:
 - start: the start date as dd/mm/yyyy, or "" when only months are given
 - period: the months as words, e.g. "June - July" or "June 2027 - August 2027", or ""
 - months: the length in months as digits, or ""
-- pay: "unpaid" if it says unpaid / no stipend; else the amount a month in rupees as digits; or ""
+- pay: "unpaid" if it says unpaid / no stipend; else the total amount a month in rupees as digits; or ""
+- base: the base (basic) part of the pay a month in rupees as digits, only when written; or ""
+- hra: the HRA (house rent allowance) part a month in rupees as digits, only when written; or ""
 - email: or ""
 A value written once for everyone (e.g. "Stipend: Unpaid" at the end) applies to every person.
 Never guess or invent a value: leave it "" when it is not written.
-Answer JSON only: {{"people": [{{"name": "", "position": "", "start": "", "period": "", "months": "", "pay": "", "email": ""}}]}}
+Answer JSON only: {{"people": [{{"name": "", "position": "", "start": "", "period": "", "months": "", "pay": "", "base": "", "hra": "", "email": ""}}]}}
 
 Request:
 <<<
 {text}
 >>>"""
-FIELDS = ("name", "position", "start", "period", "months", "pay", "email")
+FIELDS = ("name", "position", "start", "period", "months", "pay", "base", "hra", "email")
 SCHEMA = {"type": "object", "properties": {"people": {"type": "array", "items": {
     "type": "object", "properties": {f: {"type": "string"} for f in FIELDS}}}}, "required": ["people"]}
 LINES = {"name": "Name", "position": "Position", "start": "Start", "period": "Period", "months": "Tenure",
-         "pay": "Stipend", "email": "Email"}
+         "pay": "Stipend", "base": "Base", "hra": "HRA", "email": "Email"}
 
 
 class IntakeError(Exception):
