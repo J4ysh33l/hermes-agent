@@ -649,7 +649,7 @@ def _offer_parse(ctx: Context, kind, rest: str, today: date) -> tuple[list, list
         return made, [], ""
     try:
         blocks, model = intake.read(ctx.http, _gemini_key(ctx), ctx.settings.duties_models, rest, kind.role,
-                                    today, kind.pay)
+                                    today, kind.pay, check=lambda found: plain(found)[1])
     except intake.IntakeError:
         return [], problems, ""
     again, still = plain(blocks)
@@ -824,8 +824,10 @@ def _cert_make(ctx: Context, text: str) -> str:
     read_by = ""
     if problems:  # not in the usual shape: Gemma, then Gemini read it; checked again the same way
         try:
-            lines, read_by = intake.read_certificates(ctx.http, _gemini_key(ctx), s.duties_models, text, today)
             mine = "\n".join(ln for ln in text.splitlines() if re.match(r"(?i)\s*(pronouns?|gender)\s*[:=-]", ln))
+            lines, read_by = intake.read_certificates(
+                ctx.http, _gemini_key(ctx), s.duties_models, text, today,
+                check=lambda found: certificate.parse(found + ("\n" + mine if mine else ""), today)[1])
             people, problems = certificate.parse(lines + ("\n" + mine if mine else ""), today)
         except intake.IntakeError:
             pass

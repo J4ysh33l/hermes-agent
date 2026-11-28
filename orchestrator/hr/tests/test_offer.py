@@ -434,6 +434,24 @@ class Chat(unittest.TestCase):
         self.assertIn("1 January 2027 – 31 March 2027 (3 months)", said)
         self.assertIn("Meera Iyer", json.dumps(self.http.calls[0].json_body))
 
+    def test_a_reading_that_drops_a_field_moves_on_to_the_next_model(self):
+        d = docx.Document()
+        d.add_paragraph("Dear [Name], [Position] from [Start date], [Monthly Base] + [Monthly HRA].")
+        d.add_paragraph("[4-5] points on duties and responsibilities")
+        d.save(str(self.home / "hr/templates/offer_fte.docx"))
+        dropped = {"people": [{"name": "Varad Nikam", "position": "Data Analyst", "start": "05/02/2027"}]}
+        full = {"people": [{"name": "Varad Nikam", "position": "Data Analyst", "start": "05/02/2027", "period": "",
+                            "months": "", "pay": "20000", "base": "15000", "hra": "5000", "email": "v@example.com"}]}
+        answers = iter([dropped, full, {"duties": FIVE}])
+        self.http.on("POST", GEMINI, lambda _c: {"candidates": [{"content": {"parts": [
+            {"text": json.dumps(next(answers))}]}}], "usageMetadata": {}})
+        said = self.hr("offer fte please make one for Varad Nikam as Data Analyst joining 5/2/2027, "
+                       "salary 20000 pm with 15K base and 5K HRA, mail v@example.com")
+        self.assertIn("read by gemma-4-26b-a4b-it", said)  # the first reading had no salary: not used
+        self.assertIn("₹20,000 a month: ₹15,000 base + ₹5,000 HRA", said)
+        from orchestrator.hr import intake  # JSON mode asks for every field, so none is left out quietly
+        self.assertEqual(intake.SCHEMA["properties"]["people"]["items"]["required"], list(intake.FIELDS))
+
 
 class Unpaid(unittest.TestCase):
     def test_period_words_to_a_start_and_months(self):
