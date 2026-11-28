@@ -221,6 +221,22 @@ class SalarySplit(unittest.TestCase):
             offer.make(self.dir / "fte.docx", made, tuple(FIVE), self.dir / "out.docx", TODAY)
 
 
+class Fonts(unittest.TestCase):
+    def test_libreoffice_gets_the_letter_fonts_and_keeps_the_machines_own(self):
+        from orchestrator.hr import pdf
+
+        names = {f.name for f in pdf.FONTS.iterdir()}
+        self.assertTrue({"Poppins-Regular.ttf", "Poppins-Bold.ttf", "selawk.ttf", "selawkb.ttf",
+                         "OFL-Poppins.txt", "OFL-Selawik.txt"} <= names)
+        with tempfile.TemporaryDirectory() as folder, mock.patch.dict("os.environ", {"FONTCONFIG_FILE": "/x/sys.conf"}):
+            env = pdf.font_env(Path(folder))
+            conf = Path(env["FONTCONFIG_FILE"]).read_text(encoding="utf-8")
+        self.assertIn("<include ignore_missing=\"yes\">/x/sys.conf</include>", conf)
+        self.assertIn(f"<dir>{pdf.FONTS.resolve()}</dir>", conf)
+        self.assertIn("<string>Segoe UI</string>", conf)
+        self.assertIn("<string>Selawik</string>", conf)
+
+
 def text_of_plain(path: Path) -> tuple[list, str]:
     d = docx.Document(str(path))
     return d.paragraphs, "\n".join(p.text for p in d.paragraphs)
